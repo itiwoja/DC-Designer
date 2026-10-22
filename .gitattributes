@@ -1,0 +1,6 @@
+# テキストは OS にかかわらず LF に統一する。
+* text=auto eol=lf
+
+# Windows のコマンドスクリプトは CRLF を使う。
+*.bat text eol=crlf
+*.cmd text eol=crlf
