@@ -1,0 +1,2273 @@
+{
+  "title": "DC-Designer アーキテクチャ（C4 モデル）",
+  "summary": {
+    "対象": "poster-gen の master（723c0c8）の server/ と src/",
+    "時点": "2026-10-12",
+    "対象外": "tests/・samples/。デプロイは設定が無いため描いていない",
+    "作った図": "C1・C2・C3（API サーバー／Web アプリ）・動的図 2 枚。C4 コードは省略",
+    "根拠の書き方": "リポジトリ相対パス:行番号"
+  },
+  "notes": [
+    "【事実】すべて 1 台の PC（WSL を含む）で動く。デプロイ設定や CI は無い。",
+    "【事実】API サーバーは自分の PC からの通信だけを受け付ける。",
+    "【事実】データベースは使わない。保存はすべてローカルのファイル。",
+    "【事実】デザインの形式の定義は、画面と API サーバーで共有している。",
+    "【事実】小さな補助部品（差分の適用・エラー変換）は C3 の図から省いた。",
+    "【推定】Codex CLI は ChatGPT プランの枠を消費する（README の記述より）。",
+    "【未確認】画像生成 API の応答形式は、コードから読んだだけで実行していない。",
+    "【将来案】ネット公開（SaaS）は、AI の費用とサインインの申請が未解決で保留中。"
+  ],
+  "diagrams": [
+    {
+      "title": "C1 システムコンテキスト",
+      "scope": "DC-Designer を 1 つの箱として、使う人と依存する外部システム。内部のモジュールは描かない。",
+      "width": 1200,
+      "height": 620,
+      "nodes": [
+        {
+          "id": "user",
+          "name": "ユーザー",
+          "kind": "Person",
+          "description": "ブリーフを書いて AI に作らせ、調整して発表・書き出しをする",
+          "technology": "ブラウザ",
+          "evidence": "README.md「画面」節",
+          "x": 40,
+          "y": 255
+        },
+        {
+          "id": "sys",
+          "name": "DC-Designer",
+          "kind": "System",
+          "description": "ポスターやスライドを AI に組み立てさせ、編集・発表・書き出しまでするアプリ",
+          "technology": "React SPA + Express",
+          "evidence": "README.md 冒頭、package.json",
+          "x": 490,
+          "y": 255,
+          "details": [
+            "作品は PosterSpec（JSON の設計図）で持つ"
+          ]
+        },
+        {
+          "id": "chatgpt",
+          "name": "OpenAI（ChatGPT）",
+          "kind": "External System",
+          "description": "サインインと、レイアウト設計などの AI 推論を受け持つ",
+          "technology": "auth.openai.com / api.openai.com",
+          "evidence": "server/chatgpt-auth.ts:15-20, server/chatgpt.ts:17,121-123",
+          "x": 490,
+          "y": 30,
+          "details": [
+            "ChatGPT プランの枠を使い、API キーは不要",
+            "サインインは OAuth（PKCE）"
+          ]
+        },
+        {
+          "id": "imgapi",
+          "name": "画像生成 API",
+          "kind": "External System",
+          "description": "API キーを使って画像を作る外部サービス",
+          "technology": "HTTPS / API キー",
+          "evidence": "server/imagegen.ts:77,107",
+          "x": 940,
+          "y": 30,
+          "details": [
+            "OpenAI Images（透過 PNG も作れる）",
+            "Google Gemini"
+          ]
+        },
+        {
+          "id": "comfy",
+          "name": "ComfyUI",
+          "kind": "External System",
+          "description": "手元の GPU で画像を作るローカルの画像生成ソフト",
+          "technology": "HTTP（ローカル）",
+          "evidence": "server/imagegen.ts:140",
+          "x": 940,
+          "y": 255,
+          "details": [
+            "接続先は環境変数 COMFYUI_URL で変える"
+          ]
+        },
+        {
+          "id": "codex",
+          "name": "Codex CLI",
+          "kind": "External System",
+          "description": "画像生成に使うコマンドラインツール。子プロセスとして動かす",
+          "technology": "子プロセス",
+          "evidence": "server/imagegen.ts:256-260,340",
+          "x": 940,
+          "y": 480,
+          "details": [
+            "既定の画像生成の方法",
+            "【推定】ChatGPT プランの枠を使う"
+          ]
+        },
+        {
+          "id": "gfonts",
+          "name": "Google Fonts",
+          "kind": "External System",
+          "description": "フォントの取得元",
+          "technology": "fonts.googleapis.com",
+          "evidence": "src/render/export.ts:57, server/fonts.ts:77-81",
+          "x": 490,
+          "y": 480,
+          "details": [
+            "SVG・PowerPoint への埋め込み用",
+            "PC へのインストール用"
+          ]
+        },
+        {
+          "id": "os",
+          "name": "OS のフォント",
+          "kind": "External System",
+          "description": "インストールしたフォントの置き場所",
+          "technology": "ファイル / レジストリ",
+          "evidence": "server/fonts.ts:6-8,27-28,137-141",
+          "x": 40,
+          "y": 480,
+          "details": [
+            "Windows・WSL はユーザーフォントとレジストリ",
+            "macOS・Linux はユーザーのフォントフォルダ"
+          ]
+        },
+        {
+          "id": "pptx",
+          "name": "PowerPoint / ファイル",
+          "kind": "External System",
+          "description": "読み込み・書き出しの相手になるファイル",
+          "technology": ".pptx / .json / 画像",
+          "evidence": "src/import/pptx.ts, src/render/export.ts:1,184-221",
+          "x": 40,
+          "y": 30,
+          "details": [
+            "PowerPoint（ノート・テーマ色・アニメーション付き）",
+            "JSON と画像ファイル"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "user",
+          "to": "sys",
+          "label": "作る・編集・発表",
+          "protocol": "ブラウザ",
+          "evidence": "README.md「画面」節"
+        },
+        {
+          "from": "sys",
+          "to": "chatgpt",
+          "label": "サインイン・推論",
+          "protocol": "HTTPS（OAuth / SSE）",
+          "evidence": "server/chatgpt-auth.ts:15-20, server/chatgpt.ts:121-123",
+          "labelX": 600,
+          "labelY": 205
+        },
+        {
+          "from": "sys",
+          "to": "imgapi",
+          "label": "画像を生成",
+          "protocol": "HTTPS",
+          "evidence": "server/imagegen.ts:77,107"
+        },
+        {
+          "from": "sys",
+          "to": "comfy",
+          "label": "画像を生成",
+          "protocol": "HTTP",
+          "evidence": "server/imagegen.ts:140-150"
+        },
+        {
+          "from": "sys",
+          "to": "codex",
+          "label": "画像を生成",
+          "protocol": "codex exec",
+          "evidence": "server/imagegen.ts:333-340"
+        },
+        {
+          "from": "sys",
+          "to": "gfonts",
+          "label": "フォントを取得",
+          "protocol": "HTTPS",
+          "evidence": "src/render/export.ts:57-59, server/fonts.ts:77-81",
+          "labelX": 600,
+          "labelY": 415
+        },
+        {
+          "from": "sys",
+          "to": "os",
+          "label": "フォントを導入",
+          "protocol": "ファイル / PowerShell",
+          "evidence": "server/fonts.ts:130-160"
+        },
+        {
+          "from": "sys",
+          "to": "pptx",
+          "label": "読み込み・書き出し",
+          "protocol": "ファイル",
+          "evidence": "src/import/pptx.ts, src/render/export.ts"
+        }
+      ],
+      "level": "context",
+      "flows": [
+        {
+          "title": "ブリーフから作る",
+          "description": "ブリーフを送ってから、レイアウトと画像がそろうまで（外から見た流れ）",
+          "steps": [
+            {
+              "from": "user",
+              "to": "sys",
+              "label": "ブリーフを送る"
+            },
+            {
+              "from": "sys",
+              "to": "chatgpt",
+              "label": "レイアウトを設計させる",
+              "note": "答えはストリームで受け取る",
+              "evidence": "server/chatgpt.ts:121-123"
+            },
+            {
+              "from": "chatgpt",
+              "to": "sys",
+              "label": "デザイン（PosterSpec）"
+            },
+            {
+              "from": "sys",
+              "to": "imgapi",
+              "label": "画像を 1 点ずつ生成",
+              "note": "設定に応じて Codex CLI や ComfyUI に頼む",
+              "evidence": "server/imagegen.ts:66-71"
+            },
+            {
+              "from": "imgapi",
+              "to": "sys",
+              "label": "画像"
+            },
+            {
+              "from": "sys",
+              "to": "user",
+              "label": "ポスターを表示"
+            }
+          ]
+        },
+        {
+          "title": "PowerPoint に書き出す",
+          "description": "デッキを PowerPoint にするとき、使ったフォントも埋め込む",
+          "steps": [
+            {
+              "from": "user",
+              "to": "sys",
+              "label": "書き出しを押す"
+            },
+            {
+              "from": "sys",
+              "to": "gfonts",
+              "label": "使った文字のフォントを取得",
+              "evidence": "server/fonts.ts:77-81,103"
+            },
+            {
+              "from": "gfonts",
+              "to": "sys",
+              "label": "フォントファイル"
+            },
+            {
+              "from": "sys",
+              "to": "pptx",
+              "label": "PowerPoint を保存",
+              "note": "フォントを EOT に変えて埋め込む",
+              "evidence": "src/render/export.ts:184-221"
+            }
+          ]
+        }
+      ],
+      "points": [
+        "AI の推論は ChatGPT のサインインで使い、API キーは要らない",
+        "画像生成は 4 つの方法から設定で選ぶ",
+        "自前のサーバーやデータベースは無く、PC 1 台で完結する"
+      ]
+    },
+    {
+      "title": "C2 コンテナ",
+      "scope": "DC-Designer の中で動くアプリと、データの置き場所",
+      "width": 1480,
+      "height": 850,
+      "boundaries": [
+        {
+          "label": "DC-Designer（1 台の PC 内）",
+          "x": 290,
+          "y": 90,
+          "width": 820,
+          "height": 740
+        }
+      ],
+      "nodes": [
+        {
+          "id": "user",
+          "name": "ユーザー",
+          "kind": "Person",
+          "description": "ブラウザで画面を開いて使う",
+          "technology": "ブラウザ（localhost:5173）",
+          "evidence": "vite.config.ts:13",
+          "x": 30,
+          "y": 140
+        },
+        {
+          "id": "spa",
+          "name": "Web アプリ（SPA）",
+          "kind": "Container",
+          "description": "画面の表示と編集を受け持つブラウザ側のアプリ",
+          "technology": "React 19 / TypeScript",
+          "evidence": "src/main.tsx:18-20,64-70, src/render/export.ts:1",
+          "x": 580,
+          "y": 140,
+          "details": [
+            "ホーム・エディタ・成果物一覧を切り替える",
+            "PowerPoint の読み込みと書き出しもここで行う"
+          ]
+        },
+        {
+          "id": "vite",
+          "name": "開発サーバー",
+          "kind": "Container",
+          "description": "開発中にアプリを配信し、API への通信を中継する",
+          "technology": "Vite 8（:5173）",
+          "evidence": "vite.config.ts:5-19",
+          "x": 830,
+          "y": 140,
+          "details": [
+            "API と画像の要求を API サーバーへ転送する",
+            "WSL でも変更を拾えるよう定期的に監視する"
+          ]
+        },
+        {
+          "id": "api",
+          "name": "API サーバー",
+          "kind": "Container",
+          "description": "AI・画像生成・保存・フォントを受け持つ手元のサーバー",
+          "technology": "Node / Express 5 / tsx（:8787）",
+          "evidence": "server/index.ts:17-29,81-268",
+          "x": 580,
+          "y": 400,
+          "details": [
+            "自分の PC からの通信だけを受け付ける",
+            "ChatGPT サインインの戻り先も受ける"
+          ]
+        },
+        {
+          "id": "bstore",
+          "name": "ブラウザストレージ",
+          "kind": "Container",
+          "description": "ブラウザの中に置く一時的な控え",
+          "technology": "localStorage / sessionStorage",
+          "evidence": "src/editor/storage.ts:18, src/editor/ChatLog.tsx:29-38, src/editor/nav.ts:14, src/editor/App.tsx:82",
+          "x": 330,
+          "y": 400,
+          "details": [
+            "編集中のデザインの控え",
+            "チャット履歴と表示設定"
+          ]
+        },
+        {
+          "id": "posters",
+          "name": "成果物ストア",
+          "kind": "Container",
+          "description": "作ったポスターとデッキを保存する",
+          "technology": "JSON ファイル",
+          "evidence": "server/library.ts:11,56,125",
+          "x": 330,
+          "y": 700,
+          "details": [
+            "1 ポスター＝1 スライドで 1 ファイル",
+            "デッキはスライドの並び順と種類を持つ"
+          ]
+        },
+        {
+          "id": "images",
+          "name": "画像ストア",
+          "kind": "Container",
+          "description": "AI が作った画像と取り込んだ画像の置き場所",
+          "technology": "画像ファイル",
+          "evidence": "server/imagegen.ts:12, server/index.ts:29",
+          "x": 580,
+          "y": 700,
+          "details": [
+            "同じ指示の画像は作り直さず使い回す"
+          ]
+        },
+        {
+          "id": "creds",
+          "name": "資格情報",
+          "kind": "Container",
+          "description": "ChatGPT のサインイン情報を保存するファイル",
+          "technology": "JSON ファイル（0600）",
+          "evidence": "server/chatgpt-auth.ts:8,28,69-71",
+          "x": 830,
+          "y": 700,
+          "details": [
+            "本人だけが読める権限で保存する"
+          ]
+        },
+        {
+          "id": "chatgpt",
+          "name": "OpenAI（ChatGPT）",
+          "kind": "External System",
+          "description": "サインインと AI 推論の相手",
+          "technology": "HTTPS",
+          "evidence": "server/chatgpt-auth.ts:15-20",
+          "x": 1220,
+          "y": 320
+        },
+        {
+          "id": "imgprov",
+          "name": "画像生成プロバイダ",
+          "kind": "External System",
+          "description": "画像を作る外部の仕組み",
+          "technology": "HTTPS / HTTP / 子プロセス",
+          "evidence": "server/imagegen.ts:48-71",
+          "x": 1220,
+          "y": 500,
+          "details": [
+            "OpenAI・Gemini・ComfyUI・Codex CLI から選ぶ",
+            "使えなければ次の方法に切り替える"
+          ]
+        },
+        {
+          "id": "gfonts",
+          "name": "Google Fonts",
+          "kind": "External System",
+          "description": "フォントの取得元",
+          "technology": "HTTPS",
+          "evidence": "src/render/export.ts:57, server/fonts.ts:77",
+          "x": 1220,
+          "y": 140
+        },
+        {
+          "id": "os",
+          "name": "OS のフォント",
+          "kind": "External System",
+          "description": "インストールしたフォントの置き場所",
+          "technology": "ファイル / PowerShell",
+          "evidence": "server/fonts.ts:6-8",
+          "x": 1220,
+          "y": 680
+        }
+      ],
+      "edges": [
+        {
+          "from": "user",
+          "to": "spa",
+          "label": "操作する",
+          "protocol": "ブラウザ",
+          "evidence": "README.md「画面」節",
+          "id": "use"
+        },
+        {
+          "from": "spa",
+          "to": "vite",
+          "label": "API・画像を頼む",
+          "protocol": "HTTP（同一オリジン）",
+          "evidence": "src/editor/api.ts:5,20",
+          "id": "proxy",
+          "labelX": 815,
+          "labelY": 112
+        },
+        {
+          "from": "vite",
+          "to": "api",
+          "label": "転送する",
+          "protocol": "HTTP 127.0.0.1",
+          "evidence": "vite.config.ts:8,16-19",
+          "id": "fwd"
+        },
+        {
+          "from": "spa",
+          "to": "bstore",
+          "label": "控えを書く",
+          "protocol": "Web Storage",
+          "evidence": "src/editor/storage.ts:18, src/editor/ChatLog.tsx:38",
+          "id": "bs"
+        },
+        {
+          "from": "spa",
+          "to": "gfonts",
+          "label": "SVG 用に取得",
+          "protocol": "HTTPS",
+          "evidence": "src/render/export.ts:57-59",
+          "id": "svgfont",
+          "via": [
+            [
+              690,
+              50
+            ],
+            [
+              1330,
+              50
+            ]
+          ],
+          "labelX": 1000,
+          "labelY": 50
+        },
+        {
+          "from": "api",
+          "to": "posters",
+          "label": "読み書きする",
+          "protocol": "ファイル",
+          "evidence": "server/library.ts:56-74,125-219",
+          "id": "save"
+        },
+        {
+          "from": "api",
+          "to": "images",
+          "label": "保存・配信する",
+          "protocol": "ファイル",
+          "evidence": "server/imagegen.ts:12, server/index.ts:29",
+          "id": "img"
+        },
+        {
+          "from": "api",
+          "to": "creds",
+          "label": "トークンを保存",
+          "protocol": "ファイル",
+          "evidence": "server/chatgpt-auth.ts:69-71",
+          "id": "cred"
+        },
+        {
+          "from": "api",
+          "to": "chatgpt",
+          "label": "サインイン・推論",
+          "protocol": "HTTPS",
+          "evidence": "server/chatgpt.ts:121-123",
+          "id": "gpt",
+          "labelX": 1150,
+          "labelY": 385
+        },
+        {
+          "from": "api",
+          "to": "imgprov",
+          "label": "画像を生成",
+          "protocol": "各方式",
+          "evidence": "server/imagegen.ts:493",
+          "id": "gen",
+          "labelX": 1150,
+          "labelY": 505
+        },
+        {
+          "from": "api",
+          "to": "gfonts",
+          "label": "フォントを取得",
+          "protocol": "HTTPS",
+          "evidence": "server/fonts.ts:77-81,103",
+          "id": "font",
+          "labelX": 1150,
+          "labelY": 268
+        },
+        {
+          "from": "api",
+          "to": "os",
+          "label": "フォントを導入",
+          "protocol": "ファイル / レジストリ",
+          "evidence": "server/fonts.ts:130-160",
+          "id": "inst",
+          "labelX": 1150,
+          "labelY": 640
+        }
+      ],
+      "level": "container",
+      "flows": [
+        {
+          "title": "レイアウトを作って保存する",
+          "description": "ブリーフを送ってから、AI が返したデザインを開いて自動保存するまで",
+          "steps": [
+            {
+              "edge": "use",
+              "label": "ブリーフを送る"
+            },
+            {
+              "edge": "proxy",
+              "label": "設計を頼む",
+              "protocol": "POST /api/plan",
+              "evidence": "src/editor/App.tsx:309, src/editor/api.ts:114"
+            },
+            {
+              "edge": "fwd",
+              "label": "転送する"
+            },
+            {
+              "edge": "gpt",
+              "label": "推論を頼む（ストリーム）",
+              "note": "形式を検証し、だめなら 1 回だけ直させる",
+              "evidence": "server/planner.ts:134, server/chatgpt.ts:121-123"
+            },
+            {
+              "edge": "gpt",
+              "reverse": true,
+              "label": "デザイン（PosterSpec）"
+            },
+            {
+              "edge": "fwd",
+              "reverse": true,
+              "label": "デザインを返す"
+            },
+            {
+              "edge": "proxy",
+              "reverse": true,
+              "label": "デザインを返す"
+            },
+            {
+              "edge": "bs",
+              "label": "控えを書く",
+              "evidence": "src/editor/storage.ts:18"
+            },
+            {
+              "edge": "proxy",
+              "label": "保存を頼む",
+              "note": "0.8 秒後に自動保存。画像生成と並行して進む",
+              "protocol": "POST /api/posters",
+              "evidence": "src/editor/useAutoSave.ts:202"
+            },
+            {
+              "edge": "fwd",
+              "label": "転送する"
+            },
+            {
+              "edge": "save",
+              "label": "ファイルに書く",
+              "evidence": "server/library.ts:65-72"
+            },
+            {
+              "edge": "use",
+              "reverse": true,
+              "label": "新しいポスターを表示"
+            }
+          ]
+        },
+        {
+          "title": "画像を生成して表示する",
+          "description": "未生成の画像を 1 点ずつ頼み、できた画像を読み込む",
+          "steps": [
+            {
+              "edge": "proxy",
+              "label": "画像を頼む",
+              "protocol": "POST /api/asset",
+              "evidence": "src/editor/App.tsx:668"
+            },
+            {
+              "edge": "fwd",
+              "label": "転送する"
+            },
+            {
+              "edge": "img",
+              "label": "キャッシュを確かめる",
+              "note": "同じ条件の画像があればそれを返す",
+              "evidence": "server/imagegen.ts:503"
+            },
+            {
+              "edge": "gen",
+              "label": "画像を生成",
+              "note": "方法は設定と使えるキーで決まる",
+              "evidence": "server/imagegen.ts:54-71"
+            },
+            {
+              "edge": "gen",
+              "reverse": true,
+              "label": "画像データ"
+            },
+            {
+              "edge": "img",
+              "label": "画像を保存"
+            },
+            {
+              "edge": "fwd",
+              "reverse": true,
+              "label": "画像の場所を返す"
+            },
+            {
+              "edge": "proxy",
+              "reverse": true,
+              "label": "画像の場所を返す"
+            },
+            {
+              "edge": "proxy",
+              "label": "画像を読み込む",
+              "note": "画像の読み込みも Vite が転送する",
+              "protocol": "GET /generated/…",
+              "evidence": "vite.config.ts:16-19"
+            },
+            {
+              "edge": "fwd",
+              "label": "転送する"
+            },
+            {
+              "edge": "img",
+              "label": "静的ファイルを読む",
+              "evidence": "server/index.ts:29"
+            },
+            {
+              "edge": "img",
+              "reverse": true,
+              "label": "画像ファイル"
+            },
+            {
+              "edge": "fwd",
+              "reverse": true,
+              "label": "画像ファイル"
+            },
+            {
+              "edge": "proxy",
+              "reverse": true,
+              "label": "画像ファイル"
+            }
+          ]
+        },
+        {
+          "title": "PowerPoint に書き出す",
+          "description": "フォントの変換だけサーバーに頼み、PowerPoint はブラウザで組み立てる",
+          "steps": [
+            {
+              "edge": "use",
+              "label": "書き出しを押す"
+            },
+            {
+              "edge": "proxy",
+              "label": "埋め込みを頼む",
+              "protocol": "POST /api/fonts/embed",
+              "evidence": "src/render/export.ts:189"
+            },
+            {
+              "edge": "fwd",
+              "label": "転送する"
+            },
+            {
+              "edge": "font",
+              "label": "使った文字のフォントを取得",
+              "evidence": "server/fonts.ts:77-81,103-115"
+            },
+            {
+              "edge": "font",
+              "reverse": true,
+              "label": "フォントファイル"
+            },
+            {
+              "edge": "fwd",
+              "reverse": true,
+              "label": "変換したフォント",
+              "note": "EOT に変換。埋め込み禁止のフォントは除く",
+              "evidence": "server/eot.ts"
+            },
+            {
+              "edge": "proxy",
+              "reverse": true,
+              "label": "変換したフォント"
+            },
+            {
+              "edge": "use",
+              "reverse": true,
+              "label": "PowerPoint をダウンロード",
+              "note": "ブラウザで組み立て、フォントとアニメを足す",
+              "evidence": "src/render/export.ts:132-136,184-221"
+            }
+          ]
+        }
+      ],
+      "points": [
+        "ブラウザのアプリと手元の API サーバーの 2 つでできている",
+        "保存はすべてファイル。データベースは無い",
+        "外部との通信はほぼ API サーバー経由（フォントだけ例外）"
+      ]
+    },
+    {
+      "title": "C3 コンポーネント：API サーバー",
+      "scope": "C2 の「API サーバー」の中身",
+      "width": 1720,
+      "height": 860,
+      "boundaries": [
+        {
+          "label": "API サーバー（server/）",
+          "x": 360,
+          "y": 10,
+          "width": 1000,
+          "height": 840
+        }
+      ],
+      "nodes": [
+        {
+          "id": "spa",
+          "name": "Web アプリ（SPA）",
+          "kind": "External Container",
+          "description": "API を呼ぶブラウザ側のアプリ",
+          "technology": "React",
+          "evidence": "src/editor/api.ts",
+          "x": 30,
+          "y": 360,
+          "details": [
+            "サインインの戻り先だけはブラウザが直接開く"
+          ]
+        },
+        {
+          "id": "index",
+          "name": "ルーター",
+          "kind": "Component",
+          "description": "要求を受けて、担当の部品に振り分ける",
+          "technology": "index.ts / Express 5",
+          "evidence": "server/index.ts:21-29,81-268",
+          "x": 390,
+          "y": 360,
+          "details": [
+            "自分の PC 以外からの要求は断る",
+            "進み具合を少しずつ返せる",
+            "接続が切れたら処理を止める"
+          ]
+        },
+        {
+          "id": "planner",
+          "name": "AI デザイン生成",
+          "kind": "Component",
+          "description": "AI にデザインを作らせ、形式を検証する",
+          "technology": "planner.ts / zod",
+          "evidence": "server/planner.ts:127-134,155,229-257,289,364,390,455,509, server/index.ts:134-215",
+          "x": 750,
+          "y": 40,
+          "details": [
+            "新規作成・修正・スライド追加・台本・再現",
+            "形式が違えば 1 回だけ直させる",
+            "台本は 8 枚ずつ、再現は 6 分割で並行"
+          ]
+        },
+        {
+          "id": "chatgpt",
+          "name": "ChatGPT 呼び出し",
+          "kind": "Component",
+          "description": "ChatGPT に問い合わせ、答えを受け取る",
+          "technology": "chatgpt.ts / openai SDK",
+          "evidence": "server/chatgpt.ts:3,17,48,121-123, server/index.ts:81-95",
+          "x": 1110,
+          "y": 220,
+          "details": [
+            "答えはストリームで受け取る",
+            "プラン枠のエラーを日本語にする"
+          ]
+        },
+        {
+          "id": "auth",
+          "name": "ChatGPT サインイン",
+          "kind": "Component",
+          "description": "ChatGPT へのサインインとトークンを管理する",
+          "technology": "chatgpt-auth.ts / OAuth 2.0・PKCE",
+          "evidence": "server/chatgpt-auth.ts:15-28,69-71,111-113, server/index.ts:96-115",
+          "x": 1110,
+          "y": 40,
+          "details": [
+            "期限の 60 秒前に自動で更新する",
+            "ID トークンの署名を確かめる"
+          ]
+        },
+        {
+          "id": "fonts",
+          "name": "フォント",
+          "kind": "Component",
+          "description": "フォントの提案・インストール・埋め込みを受け持つ",
+          "technology": "fonts.ts / PowerShell",
+          "evidence": "server/fonts.ts:70,103,160,208, server/index.ts:228-243",
+          "x": 750,
+          "y": 380,
+          "details": [
+            "文面の文字が足りるフォントから AI が 3 案出す",
+            "Google Fonts から取って PC に入れる"
+          ]
+        },
+        {
+          "id": "eot",
+          "name": "EOT 変換",
+          "kind": "Component",
+          "description": "フォントを PowerPoint に埋め込める形式に変える",
+          "technology": "eot.ts",
+          "evidence": "server/eot.ts:42,60, server/fonts.ts:17",
+          "x": 750,
+          "y": 530,
+          "details": [
+            "埋め込み禁止のフォントは除く"
+          ]
+        },
+        {
+          "id": "imagegen",
+          "name": "画像生成",
+          "kind": "Component",
+          "description": "画像を作るか、作った画像を使い回す",
+          "technology": "imagegen.ts",
+          "evidence": "server/imagegen.ts:48-71,312-393,493, server/index.ts:217-226",
+          "x": 750,
+          "y": 720,
+          "details": [
+            "使える方法を選び、だめなら次に切り替える",
+            "Codex は順番待ちと時間切れ付き",
+            "取り込んだ画像も保存する"
+          ]
+        },
+        {
+          "id": "library",
+          "name": "成果物の保存",
+          "kind": "Component",
+          "description": "ポスターとデッキを保存・複製・削除する",
+          "technology": "library.ts / node:fs",
+          "evidence": "server/library.ts:56-219, server/index.ts:244-264",
+          "x": 390,
+          "y": 720,
+          "details": [
+            "どこからも使われていない画像だけを消せる"
+          ]
+        },
+        {
+          "id": "store",
+          "name": "成果物ストア",
+          "kind": "External Container",
+          "description": "ポスターとデッキのファイル",
+          "technology": "JSON ファイル",
+          "evidence": "server/library.ts:11",
+          "x": 30,
+          "y": 720
+        },
+        {
+          "id": "imgstore",
+          "name": "画像ストア",
+          "kind": "External Container",
+          "description": "画像ファイルの置き場所",
+          "technology": "画像ファイル",
+          "evidence": "server/imagegen.ts:12",
+          "x": 1110,
+          "y": 530
+        },
+        {
+          "id": "openai",
+          "name": "OpenAI（ChatGPT）",
+          "kind": "External System",
+          "description": "サインインと推論の窓口",
+          "technology": "HTTPS",
+          "evidence": "server/chatgpt-auth.ts:15-20",
+          "x": 1470,
+          "y": 40
+        },
+        {
+          "id": "gfonts",
+          "name": "Google Fonts",
+          "kind": "External System",
+          "description": "フォントの取得元",
+          "technology": "HTTPS",
+          "evidence": "server/fonts.ts:77-81",
+          "x": 1470,
+          "y": 300
+        },
+        {
+          "id": "os",
+          "name": "OS のフォント",
+          "kind": "External System",
+          "description": "インストールしたフォントの置き場所",
+          "technology": "ファイル / PowerShell",
+          "evidence": "server/fonts.ts:130-160",
+          "x": 1470,
+          "y": 440
+        },
+        {
+          "id": "imgprov",
+          "name": "画像生成プロバイダ",
+          "kind": "External System",
+          "description": "画像を作る外部の仕組み",
+          "technology": "HTTPS / HTTP / 子プロセス",
+          "evidence": "server/imagegen.ts:77,107,140,340",
+          "x": 1470,
+          "y": 720,
+          "details": [
+            "OpenAI・Gemini・ComfyUI・Codex CLI から選ぶ",
+            "使えなければ次の方法に切り替える"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "spa",
+          "to": "index",
+          "label": "API を呼ぶ",
+          "protocol": "HTTP（JSON・進捗）",
+          "evidence": "src/editor/api.ts:5,20",
+          "labelX": 320,
+          "labelY": 403,
+          "id": "req"
+        },
+        {
+          "from": "index",
+          "to": "planner",
+          "label": "生成・修正を頼む",
+          "protocol": "関数呼び出し",
+          "evidence": "server/index.ts:6,134-215",
+          "labelX": 660,
+          "labelY": 240,
+          "id": "plan"
+        },
+        {
+          "from": "index",
+          "to": "auth",
+          "label": "サインインを頼む",
+          "protocol": "関数呼び出し",
+          "evidence": "server/index.ts:8,96-115",
+          "labelX": 760,
+          "labelY": 290,
+          "id": "login"
+        },
+        {
+          "from": "index",
+          "to": "fonts",
+          "label": "フォント処理を頼む",
+          "protocol": "関数呼び出し",
+          "evidence": "server/index.ts:10,228-243",
+          "labelX": 680,
+          "labelY": 405,
+          "id": "fonts"
+        },
+        {
+          "from": "index",
+          "to": "imagegen",
+          "label": "画像を頼む",
+          "protocol": "関数呼び出し",
+          "evidence": "server/index.ts:7,217-226",
+          "labelX": 610,
+          "labelY": 560,
+          "id": "asset"
+        },
+        {
+          "from": "index",
+          "to": "library",
+          "label": "保存を頼む",
+          "protocol": "関数呼び出し",
+          "evidence": "server/index.ts:12,244-264",
+          "labelX": 440,
+          "labelY": 600,
+          "id": "lib"
+        },
+        {
+          "from": "planner",
+          "to": "chatgpt",
+          "label": "問い合わせる",
+          "protocol": "関数呼び出し",
+          "evidence": "server/planner.ts:9",
+          "labelX": 1055,
+          "labelY": 165,
+          "id": "ask"
+        },
+        {
+          "from": "fonts",
+          "to": "chatgpt",
+          "label": "提案を頼む",
+          "protocol": "関数呼び出し",
+          "evidence": "server/fonts.ts:19,208",
+          "labelX": 1010,
+          "labelY": 355,
+          "id": "suggest"
+        },
+        {
+          "from": "chatgpt",
+          "to": "auth",
+          "label": "トークンを取る",
+          "protocol": "関数呼び出し",
+          "evidence": "server/chatgpt.ts:10,121",
+          "labelX": 1285,
+          "labelY": 180,
+          "id": "token"
+        },
+        {
+          "from": "chatgpt",
+          "to": "openai",
+          "label": "推論を頼む",
+          "protocol": "HTTPS / SSE",
+          "evidence": "server/chatgpt.ts:121-123",
+          "labelX": 1410,
+          "labelY": 190,
+          "id": "resp"
+        },
+        {
+          "from": "auth",
+          "to": "openai",
+          "label": "サインイン・鍵を取得",
+          "protocol": "HTTPS",
+          "evidence": "server/chatgpt-auth.ts:15-20,112",
+          "labelX": 1400,
+          "labelY": 83,
+          "id": "oauth"
+        },
+        {
+          "from": "fonts",
+          "to": "eot",
+          "label": "EOT に変換",
+          "protocol": "",
+          "evidence": "server/fonts.ts:17,103",
+          "labelX": 915,
+          "labelY": 518,
+          "id": "eot"
+        },
+        {
+          "from": "fonts",
+          "to": "gfonts",
+          "label": "フォントを取得",
+          "protocol": "HTTPS",
+          "evidence": "server/fonts.ts:77-81",
+          "labelX": 1400,
+          "labelY": 362,
+          "id": "gf"
+        },
+        {
+          "from": "fonts",
+          "to": "os",
+          "label": "フォントを入れる",
+          "protocol": "ファイル / PowerShell",
+          "evidence": "server/fonts.ts:130-160",
+          "labelX": 1400,
+          "labelY": 470,
+          "id": "os"
+        },
+        {
+          "from": "imagegen",
+          "to": "imgstore",
+          "label": "保存・キャッシュ",
+          "protocol": "ファイル",
+          "evidence": "server/imagegen.ts:12",
+          "labelX": 1060,
+          "labelY": 655,
+          "id": "store"
+        },
+        {
+          "from": "imagegen",
+          "to": "imgprov",
+          "label": "生成を依頼",
+          "protocol": "各方式",
+          "evidence": "server/imagegen.ts:493",
+          "labelX": 1290,
+          "labelY": 763,
+          "id": "prov"
+        },
+        {
+          "from": "library",
+          "to": "store",
+          "label": "読み書きする",
+          "protocol": "ファイル",
+          "evidence": "server/library.ts:11,56-219",
+          "labelX": 320,
+          "labelY": 763,
+          "id": "files"
+        }
+      ],
+      "level": "component",
+      "flows": [
+        {
+          "title": "チャットで修正する",
+          "description": "チャットの指示でデザインを直すとき",
+          "steps": [
+            {
+              "edge": "req",
+              "label": "修正を頼む",
+              "protocol": "POST /api/edit",
+              "evidence": "src/editor/api.ts:126"
+            },
+            {
+              "edge": "plan",
+              "label": "修正を渡す",
+              "evidence": "server/index.ts:178-185"
+            },
+            {
+              "edge": "ask",
+              "label": "問い合わせる"
+            },
+            {
+              "edge": "token",
+              "label": "トークンを取る",
+              "note": "期限が近ければ更新する",
+              "evidence": "server/chatgpt-auth.ts:323"
+            },
+            {
+              "edge": "token",
+              "reverse": true,
+              "label": "トークン"
+            },
+            {
+              "edge": "resp",
+              "label": "推論を頼む（ストリーム）",
+              "evidence": "server/chatgpt.ts:121-123"
+            },
+            {
+              "edge": "resp",
+              "reverse": true,
+              "label": "テキストのストリーム"
+            },
+            {
+              "edge": "ask",
+              "reverse": true,
+              "label": "応答テキスト"
+            },
+            {
+              "edge": "plan",
+              "reverse": true,
+              "label": "返事と直したデザイン",
+              "note": "形式を検証済み"
+            },
+            {
+              "edge": "req",
+              "reverse": true,
+              "label": "結果を返す"
+            }
+          ]
+        },
+        {
+          "title": "PowerPoint 用にフォントを埋め込む",
+          "description": "PowerPoint 用に、フォントを埋め込める形にする",
+          "steps": [
+            {
+              "edge": "req",
+              "label": "埋め込みを頼む",
+              "protocol": "POST /api/fonts/embed"
+            },
+            {
+              "edge": "fonts",
+              "label": "埋め込みを渡す",
+              "evidence": "server/index.ts:234-243"
+            },
+            {
+              "edge": "gf",
+              "label": "フォントを取得",
+              "evidence": "server/fonts.ts:77-81"
+            },
+            {
+              "edge": "gf",
+              "reverse": true,
+              "label": "フォントファイル"
+            },
+            {
+              "edge": "eot",
+              "label": "EOT に変換",
+              "note": "埋め込み禁止なら入れない",
+              "evidence": "server/eot.ts:42,60"
+            },
+            {
+              "edge": "eot",
+              "reverse": true,
+              "label": "変換したフォント"
+            },
+            {
+              "edge": "fonts",
+              "reverse": true,
+              "label": "埋め込むフォントを返す"
+            },
+            {
+              "edge": "req",
+              "reverse": true,
+              "label": "結果を返す"
+            }
+          ]
+        },
+        {
+          "title": "画像を 1 点生成する",
+          "description": "画像を 1 点作る。同じ画像があれば作らない",
+          "steps": [
+            {
+              "edge": "req",
+              "label": "画像を頼む",
+              "protocol": "POST /api/asset"
+            },
+            {
+              "edge": "asset",
+              "label": "画像を渡す",
+              "evidence": "server/index.ts:217"
+            },
+            {
+              "edge": "store",
+              "label": "キャッシュを確かめる",
+              "evidence": "server/imagegen.ts:503"
+            },
+            {
+              "edge": "prov",
+              "label": "画像を作る",
+              "note": "Codex は順番待ちと時間切れ付き",
+              "evidence": "server/imagegen.ts:312-393"
+            },
+            {
+              "edge": "prov",
+              "reverse": true,
+              "label": "画像データ"
+            },
+            {
+              "edge": "store",
+              "label": "画像を保存"
+            },
+            {
+              "edge": "asset",
+              "reverse": true,
+              "label": "画像の場所を返す"
+            },
+            {
+              "edge": "req",
+              "reverse": true,
+              "label": "結果を返す"
+            }
+          ]
+        }
+      ],
+      "points": [
+        "入口のルーターは振り分けるだけで、処理は役割ごとに分かれている",
+        "AI を使う処理はすべて「ChatGPT 呼び出し」を通る",
+        "サインイン情報の扱いは 1 つの部品に閉じている"
+      ]
+    },
+    {
+      "title": "C3 コンポーネント：Web アプリ（SPA）",
+      "scope": "C2 の「Web アプリ（SPA）」の中身",
+      "width": 1720,
+      "height": 880,
+      "boundaries": [
+        {
+          "label": "Web アプリ（src/）",
+          "x": 360,
+          "y": 10,
+          "width": 1000,
+          "height": 860
+        }
+      ],
+      "nodes": [
+        {
+          "id": "user",
+          "name": "ユーザー",
+          "kind": "Person",
+          "description": "ブラウザで操作する",
+          "technology": "",
+          "evidence": "README.md「画面」節",
+          "x": 30,
+          "y": 60
+        },
+        {
+          "id": "entry",
+          "name": "エントリ",
+          "kind": "Component",
+          "description": "URL を見て、開く画面を選ぶ",
+          "technology": "main.tsx",
+          "evidence": "src/main.tsx:18-20,40-52,64-70",
+          "x": 390,
+          "y": 60,
+          "details": [
+            "ホーム・エディタ・成果物・描画専用",
+            "描画専用はサムネイル作りにも使う"
+          ]
+        },
+        {
+          "id": "panels",
+          "name": "編集パネル",
+          "kind": "Component",
+          "description": "エディタの周りの操作パネル",
+          "technology": "editor/*.tsx",
+          "evidence": "src/editor/ のファイル一覧",
+          "x": 750,
+          "y": 60,
+          "details": [
+            "プロパティ・重ね順・AI チャット",
+            "スライド一覧・台本・フォント選択",
+            "選択ハンドルとスナップ"
+          ]
+        },
+        {
+          "id": "presenter",
+          "name": "発表",
+          "kind": "Component",
+          "description": "スライドショーと発表者ビューを出す",
+          "technology": "Presenter.tsx ほか",
+          "evidence": "src/editor/Presenter.tsx, src/editor/PresenterView.tsx, src/render/animatePreview.ts",
+          "x": 1110,
+          "y": 60,
+          "details": [
+            "クリックごとにアニメーションを進める",
+            "発表者ビューは別ウィンドウ"
+          ]
+        },
+        {
+          "id": "screens",
+          "name": "画面（エディタ本体）",
+          "kind": "Component",
+          "description": "ホーム・成果物一覧・エディタ本体の画面",
+          "technology": "App.tsx・Home.tsx・Library.tsx",
+          "evidence": "src/editor/App.tsx:43-47,82,138,309,668",
+          "x": 750,
+          "y": 300,
+          "details": [
+            "キャンバス操作・ショートカット・元に戻す",
+            "AI の実行と通知"
+          ]
+        },
+        {
+          "id": "hooks",
+          "name": "状態フック",
+          "kind": "Component",
+          "description": "編集の状態を持ち、履歴と保存を管理する",
+          "technology": "React hooks",
+          "evidence": "src/editor/useAutoSave.ts:73-102, src/editor/App.tsx:43-47",
+          "x": 390,
+          "y": 300,
+          "details": [
+            "元に戻すはスライドごと",
+            "0.8 秒後に自動保存し、失敗したら再送"
+          ]
+        },
+        {
+          "id": "io",
+          "name": "入出力",
+          "kind": "Component",
+          "description": "PowerPoint の読み込みと、各形式への書き出し",
+          "technology": "pptx.ts / export.ts",
+          "evidence": "src/render/export.ts:1,57,184-221, src/import/pptx.ts",
+          "x": 1110,
+          "y": 300,
+          "details": [
+            "SVG・PNG・PowerPoint に書き出す",
+            "使った文字だけのフォントを埋め込む"
+          ]
+        },
+        {
+          "id": "specops",
+          "name": "デザイン操作",
+          "kind": "Component",
+          "description": "デザインを変える処理をまとめたもの（画面に依存しない）",
+          "technology": "specOps.ts ほか",
+          "evidence": "src/editor/specOps.ts, src/editor/slideRefs.ts, src/editor/addSlide.ts, src/editor/notes.ts",
+          "x": 1110,
+          "y": 540,
+          "details": [
+            "「スライド 8」などの指し示しを解釈する",
+            "スラッシュコマンド・スライド追加・台本"
+          ]
+        },
+        {
+          "id": "render",
+          "name": "描画",
+          "kind": "Component",
+          "description": "デザインを SVG で描く",
+          "technology": "Poster.tsx ほか",
+          "evidence": "src/render/Poster.tsx, src/components/index.tsx",
+          "x": 750,
+          "y": 540,
+          "details": [
+            "色などはテーマから引く",
+            "QR やボタン風の部品も描く"
+          ]
+        },
+        {
+          "id": "apiclient",
+          "name": "API クライアント",
+          "kind": "Component",
+          "description": "API サーバーとの通信をまとめたもの",
+          "technology": "editor/api.ts",
+          "evidence": "src/editor/api.ts:5,20,105",
+          "x": 390,
+          "y": 540,
+          "details": [
+            "進み具合の受け取りと中止",
+            "サインイン完了を他のタブに知らせる"
+          ]
+        },
+        {
+          "id": "defs",
+          "name": "定義（共有）",
+          "kind": "Component",
+          "description": "デザインの形式・テーマ・部品・フォントの定義",
+          "technology": "TypeScript / zod",
+          "evidence": "src/schema.ts, server/planner.ts:3-8, server/fonts.ts:18",
+          "x": 750,
+          "y": 740,
+          "details": [
+            "API サーバーと AI への指示でも使う"
+          ]
+        },
+        {
+          "id": "bstore",
+          "name": "ブラウザストレージ",
+          "kind": "External Container",
+          "description": "ブラウザの中の控え",
+          "technology": "Web Storage",
+          "evidence": "src/editor/storage.ts:18",
+          "x": 30,
+          "y": 300
+        },
+        {
+          "id": "apisrv",
+          "name": "API サーバー",
+          "kind": "External Container",
+          "description": "Vite 経由で呼ぶ手元のサーバー",
+          "technology": "Express",
+          "evidence": "vite.config.ts:16-19",
+          "x": 30,
+          "y": 540
+        },
+        {
+          "id": "gfonts",
+          "name": "Google Fonts",
+          "kind": "External System",
+          "description": "SVG 書き出し用のフォントの取得元",
+          "technology": "HTTPS",
+          "evidence": "src/render/export.ts:57-59",
+          "x": 1470,
+          "y": 300
+        }
+      ],
+      "edges": [
+        {
+          "from": "user",
+          "to": "entry",
+          "label": "開く",
+          "protocol": "URL",
+          "evidence": "src/main.tsx:64-70",
+          "labelX": 320,
+          "labelY": 103,
+          "id": "open"
+        },
+        {
+          "from": "entry",
+          "to": "screens",
+          "label": "画面を出す",
+          "protocol": "",
+          "evidence": "src/main.tsx:69-70",
+          "labelX": 650,
+          "labelY": 215,
+          "id": "show"
+        },
+        {
+          "from": "screens",
+          "to": "panels",
+          "label": "状態と操作を渡す",
+          "protocol": "props",
+          "evidence": "src/editor/App.tsx",
+          "labelX": 935,
+          "labelY": 240,
+          "id": "panels"
+        },
+        {
+          "from": "screens",
+          "to": "presenter",
+          "label": "発表を開始",
+          "protocol": "",
+          "evidence": "src/editor/App.tsx",
+          "labelX": 1085,
+          "labelY": 205
+        },
+        {
+          "from": "screens",
+          "to": "hooks",
+          "label": "状態を使う",
+          "protocol": "",
+          "evidence": "src/editor/App.tsx:43-47",
+          "labelX": 680,
+          "labelY": 343,
+          "id": "hooks"
+        },
+        {
+          "from": "screens",
+          "to": "io",
+          "label": "読み込み・書き出し",
+          "protocol": "",
+          "evidence": "src/render/export.ts",
+          "labelX": 1040,
+          "labelY": 343,
+          "id": "io"
+        },
+        {
+          "from": "screens",
+          "to": "specops",
+          "label": "デザインを変える",
+          "protocol": "",
+          "evidence": "src/editor/specOps.ts",
+          "labelX": 1090,
+          "labelY": 480,
+          "id": "ops"
+        },
+        {
+          "from": "screens",
+          "to": "render",
+          "label": "キャンバスを描く",
+          "protocol": "",
+          "evidence": "src/render/Poster.tsx",
+          "labelX": 930,
+          "labelY": 480,
+          "id": "draw"
+        },
+        {
+          "from": "screens",
+          "to": "apiclient",
+          "label": "AI・画像を頼む",
+          "protocol": "",
+          "evidence": "src/editor/App.tsx:309,668",
+          "labelX": 640,
+          "labelY": 485,
+          "id": "ai"
+        },
+        {
+          "from": "hooks",
+          "to": "bstore",
+          "label": "控えを保存",
+          "protocol": "Web Storage",
+          "evidence": "src/editor/storage.ts:18",
+          "labelX": 320,
+          "labelY": 343,
+          "id": "bs"
+        },
+        {
+          "from": "hooks",
+          "to": "apiclient",
+          "label": "自動保存",
+          "protocol": "",
+          "evidence": "src/editor/useAutoSave.ts:73-102",
+          "labelX": 560,
+          "labelY": 480,
+          "id": "autosave"
+        },
+        {
+          "from": "apiclient",
+          "to": "apisrv",
+          "label": "API を呼ぶ",
+          "protocol": "HTTP",
+          "evidence": "src/editor/api.ts:5,20",
+          "labelX": 320,
+          "labelY": 583,
+          "id": "http"
+        },
+        {
+          "from": "io",
+          "to": "gfonts",
+          "label": "フォントを取得",
+          "protocol": "HTTPS",
+          "evidence": "src/render/export.ts:57-59",
+          "labelX": 1400,
+          "labelY": 343,
+          "id": "gf"
+        },
+        {
+          "from": "render",
+          "to": "defs",
+          "label": "定義を引く",
+          "protocol": "import",
+          "evidence": "src/render/Poster.tsx",
+          "labelX": 930,
+          "labelY": 700,
+          "id": "defs"
+        },
+        {
+          "from": "specops",
+          "to": "defs",
+          "label": "形式を検証",
+          "protocol": "import",
+          "evidence": "src/schema.ts",
+          "labelX": 1090,
+          "labelY": 700,
+          "id": "validate"
+        },
+        {
+          "id": "embed",
+          "from": "io",
+          "to": "apiclient",
+          "label": "埋め込みを頼む",
+          "protocol": "",
+          "evidence": "src/render/export.ts:189",
+          "labelX": 1075,
+          "labelY": 430,
+          "description": "PowerPoint に書き出すとき、フォントの変換をサーバーに頼む"
+        }
+      ],
+      "level": "component",
+      "flows": [
+        {
+          "title": "編集して自動保存する",
+          "description": "デザインを変えると描き直し、0.8 秒後に控えとサーバーへ保存する",
+          "steps": [
+            {
+              "edge": "ops",
+              "label": "デザインを変える"
+            },
+            {
+              "edge": "draw",
+              "label": "キャンバスを描き直す"
+            },
+            {
+              "edge": "defs",
+              "label": "テーマ・カタログを引く"
+            },
+            {
+              "edge": "hooks",
+              "label": "履歴に積む・保存を予約",
+              "evidence": "src/editor/App.tsx:43-47"
+            },
+            {
+              "edge": "bs",
+              "label": "控えを書く",
+              "evidence": "src/editor/storage.ts:18"
+            },
+            {
+              "edge": "autosave",
+              "label": "0.8 秒後に保存",
+              "evidence": "src/editor/useAutoSave.ts:202"
+            },
+            {
+              "edge": "http",
+              "label": "保存を頼む",
+              "protocol": "PUT /api/posters/:id"
+            },
+            {
+              "edge": "http",
+              "reverse": true,
+              "label": "保存済みの成果物"
+            }
+          ]
+        },
+        {
+          "title": "PowerPoint に書き出す",
+          "description": "書き出しはブラウザで行い、フォントの EOT だけサーバーに頼む",
+          "steps": [
+            {
+              "edge": "io",
+              "label": "全スライドを書き出す",
+              "evidence": "src/editor/App.tsx:856"
+            },
+            {
+              "edge": "embed",
+              "label": "埋め込みを頼む"
+            },
+            {
+              "edge": "http",
+              "label": "埋め込みを頼む",
+              "protocol": "POST /api/fonts/embed"
+            },
+            {
+              "edge": "http",
+              "reverse": true,
+              "label": "変換したフォント"
+            },
+            {
+              "edge": "embed",
+              "reverse": true,
+              "label": "フォントデータ"
+            },
+            {
+              "edge": "io",
+              "reverse": true,
+              "label": "PowerPoint をダウンロード",
+              "evidence": "src/render/export.ts:132-136"
+            }
+          ]
+        }
+      ],
+      "points": [
+        "エディタ本体が状態と操作をまとめ、各パネルに渡す",
+        "描画は独立していて、サムネイルや描画専用画面でも使う",
+        "デザインの形式の定義は API サーバーと共有している"
+      ]
+    },
+    {
+      "title": "動的図：ブリーフからポスターを作る",
+      "scope": "ホームでブリーフを送ってから、画像がそろうまで。番号が順番",
+      "width": 1720,
+      "height": 640,
+      "nodes": [
+        {
+          "id": "user",
+          "name": "ユーザー",
+          "kind": "Person",
+          "description": "ブリーフを書いて送る",
+          "technology": "",
+          "evidence": "README.md「画面」節",
+          "x": 30,
+          "y": 60
+        },
+        {
+          "id": "home",
+          "name": "ホーム画面",
+          "kind": "Component",
+          "description": "ブリーフを預けてエディタへ移る",
+          "technology": "Home.tsx",
+          "evidence": "src/editor/nav.ts:14, src/editor/App.tsx:82",
+          "x": 390,
+          "y": 60
+        },
+        {
+          "id": "app",
+          "name": "エディタ",
+          "kind": "Component",
+          "description": "AI に設計を頼み、返ったデザインを描いて保存する",
+          "technology": "App.tsx",
+          "evidence": "src/editor/App.tsx:82,138,309,668",
+          "x": 750,
+          "y": 60,
+          "details": [
+            "未生成の画像を 1 点ずつ頼む"
+          ]
+        },
+        {
+          "id": "planner",
+          "name": "AI デザイン生成",
+          "kind": "Component",
+          "description": "AI への指示を組み立て、返った形式を検証する",
+          "technology": "planner.ts（API サーバー）",
+          "evidence": "server/planner.ts:127-134",
+          "x": 750,
+          "y": 300
+        },
+        {
+          "id": "chatgpt",
+          "name": "ChatGPT 呼び出し",
+          "kind": "Component",
+          "description": "トークンを得て ChatGPT に問い合わせる",
+          "technology": "chatgpt.ts（API サーバー）",
+          "evidence": "server/chatgpt.ts:121-123",
+          "x": 1110,
+          "y": 300
+        },
+        {
+          "id": "openai",
+          "name": "OpenAI（ChatGPT）",
+          "kind": "External System",
+          "description": "推論を返す",
+          "technology": "HTTPS / SSE",
+          "evidence": "server/chatgpt.ts:17",
+          "x": 1470,
+          "y": 300
+        },
+        {
+          "id": "library",
+          "name": "成果物の保存",
+          "kind": "Component",
+          "description": "新しいポスターとしてファイルに保存する",
+          "technology": "library.ts（API サーバー）",
+          "evidence": "server/library.ts:65-72, src/editor/useAutoSave.ts:73-74",
+          "x": 1110,
+          "y": 60
+        },
+        {
+          "id": "imagegen",
+          "name": "画像生成",
+          "kind": "Component",
+          "description": "画風や色を足した指示で画像を作り、保存する",
+          "technology": "imagegen.ts（API サーバー）",
+          "evidence": "server/imagegen.ts:493",
+          "x": 390,
+          "y": 500
+        },
+        {
+          "id": "imgprov",
+          "name": "画像生成プロバイダ",
+          "kind": "External System",
+          "description": "画像を作る外部の仕組み（設定で選ぶ）",
+          "technology": "",
+          "evidence": "server/imagegen.ts:48-71",
+          "x": 30,
+          "y": 500
+        }
+      ],
+      "edges": [
+        {
+          "from": "user",
+          "to": "home",
+          "label": "1. ブリーフを送る",
+          "protocol": "",
+          "evidence": "README.md「画面」節",
+          "labelX": 320,
+          "labelY": 103,
+          "id": "d1"
+        },
+        {
+          "from": "home",
+          "to": "app",
+          "label": "2. ブリーフを渡す",
+          "protocol": "sessionStorage",
+          "evidence": "src/editor/nav.ts:14, src/editor/App.tsx:82",
+          "labelX": 680,
+          "labelY": 103,
+          "id": "d2"
+        },
+        {
+          "from": "app",
+          "to": "planner",
+          "label": "3. 設計を頼む",
+          "protocol": "HTTP（/api/plan）",
+          "evidence": "src/editor/App.tsx:309, server/index.ts:134",
+          "labelX": 930,
+          "labelY": 240,
+          "id": "d3"
+        },
+        {
+          "from": "planner",
+          "to": "chatgpt",
+          "label": "4. 問い合わせる",
+          "protocol": "",
+          "evidence": "server/planner.ts:9,134",
+          "labelX": 1040,
+          "labelY": 343,
+          "id": "d4"
+        },
+        {
+          "from": "chatgpt",
+          "to": "openai",
+          "label": "5. 推論を頼む",
+          "protocol": "SSE",
+          "evidence": "server/chatgpt.ts:121-123",
+          "labelX": 1400,
+          "labelY": 343,
+          "id": "d5"
+        },
+        {
+          "from": "app",
+          "to": "library",
+          "label": "6. 自動で保存",
+          "protocol": "HTTP（/api/posters）",
+          "evidence": "src/editor/useAutoSave.ts:73-102",
+          "labelX": 1040,
+          "labelY": 103,
+          "id": "d6"
+        },
+        {
+          "from": "app",
+          "to": "imagegen",
+          "label": "7. 画像を頼む",
+          "protocol": "HTTP・1 点ずつ",
+          "evidence": "src/editor/App.tsx:668, server/index.ts:217",
+          "labelX": 610,
+          "labelY": 330,
+          "id": "d7"
+        },
+        {
+          "from": "imagegen",
+          "to": "imgprov",
+          "label": "8. 生成を依頼",
+          "protocol": "",
+          "evidence": "server/imagegen.ts:493",
+          "labelX": 320,
+          "labelY": 543,
+          "id": "d8"
+        }
+      ],
+      "level": "dynamic",
+      "flows": [
+        {
+          "title": "ブリーフからポスターを作る",
+          "description": "番号は要求の順番。応答は緑の点で戻る",
+          "steps": [
+            {
+              "edge": "d1"
+            },
+            {
+              "edge": "d2"
+            },
+            {
+              "edge": "d3"
+            },
+            {
+              "edge": "d4"
+            },
+            {
+              "edge": "d5"
+            },
+            {
+              "edge": "d5",
+              "reverse": true,
+              "label": "応答: テキストのストリーム"
+            },
+            {
+              "edge": "d4",
+              "reverse": true,
+              "label": "応答: 検証済みのデザイン",
+              "note": "形式が違えば 1 回だけ直させる"
+            },
+            {
+              "edge": "d3",
+              "reverse": true,
+              "label": "応答: デザイン"
+            },
+            {
+              "edge": "d6",
+              "note": "0.8 秒後の非同期。7 以降と並行して進む"
+            },
+            {
+              "edge": "d7"
+            },
+            {
+              "edge": "d8"
+            },
+            {
+              "edge": "d8",
+              "reverse": true,
+              "label": "応答: 画像データ"
+            },
+            {
+              "edge": "d7",
+              "reverse": true,
+              "label": "応答: 画像の場所",
+              "note": "画像の数だけ 7〜8 を繰り返す"
+            }
+          ]
+        }
+      ],
+      "points": [
+        "レイアウトが返った時点で画面に出し、画像は後から 1 点ずつ埋まる",
+        "保存と画像生成は並行して進む"
+      ]
+    },
+    {
+      "level": "dynamic",
+      "title": "動的図：ChatGPT にサインインする",
+      "scope": "「ChatGPT でサインイン」を押してから、結果が元のタブに届くまで",
+      "width": 1780,
+      "height": 720,
+      "nodes": [
+        {
+          "id": "user",
+          "name": "ブラウザ（利用者）",
+          "kind": "Person",
+          "description": "サインイン用のタブで OpenAI の画面を操作する",
+          "technology": "ブラウザ",
+          "evidence": "src/editor/api.ts:97-101",
+          "x": 30,
+          "y": 300
+        },
+        {
+          "id": "spa",
+          "name": "Web アプリ（SPA）",
+          "kind": "Container",
+          "description": "サインイン用のタブを開き、結果を元のタブに渡す",
+          "technology": "React / useChatGPTAuth",
+          "evidence": "src/editor/api.ts:92-101, src/editor/useChatGPTAuth.ts:49,80-91",
+          "x": 390,
+          "y": 60
+        },
+        {
+          "id": "index",
+          "name": "ルーター",
+          "kind": "Component",
+          "description": "ログイン開始と戻り先の要求を受ける",
+          "technology": "index.ts / Express 5",
+          "evidence": "server/index.ts:96-109",
+          "x": 750,
+          "y": 300,
+          "details": [
+            "戻り先は Vite を通さず直接受ける"
+          ]
+        },
+        {
+          "id": "auth",
+          "name": "ChatGPT サインイン",
+          "kind": "Component",
+          "description": "認可の準備・トークン交換・保存をする",
+          "technology": "chatgpt-auth.ts / OAuth 2.0・PKCE",
+          "evidence": "server/chatgpt-auth.ts:156-276",
+          "x": 1200,
+          "y": 300,
+          "details": [
+            "なりすまし防止の値（state・PKCE）を作る",
+            "ID トークンの署名を確かめる"
+          ]
+        },
+        {
+          "id": "openai",
+          "name": "OpenAI（auth.openai.com）",
+          "kind": "External System",
+          "description": "サインイン画面とトークンの発行",
+          "technology": "HTTPS",
+          "evidence": "server/chatgpt-auth.ts:15-19",
+          "x": 980,
+          "y": 560
+        },
+        {
+          "id": "creds",
+          "name": "資格情報",
+          "kind": "Container",
+          "description": "本人だけが読めるサインイン情報のファイル",
+          "technology": "JSON ファイル",
+          "evidence": "server/chatgpt-auth.ts:25-27,69-71",
+          "x": 1530,
+          "y": 300
+        }
+      ],
+      "edges": [
+        {
+          "id": "s1",
+          "from": "user",
+          "to": "spa",
+          "label": "サインインを押す",
+          "protocol": "",
+          "evidence": "src/editor/api.ts:97-101"
+        },
+        {
+          "id": "s2",
+          "from": "spa",
+          "to": "index",
+          "label": "ログインを始める",
+          "protocol": "HTTP（新しいタブ・Vite 経由）",
+          "evidence": "src/editor/api.ts:100, server/index.ts:96-99"
+        },
+        {
+          "id": "s3",
+          "from": "index",
+          "to": "auth",
+          "label": "認可を準備・完了",
+          "protocol": "関数呼び出し",
+          "evidence": "server/index.ts:97,103"
+        },
+        {
+          "id": "s4",
+          "from": "user",
+          "to": "openai",
+          "label": "認可画面でサインイン・同意",
+          "protocol": "HTTPS",
+          "evidence": "server/chatgpt-auth.ts:16,191"
+        },
+        {
+          "id": "s5",
+          "from": "user",
+          "to": "index",
+          "label": "認可コードを返す",
+          "protocol": "HTTP 127.0.0.1（直接）",
+          "evidence": "server/index.ts:101-109, server/chatgpt-auth.ts:163"
+        },
+        {
+          "id": "s6",
+          "from": "auth",
+          "to": "openai",
+          "label": "トークン交換・JWKS",
+          "protocol": "HTTPS",
+          "evidence": "server/chatgpt-auth.ts:17,19,114,140-150"
+        },
+        {
+          "id": "s7",
+          "from": "auth",
+          "to": "creds",
+          "label": "トークンを保存",
+          "protocol": "ファイル",
+          "evidence": "server/chatgpt-auth.ts:69-71,251-268"
+        }
+      ],
+      "flows": [
+        {
+          "title": "ChatGPT にサインインする",
+          "description": "初回はクライアント登録をし、以後は保存した ID を使う",
+          "steps": [
+            {
+              "edge": "s1"
+            },
+            {
+              "edge": "s2",
+              "note": "新しいタブで開く"
+            },
+            {
+              "edge": "s3",
+              "label": "認可を準備",
+              "note": "照合用の値を覚えておく",
+              "evidence": "server/chatgpt-auth.ts:190"
+            },
+            {
+              "edge": "s3",
+              "reverse": true,
+              "label": "サインイン先を返す"
+            },
+            {
+              "edge": "s2",
+              "reverse": true,
+              "label": "OpenAI の画面へ移す"
+            },
+            {
+              "edge": "s4"
+            },
+            {
+              "edge": "s4",
+              "reverse": true,
+              "label": "戻り先へ移す"
+            },
+            {
+              "edge": "s5"
+            },
+            {
+              "edge": "s3",
+              "label": "認可を完了",
+              "note": "照合用の値（state）を確かめる"
+            },
+            {
+              "edge": "s6",
+              "label": "トークンに交換・鍵を取得",
+              "note": "ID トークンを鍵で検証する",
+              "evidence": "server/chatgpt-auth.ts:121"
+            },
+            {
+              "edge": "s6",
+              "reverse": true,
+              "label": "トークンを受け取る"
+            },
+            {
+              "edge": "s7"
+            },
+            {
+              "edge": "s3",
+              "reverse": true,
+              "label": "戻り先を返す"
+            },
+            {
+              "edge": "s5",
+              "reverse": true,
+              "label": "アプリへ戻す"
+            },
+            {
+              "edge": "s1",
+              "label": "結果を元のタブへ渡す",
+              "note": "元のタブへ送り、自分は閉じる",
+              "evidence": "src/editor/useChatGPTAuth.ts:86-89"
+            }
+          ]
+        }
+      ],
+      "points": [
+        "サインインは別タブで行い、終わると元のタブに結果が届く",
+        "トークンは本人だけが読めるファイルに保存する"
+      ]
+    }
+  ],
+  "overview": [
+    "ポスターやスライドを AI に作らせ、編集・発表・書き出しまでできるアプリ。",
+    "ブラウザの画面と、手元で動く API サーバーの 2 つでできている。",
+    "AI は ChatGPT のサインインで使い、保存はすべて PC のファイル。",
+    "【推定】画像生成の既定（Codex）は ChatGPT プランの枠を使う。"
+  ],
+  "glossary": [
+    {
+      "term": "ブリーフ",
+      "meaning": "作りたいものを説明した文章"
+    },
+    {
+      "term": "PosterSpec",
+      "meaning": "ポスター 1 枚の設計図。レイヤーを重ねた JSON"
+    },
+    {
+      "term": "デッキ",
+      "meaning": "スライドの束。ポスターを並べたもの"
+    },
+    {
+      "term": "SPA",
+      "meaning": "ページを切り替えずに動くブラウザのアプリ"
+    },
+    {
+      "term": "API サーバー",
+      "meaning": "画面からの頼みごとを受けて処理する、手元で動くプログラム"
+    },
+    {
+      "term": "Vite",
+      "meaning": "開発中にアプリを配信し、通信を中継するツール"
+    },
+    {
+      "term": "OAuth・PKCE",
+      "meaning": "パスワードを渡さずに別サービスへサインインする仕組み"
+    },
+    {
+      "term": "トークン",
+      "meaning": "サインイン済みを示す、期限つきの合言葉"
+    },
+    {
+      "term": "ストリーム",
+      "meaning": "答えを少しずつ受け取る方式"
+    },
+    {
+      "term": "EOT",
+      "meaning": "PowerPoint にフォントを埋め込むためのファイル形式"
+    }
+  ]
+}

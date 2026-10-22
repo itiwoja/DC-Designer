@@ -1,0 +1,3 @@
+export const MAX_REFERENCES = 20;
+export const MAX_REFERENCE_FILE_BYTES = 20 * 1024 * 1024;
+export const MAX_REFERENCE_DATA_BYTES = 32 * 1024 * 1024;

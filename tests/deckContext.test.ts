@@ -1,0 +1,34 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PosterSpecSchema } from "../src/schema";
+
+const ai = vi.hoisted(() => ({ ask: vi.fn() }));
+vi.mock("../server/chatgpt", async (original) => ({ ...await original<typeof import("../server/chatgpt")>(), askChatGPT: ai.ask }));
+import { editPoster } from "../server/planner";
+
+const spec = (title: string) => PosterSpecSchema.parse({ meta: { title, width: 1000, height: 1414 }, theme: "ocean", layers: [] });
+const current = spec("今のスライド");
+beforeEach(() => { ai.ask.mockReset().mockResolvedValue('{"reply":"確認した","spec":null}'); });
+
+describe("デッキの文脈（言及したスライドは全体、ほかは文字だけ）", () => {
+  it("文字だけのスライドは参考として渡し、書き換え先の候補にしない", async () => {
+    await editPoster({
+      spec: current, instruction: "スライド3の内容を今のスライドに反映して",
+      deck: { current: 1, total: 3, slides: [
+        { number: 2, title: "二", texts: ["二枚目の本文"] },
+        { number: 3, title: "三", spec: spec("三枚目") },
+      ] },
+    });
+    const prompt: string = ai.ask.mock.calls[0][1][0].text;
+    expect(prompt).toContain("# スライド 2「二」（文字だけの参考。書き換え・統合の対象にはしない）\n二枚目の本文");
+    expect(prompt).toContain("# スライド 3「三」");
+    expect(prompt).not.toContain("# スライド 2「二」\n{");
+  });
+
+  it("文字だけのスライドを書き換え先にした返答は受け付けない", async () => {
+    ai.ask.mockResolvedValue(JSON.stringify({ reply: "直した", spec: PosterSpecSchema.parse({ meta: { title: "直後", width: 1000, height: 1414 }, theme: "ocean", layers: [] }), target: 2, remove: [] }));
+    await expect(editPoster({
+      spec: current, instruction: "スライド2を直して",
+      deck: { current: 1, total: 2, slides: [{ number: 2, title: "二", texts: ["本文"] }] },
+    })).rejects.toThrow("target は 1 のいずれかにしてください");
+  });
+});

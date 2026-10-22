@@ -1,0 +1,45 @@
+{
+  "name": "dc-designer",
+  "version": "1.0.0",
+  "description": "ポスターを「レイヤーを重ねた設計図（JSON）」として AI に組み立てさせ、エディタで調整して SVG / PNG / PPTX に書き出すツール",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/itiwoja/DC-Designer.git"
+  },
+  "scripts": {
+    "dev": "concurrently -n web,api -c cyan,magenta \"node scripts/wait-for-api.mjs && vite\" \"CHOKIDAR_USEPOLLING=1 tsx watch server/index.ts\"",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "server": "tsx server/index.ts",
+    "test": "vitest run"
+  },
+  "type": "module",
+  "dependencies": {
+    "dotenv": "^18.0.5",
+    "express": "^5.2.1",
+    "jszip": "^3.10.1",
+    "openai": "^7.28.0",
+    "pdfjs-dist": "^6.4.299",
+    "pptxgenjs": "^4.0.1",
+    "qrcode": "^1.5.4",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "^1.0.11",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.4",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3"
+  },
+  "private": true
+}
