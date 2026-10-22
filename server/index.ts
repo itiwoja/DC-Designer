@@ -6,7 +6,8 @@ import { storeReferences } from "./references";
 import { setDefaultAutoSelectFamilyAttemptTimeout } from "node:net";
 import { AssetContext, AssetRequest, PosterSpecSchema } from "../src/schema";
 import { IG_MAX_IMAGES } from "../src/instagram";
-import { type AcrossDeck, type ChatTurn, type DeckContext, editPoster, type OnProgress, type Progress, planCarousel, planPoster, planSlide, refineReproduction, reproducePoster, summarizeChat, writeNotes } from "./planner";
+import { editPoster, type OnProgress, type Progress, planCarousel, planPoster, planSlide, refineReproduction, reproducePoster, summarizeChat, writeNotes } from "./planner";
+import { optString, parseAcross, parseDeckContext, parseImage, parseTurns, strings } from "./request-parsers";
 import { availableProviders, GENERATED_DIR, generateAsset, imageProviderName, saveUpload } from "./imagegen";
 import { authStatus, ChatGPTAuthError, handleCallback, logout, safeReturnTo, startLogin, USAGE_URL } from "./chatgpt-auth";
 import { chatGPTModel, ChatGPTError, modelSettings, setChatGPTModel } from "./chatgpt";
@@ -87,8 +88,6 @@ const progressRoute = (fn: (req: express.Request, onProgress: OnProgress, signal
   res.end();
 };
 const param = (req: express.Request) => String(req.params.id);
-const optString = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : undefined);
-const strings = (v: unknown, max: number) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, max) : []);
 
 app.get("/api/status", route(async () => {
   const chatgpt = authStatus();
@@ -136,33 +135,6 @@ app.post("/api/auth/chatgpt/logout", route(async () => {
 }));
 
 // ---------- 生成・編集（ChatGPT） ----------
-/** PPTX の全スライド（{ current, total, slides: [{ number, title?, spec? | texts? }] }）。spec は書き換え・統合の対象、texts は文字だけの参考 */
-function parseDeckContext(v: any): DeckContext | undefined {
-  if (!v || !Array.isArray(v.slides)) return undefined;
-  const current = Number(v.current), total = Number(v.total);
-  if (!Number.isInteger(current) || !Number.isInteger(total)) return undefined;
-  const slides = v.slides.map((s: any) => ({
-    number: Number(s?.number),
-    title: typeof s?.title === "string" ? s.title : undefined,
-    spec: s?.spec == null ? undefined : PosterSpecSchema.parse(s.spec),
-    texts: Array.isArray(s?.texts) ? s.texts.filter((t: unknown): t is string => typeof t === "string").slice(0, 30) : undefined,
-  }));
-  return { current, total, slides: slides.filter((s: { number: number; spec?: unknown; texts?: unknown }) => Number.isInteger(s.number) && (s.spec || s.texts)), instagram: v.instagram === true };
-}
-
-function parseAcross(v: any): AcrossDeck | undefined {
-  const number = Number(v?.number), total = Number(v?.total);
-  if (!Number.isInteger(number) || !Number.isInteger(total) || number < 1 || number > total) return undefined;
-  return { number, total, guide: optString(v?.guide, 1000) };
-}
-
-/** チャットのやりとり（{ role: "user" | "assistant" | "note", text }[]）。1 発言は 1000 文字まで */
-function parseTurns(v: unknown): ChatTurn[] {
-  return (Array.isArray(v) ? v : [])
-    .filter((t: any) => (t?.role === "user" || t?.role === "assistant" || t?.role === "note") && typeof t.text === "string" && t.text.trim())
-    .map((t: any) => ({ role: t.role, text: String(t.text).slice(0, 1000) }));
-}
-
 /** ブリーフ（＋参考画像）→ PosterSpec */
 app.post("/api/plan", route(async (req, signal) => {
   const { brief, theme, references } = req.body ?? {};
@@ -178,14 +150,6 @@ app.post("/api/plan/instagram", progressRoute(async (req, onProgress, signal) =>
   const n = Number.isInteger(count) && count >= 1 && count <= IG_MAX_IMAGES ? count : undefined;
   return planCarousel({ brief, width, height, count: n, references, onProgress, signal });
 }));
-
-/** 画像（{ mediaType, data: base64 }）。再現 API の参考画像・描画結果 */
-function parseImage(v: any, name: string) {
-  if (typeof v?.mediaType !== "string" || !/^image\/(png|jpeg|webp|gif)$/.test(v.mediaType) || typeof v?.data !== "string" || !v.data) {
-    throw httpError(400, `${name} は { mediaType, data } の画像で指定してください`);
-  }
-  return { mediaType: v.mediaType as string, data: v.data as string };
-}
 
 /** 参考画像 → それをそのまま写し取った PosterSpec（A4 モードの「参考画像を再現」） */
 app.post("/api/reproduce", progressRoute(async (req, onProgress, signal) => {
