@@ -12,6 +12,7 @@ import { withText } from "../textRuns";
 import { ANIM_DIRECTIONS, ANIM_EFFECTS, ANIM_STARTS, defaultAnimation, isDirectional, soundKey } from "../animation";
 import { decodeSound, playSound, SOUND_FILE_MAX_BYTES, SOUND_FILE_MAX_SEC, SOUND_FILE_TYPES, SOUNDS, type SoundId } from "../sounds";
 import { api } from "./api";
+import { useFileDrop } from "./useFileDrop";
 import { defaultTransition, isTransDirectional, TRANS_EFFECTS } from "../transition";
 
 type Align = "left" | "hcenter" | "right" | "top" | "vcenter" | "bottom";
@@ -25,7 +26,7 @@ interface Props {
   onChange: (patch: Partial<Layer>, coalesce?: string) => void;
   onReplace: (layer: Layer) => void;
   onRegenerate: () => void;
-  onPickImage: (files: FileList | null) => void;
+  onPickImage: (files: FileList | File[] | null) => void;
   onDuplicate: () => void;
   onDelete: () => void;
   onAlign: (where: Align) => void;
@@ -273,9 +274,11 @@ function SoundPicker({ value, onChange, title }: { value: SoundRef | "" | undefi
       setLoading(false);
     }
   };
+  // 音声ファイルはこの行へドロップしても取り込める
+  const drop = useFileDrop((files) => void pick(files[0]), { disabled: loading });
   return (
     <>
-      <div className="row">
+      <div className={"row drop-target" + (drop.over ? " drop-over" : "")} {...drop.props} title="音声ファイル（MP3 / WAV / M4A / OGG）をここにドロップしても取り込めます">
         <select
           value={value === undefined ? "mixed" : typeof value === "string" ? value : "file"} aria-label="効果音" title={title} disabled={loading}
           onChange={(e) => {
@@ -345,6 +348,8 @@ function BgmPicker({ bgm: list, onChange }: { bgm: SlideBgm[]; onChange: (b: Sli
     onChange(next);
   };
   const choose = (i: number | null) => { replacing.current = i; fileRef.current?.click(); };
+  // 音声ファイルを枠へドロップしたら末尾に足す
+  const drop = useFileDrop((files) => { replacing.current = null; void pick(files[0]); }, { disabled: loading });
   const pick = async (f: File | undefined) => {
     if (!f) return;
     setErr(null);
@@ -361,7 +366,7 @@ function BgmPicker({ bgm: list, onChange }: { bgm: SlideBgm[]; onChange: (b: Sli
     }
   };
   return (
-    <div className="field anim-box">
+    <div className={"field anim-box drop-target" + (drop.over ? " drop-over" : "")} {...drop.props}>
       <span>BGM{list.length > 1 ? `（${list.length} 曲を上から順に流す）` : ""}</span>
       {list.map((b, i) => (
         <div key={i} className="bgm-item">
@@ -391,7 +396,7 @@ function BgmPicker({ bgm: list, onChange }: { bgm: SlideBgm[]; onChange: (b: Sli
         </div>
       ))}
       <div className="row">
-        <button className="small" disabled={loading} onClick={() => choose(null)} title="MP3 / WAV / M4A / OGG（15MB まで）">
+        <button className="small" disabled={loading} onClick={() => choose(null)} title="MP3 / WAV / M4A / OGG（15MB まで）。この枠にドロップしても追加できます">
           {loading ? "読み込み中…" : list.length ? "＋ BGM を追加…" : "ファイルから選ぶ…"}
         </button>
         <input ref={fileRef} type="file" accept="audio/*" hidden onChange={(e) => { void pick(e.target.files?.[0]); e.target.value = ""; }} />
@@ -462,6 +467,8 @@ export function Inspector({ layer, multiCount, spec, onChange, onReplace, onRege
   const [json, setJson] = useState("");
   const [jsonErr, setJsonErr] = useState<string | null>(null);
   useEffect(() => { setJson(layer ? JSON.stringify(layer, null, 2) : ""); setJsonErr(null); }, [layer]);
+  // 「画像ファイル」の行へ画像をドロップしたら差し替える（キャンバスの画像へのドロップと同じ）
+  const imageDrop = useFileDrop((files) => onPickImage(files), { disabled: busy || generating });
 
   if (multiCount > 1) {
     return (
@@ -744,10 +751,10 @@ export function Inspector({ layer, multiCount, spec, onChange, onReplace, onRege
       )}
 
       {hasImageSlot && (
-        <div className="row">
+        <div className={"row drop-target" + (imageDrop.over ? " drop-over" : "")} {...imageDrop.props}>
           <span className="hint">{!asset && (src ? "画像ファイル" : "画像未設定")}</span>
           <span className="spacer" />
-          <label className={"as-button small" + (busy || generating ? " disabled" : "")} title="手持ちの画像ファイルに差し替え（キャンバスの画像へドロップでも可）">
+          <label className={"as-button small" + (busy || generating ? " disabled" : "")} title="手持ちの画像ファイルに差し替え（ここやキャンバスの画像へドロップでも可）">
             <Ico name="folder" size={14} /> {src ? "ファイルで差し替え" : "ファイルを選ぶ"}
             <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden disabled={busy || generating} onChange={(e) => { onPickImage(e.target.files); e.target.value = ""; }} />
           </label>

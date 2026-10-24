@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { importPptx } from "../import/pptx";
 import { importPdf } from "../import/pdf";
-import { isPdf, PDF_FILE_ACCEPT } from "../import/pdfDocument";
+import { PDF_FILE_ACCEPT } from "../import/pdfDocument";
 import { findPendingAssets } from "../schema";
 import { blankInstagramSpec, IG_RATIO_KEYS, IG_RATIOS, type IgRatio } from "../instagram";
 import { api, AUTH_CHANNEL, deckBySlide, type Deck, type SavedPoster, type Status } from "./api";
@@ -11,6 +11,8 @@ import { PosterFrame, ThemeMenu, useLoadWithRetry } from "./ui";
 import { PPTX_ACCEPT } from "./specOps";
 import { Ico } from "./uiIcons";
 import { useSignInWatch } from "./useChatGPTAuth";
+import { blockPageFileDrop, homeDropLabel, pickHomeDrop } from "./fileDrop";
+import { useFileDrop } from "./useFileDrop";
 
 const RECENT_MAX = 8;
 
@@ -150,16 +152,23 @@ export function Home({ mode }: { mode?: AppMode }) {
     } catch { /* ストレージが使えなくても読み込みは続ける */ }
     openInEditor(poster, res.slides.length === 1 ? "poster" : "slides");
   });
-  // .pptx のドロップ読み込みは PPTX のホームだけ
-  const onDrop = (e: React.DragEvent) => {
-    if (mode === "instagram") return;
-    e.preventDefault();
-    const files = [...e.dataTransfer.files];
-    const pdf = files.find(isPdf);
-    if (pdf) { openPdf(pdf); return; }
-    const pptx = files.find((f) => /\.pptx$/i.test(f.name));
-    if (pptx && mode === "slides") openPptx(pptx);
-  };
+  // ページのどこにファイルをドロップしても開ける（PDF はどのホームでも、.pptx はモード選択画面とスライドのホーム）
+  const dropLabel = homeDropLabel(mode);
+  const drop = useFileDrop((files) => {
+    const picked = pickHomeDrop(files, mode);
+    if (!picked) return;
+    if ("error" in picked) { setError(picked.error); return; }
+    if (picked.kind === "pdf") openPdf(picked.file);
+    else openPptx(picked.file);
+  }, { disabled: !dropLabel || !!busy });
+  // ドロップ先の外（対応していないモードなど）に落としても、ブラウザがファイルを開いてしまわないようにする
+  useEffect(blockPageFileDrop, []);
+  /** ドラッグ中に全面に出す案内 */
+  const dropVeil = drop.over && dropLabel && (
+    <div className="drop-veil" role="status" aria-live="polite">
+      <span className="drop-veil-box"><Ico name="folder" size={28} />{dropLabel}</span>
+    </div>
+  );
   const openRecent = (r: Recent) => {
     if (r.kind === "poster") openInEditor(r.poster, "poster");
     else openDeckInEditor(r.deck, posterById);
@@ -235,7 +244,8 @@ export function Home({ mode }: { mode?: AppMode }) {
   // モードを選ぶ画面
   if (!mode) {
     return (
-      <div className="home" onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }} onDrop={onDrop}>
+      <div className={"home" + (drop.over ? " drop-over" : "")} {...drop.props}>
+        {dropVeil}
         <header className="topbar home-topbar">
           <span className="spacer" />
           {topbarRight}
@@ -251,7 +261,7 @@ export function Home({ mode }: { mode?: AppMode }) {
               </button>
             ))}
             <button className="home-start" disabled={!!busy} onClick={() => pdfInput.current?.click()}>
-            <span className="start-ico alt"><Ico name="folder" size={22} /></span><strong>PDFを開いて編集</strong><small>文字・枠・画像を部品として編集（20MB・20ページまで）</small>
+            <span className="start-ico alt"><Ico name="folder" size={22} /></span><strong>PDFを開いて編集</strong><small>文字・枠・画像を部品として編集（20MB・20ページまで・ここにドロップしてもよい）</small>
             </button>
             <input ref={pdfInput} type="file" accept={PDF_FILE_ACCEPT} aria-label="編集するPDF" hidden disabled={!!busy} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) openPdf(f); }} />
           </section>
@@ -264,7 +274,8 @@ export function Home({ mode }: { mode?: AppMode }) {
 
   const info = MODES[mode];
   return (
-    <div className="home" onDragOver={(e) => { if (mode !== "instagram" && e.dataTransfer.types.includes("Files")) e.preventDefault(); }} onDrop={onDrop}>
+    <div className={"home" + (drop.over ? " drop-over" : "")} {...drop.props}>
+      {dropVeil}
       <header className="topbar home-topbar">
         <button onClick={() => (location.href = HOME_URL)} title="作るものを選ぶ画面へ戻る"><Ico name="arrowLeft" /> モードを選ぶ</button>
         <h1 className="home-mode-title">{info.label}</h1>
@@ -281,7 +292,7 @@ export function Home({ mode }: { mode?: AppMode }) {
               <span className="start-ico"><Ico name="file" size={22} /></span><strong>A4 でスタート</strong><small>白紙の A4 縦（1000×1414）ポスター</small>
             </button>
           <button className="home-start" disabled={!!busy} onClick={() => pdfInput.current?.click()}>
-            <span className="start-ico alt"><Ico name="folder" size={22} /></span><strong>PDFを開いて編集</strong><small>文字・枠・画像を部品として編集（20MB・20ページまで）</small>
+            <span className="start-ico alt"><Ico name="folder" size={22} /></span><strong>PDFを開いて編集</strong><small>文字・枠・画像を部品として編集（20MB・20ページまで・ここにドロップしてもよい）</small>
           </button>
           <input ref={pdfInput} type="file" accept={PDF_FILE_ACCEPT} aria-label="編集するPDF" hidden disabled={!!busy} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) openPdf(f); }} />
           </section>
