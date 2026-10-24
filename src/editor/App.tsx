@@ -26,6 +26,8 @@ import { Inspector, ShortcutList, TransitionBox } from "./Inspector";
 import { TRANSITION_EASING, transitionKeyframes } from "../transition";
 import { playSound } from "../sounds";
 import { LayersPanel } from "./LayersPanel";
+import { blockPageFileDrop } from "./fileDrop";
+import { useFileDrop } from "./useFileDrop";
 import { NotesPanel } from "./NotesPanel";
 import { Presenter } from "./Presenter";
 import { openPresenterWindow } from "./PresenterView";
@@ -939,16 +941,19 @@ export function App() {
       : insertImageFiles(files, { box: selectedLayer ?? undefined });
 
   /** キャンバスへのドロップ: PowerPoint なら（PPTX モードだけ）読み込み、画像の上なら差し替え、それ以外はドロップした位置に置く */
-  const onStageDrop = (e: RDragEvent) => {
-    if (!e.dataTransfer.files.length) return;
-    e.preventDefault();
-    const pptx = mode === "slides" ? [...e.dataTransfer.files].find((f) => /\.pptx$/i.test(f.name)) : undefined;
+  const onStageDrop = (files: File[], e: RDragEvent) => {
+    const pptx = mode === "slides" ? files.find((f) => /\.pptx$/i.test(f.name)) : undefined;
     if (pptx) { importPptxFile(pptx); return; }
     const id = topLayerAt(e.target, topIds);
     const l = id ? spec.layers.find((x) => x.id === id) ?? null : null;
-    if (l && imageSlot(l) && !l.locked) { setSelected(l.id); insertImageFiles(e.dataTransfer.files, { replaceId: l.id }); return; }
-    insertImageFiles(e.dataTransfer.files, { at: svgRef.current ? toPoster(e) : undefined });
+    if (l && imageSlot(l) && !l.locked) { setSelected(l.id); insertImageFiles(files, { replaceId: l.id }); return; }
+    insertImageFiles(files, { at: svgRef.current ? toPoster(e) : undefined });
   };
+  const stageDrop = useFileDrop(onStageDrop, { disabled: !!busy });
+  /** AI パネル（新規作成・チャット）へのドロップは参考資料として添付 */
+  const refDrop = useFileDrop((files) => void onRefFiles(files), { disabled: readingRefs || !!busy });
+  // ドロップ先の外（インスペクタなど）にファイルを落としても、ブラウザがそのファイルを開いてしまわないようにする
+  useEffect(blockPageFileDrop, []);
 
   // クリップボードの画像を貼り付け（スクリーンショットなど）
   useEffect(() => {
@@ -1407,9 +1412,8 @@ export function App() {
         </div>
         <div className="left-body">
         <section
-          className={"panel" + (tab === "chat" ? " chat-panel" : "")}
-          onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }}
-          onDrop={(e) => { if (e.dataTransfer.files.length) { e.preventDefault(); onRefFiles(e.dataTransfer.files); } }}
+          className={"panel" + (tab === "chat" ? " chat-panel" : "") + (refDrop.over ? " drop-over" : "")}
+          {...refDrop.props}
         >
           {canMake && <div className="tabs" role="tablist" aria-label="AI">
             <button role="tab" aria-selected={tab === "plan"} className={tab === "plan" ? "active" : ""} onClick={() => setAiTab("plan")}><Ico name="sparkles" /> 新規作成</button>
@@ -1620,11 +1624,10 @@ export function App() {
         style={{ ...(deckH ? { "--dh-open": `${deckHeight}px` } : {}), ...(notesH ? { "--nh-open": `${notesHeight}px` } : {}) } as React.CSSProperties}
       >
         <div
-          className={"stage" + (panning ? " panning" : "")}
+          className={"stage" + (panning ? " panning" : "") + (stageDrop.over ? " drop-over" : "")}
           ref={stageRef}
           onPointerDownCapture={(e) => { if (e.button === 0 && e.altKey) startPanView(e); }}
-          onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } }}
-          onDrop={onStageDrop}
+          {...stageDrop.props}
           onPointerDown={(e) => e.button === 0 && startMarquee(e)}
           onPointerMove={onStageHover}
           onPointerLeave={() => setHovered(null)}
