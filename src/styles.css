@@ -946,3 +946,20 @@ button.primary.danger, button.primary.danger:hover:not(:disabled) { background: 
 .ig-slot-tools button:disabled { opacity: .35; }
 .bgm-item { display: flex; flex-direction: column; gap: 6px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
 .bgm-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+
+/* ---------- ファイルのドロップ先 ---------- */
+/* ドラッグ中にファイルを受け取れる要素（インスペクタの行・AI パネル・キャンバス） */
+.drop-target { border-radius: 8px; transition: background .12s, box-shadow .12s; }
+.drop-over { background: var(--sel) !important; box-shadow: inset 0 0 0 2px var(--sel-line); }
+.stage.drop-over { box-shadow: inset 0 0 0 3px var(--sel-line); }
+/* ホーム: ドラッグ中はページ全体に案内をかぶせる */
+.home { position: relative; }
+.drop-veil {
+  position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; pointer-events: none;
+  background: color-mix(in srgb, var(--bg) 75%, transparent); backdrop-filter: blur(2px);
+}
+.drop-veil-box {
+  display: inline-flex; align-items: center; gap: 12px; padding: 22px 32px; border-radius: var(--radius-lg);
+  border: 2px dashed var(--sel-line); background: var(--panel); color: var(--sel-line);
+  font: 800 18px/1.3 "M PLUS Rounded 1c", sans-serif; box-shadow: var(--shadow-pop);
+}
