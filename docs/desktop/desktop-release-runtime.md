@@ -1,7 +1,7 @@
 # Windows版：製品用接続・実行環境・終了設計
 
 - プロジェクト：DC-Designer ／ 版数：v0.1（2026-10-25）／ 状態：設計のみ・未実装
-- 入力：[読む入口](./desktop-release-design.md)、[要件・技術仕様](./desktop-release-spec.md)。構成の決定者：ユーザー委任によるAI推奨判断。
+- 入力：[読む入口](./README.md)、[要件・技術仕様](./desktop-release-spec.md)。構成の決定者：ユーザー委任によるAI推奨判断。
 
 > **3行で**
 > 1. 画面から実行環境を切り離し、同梱した実行環境だけへ安全に接続する。
@@ -10,7 +10,7 @@
 
 ## 🧭 判断してほしいこと
 
-[EXE-Q-01〜03／EXE-R-01](./desktop-release-design.md#-判断してほしいこと)を維持する。署名・配信先・正式な対応OSは未承認であり、子孫回収・OAuth・通信制約の検証不能は正式配信を止める。
+[EXE-Q-01〜03／EXE-R-01](./README.md#-判断してほしいこと)を維持する。署名・配信先・正式な対応OSは未承認であり、子孫回収・OAuth・通信制約の検証不能は正式配信を止める。
 
 ## 全体図（C2：コンテナ）
 
@@ -54,8 +54,8 @@ flowchart LR
 | 配置 | プログラムはユーザー単位の専用インストール先。`<userRoot>=%LOCALAPPDATA%/DC-Designer/`と分離し、管理者権限を要求しない |
 | 私有領域 | `workspace/`・`assets/`・`browser/`・`fonts/`・`secrets/`・`runtime/`・`cache/`・`logs/`の責務は画像保護設計を参照。世代間lease・停止記録だけは本書のEXE-TBL-006を正本とする |
 
-- 現行[`package.json`](../package.json)のbuildはViteのみ。製品起動では`file://`、開発Vite、`tsx`、npm、watch、開発用環境変数・カレントディレクトリに依存しない。
-- 現行[`server/index.ts`](../server/index.ts#L23)の固定port・無認証静的配信と[`server/imagegen.ts`](../server/imagegen.ts#L257)の開発用Codex停止処理を、そのまま製品の保証にしない。
+- 現行[`package.json`](../../package.json)のbuildはViteのみ。製品起動では`file://`、開発Vite、`tsx`、npm、watch、開発用環境変数・カレントディレクトリに依存しない。
+- 現行[`server/index.ts`](../../server/index.ts#L23)の固定port・無認証静的配信と[`server/imagegen.ts`](../../server/imagegen.ts#L257)の開発用Codex停止処理を、そのまま製品の保証にしない。
 - Node追加分の配布サイズ・脆弱性対応・セキュリティ更新が必要になる。一方、独立exeのsupervisorは開発・署名・対象CPU別検証を要するが、Electron native addonのABI追従は不要。[ADR-003](./adr/ADR-003-desktop-runtime.md)に代替案を記録する。
 
 ### C3：mainの主要コンポーネント
@@ -101,7 +101,7 @@ supervisorは署名・配置をmainが検証した製品専用exeとする。ren
 
 - **`CREATE_SUSPENDED`→`AssignProcessToJobObject`だけでは安全保証しない。** プロセス生成から所属までにsupervisorが異常終了すると、未所属プロセスが残る競合がある。生成時所属の失敗をこの方式へfallbackしない。
 - 初期化・親検証・Job属性設定・割当が失敗したら、API／Codexを非管理状態で起動しない。初期化中・API開始直前・稼働中の親死亡も回収の検証対象にする。
-- 本方式のAPI前提はWindows 10以降だが、製品の対応OS承認ではない。[EXE-Q-03](./desktop-release-design.md#-判断してほしいこと)と採用Electron／Nodeの要件を併せて満たす必要がある。
+- 本方式のAPI前提はWindows 10以降だが、製品の対応OS承認ではない。[EXE-Q-03](./README.md#-判断してほしいこと)と採用Electron／Nodeの要件を併せて満たす必要がある。
 - WSL・サービス・タスクスケジューラ等の外部仲介が起動するプロセスはこのJobの回収対象外。製品の実行経路に採用しない。他アプリ・他人のCodex・既定ブラウザを名前で一括停止しない。
 - `taskkill /T`、PID一覧の走査、`process.on("exit")`内の非同期処理だけを終了保証にしない。HTTPにprocess kill・任意exe起動APIを追加しない。
 
@@ -228,7 +228,7 @@ sequenceDiagram
 - 認可URLにも`id_token_hint`等で保存済みトークンを埋め込まない。認可コード・callback query・PKCE情報をログや診断へ残さない。
 - 成功ページは固定の戻り案内だけ。トークンをURL・HTML・`postMessage`へ出さず、外部ブラウザを`app://`へredirectしない。renderer popup・`BroadcastChannel`に完了検知を依存させない。
 - `app://`の内部protocolとOS deeplink登録は別物。本方式にOS deeplinkは不要。登録redirectで動的portが受け入れられるか、提供元のクライアント登録仕様・Electron製品版での認証可否は**実装前の検証ゲート**とし、不適合なら勝手に固定portやdeeplinkへ変更しない。
-- 認証期限は現行[`server/chatgpt-auth.ts`](../server/chatgpt-auth.ts#L65)の10分を維持する。OAuth認証はAIの画像送信許可を兼ねない。
+- 認証期限は現行[`server/chatgpt-auth.ts`](../../server/chatgpt-auth.ts#L65)の10分を維持する。OAuth認証はAIの画像送信許可を兼ねない。
 
 <a id="shutdown"></a>
 <a id="exe-fr-006"></a>

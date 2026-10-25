@@ -5,7 +5,7 @@
 > 2. 同梱NodeとCodex子孫を署名済みsupervisorのWindows Jobで管理する。
 > 3. 全保存・書込drain・Job空を確認して終了する。Windows実機では未検証。
 ## 🧭 判断してほしいこと
-[EXE-Q-01〜03／EXE-R-01](../desktop-release-design.md#-判断してほしいこと)を維持。署名・OS承認とWindows Job／OAuthの検証が正式配信を止める。
+[EXE-Q-01〜03／EXE-R-01](../README.md#-判断してほしいこと)を維持。署名・OS承認とWindows Job／OAuthの検証が正式配信を止める。
 ## 全体図
 ```mermaid
 flowchart LR

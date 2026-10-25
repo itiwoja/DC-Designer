@@ -7,7 +7,7 @@
 
 ## 🧭 判断してほしいこと
 
-未決・リスクは[読む入口のEXE-Q-01〜03、EXE-R-01](../desktop-release-design.md#-判断してほしいこと)に集約。配信先・公開範囲・署名方式・対象OS／CPUの未確定や検証未達を残したまま、正式配信してよいとはしていない。
+未決・リスクは[読む入口のEXE-Q-01〜03、EXE-R-01](../README.md#-判断してほしいこと)に集約。配信先・公開範囲・署名方式・対象OS／CPUの未確定や検証未達を残したまま、正式配信してよいとはしていない。
 
 ## 全体図
 
@@ -27,7 +27,7 @@ flowchart LR
 
 ## 要点
 
-- [入口](../desktop-release-design.md)：決定・未決・読む順番を集約。
+- [入口](../README.md)：決定・未決・読む順番を集約。
 - [要件・技術仕様](../desktop-release-spec.md)：上流IDと全体の対応、同梱境界、診断、合格基準。
 - [画像保護](../desktop-release-privacy.md)：既定拒否・一回の送信許可・資格情報・フォント取得。
 - [実行構成](../desktop-release-runtime.md)：固定origin・自分のAPI・OAuth・全保存・Job管理。
@@ -39,18 +39,18 @@ flowchart LR
 
 | ドキュメント | 節・ID | 変更 |
 | --- | --- | --- |
-| `docs/desktop-release-design.md` | EXE-Q-01〜03、EXE-R-01 | 新規。追加設計の入口、未決・リスク・主要判断 |
-| `docs/desktop-release-spec.md` | EXE-REQ-001〜007、EXE-US-001〜004、EXE-UC-001〜006 | 新規。要件・操作・Won't・対応表 |
+| `docs/desktop/README.md` | EXE-Q-01〜03、EXE-R-01 | 新規。追加設計の入口、未決・リスク・主要判断 |
+| `docs/desktop/desktop-release-spec.md` | EXE-REQ-001〜007、EXE-US-001〜004、EXE-UC-001〜006 | 新規。要件・操作・Won't・対応表 |
 | 同上 | EXE-FR-001、007、009／EXE-NFR-001〜006／EXE-SCR-007／EXE-API-007／EXE-TBL-005 | 新規。同梱・公開の境界、内容を持たない診断、配布目録・合格値 |
-| `docs/desktop-release-privacy.md` | EXE-FR-003〜005／EXE-SCR-002〜004／EXE-API-003〜006／EXE-TBL-001〜004 | 新規。画像送信確認、保存・秘密情報、フォント取得・キャッシュ |
-| `docs/desktop-release-runtime.md` | EXE-FR-002、006、008／EXE-SCR-001、005、006／EXE-API-001、002、008、009／EXE-TBL-006 | 新規。製品接続、起動・終了、Windowsの所有プロセス、世代間lease・停止記録、内部ウィンドウ。静的protocolと認可IPCを区別 |
-| `docs/release-policy.md` | v0.2 → v0.3／EXE-FR-001、007 | 既存権限を保持し、隔離ビルド・目録・署名前後検査・未達時の公開禁止を追加 |
-| `docs/desktop-update-design.md` | v0.1 → v0.2／REQ-003、004、FR-004、API-006、保存領域 | 通常終了と共通の保存・プロセス調停と固定originの参照を追加。更新の操作は変更なし |
+| `docs/desktop/desktop-release-privacy.md` | EXE-FR-003〜005／EXE-SCR-002〜004／EXE-API-003〜006／EXE-TBL-001〜004 | 新規。画像送信確認、保存・秘密情報、フォント取得・キャッシュ |
+| `docs/desktop/desktop-release-runtime.md` | EXE-FR-002、006、008／EXE-SCR-001、005、006／EXE-API-001、002、008、009／EXE-TBL-006 | 新規。製品接続、起動・終了、Windowsの所有プロセス、世代間lease・停止記録、内部ウィンドウ。静的protocolと認可IPCを区別 |
+| `docs/desktop/release-policy.md` | v0.2 → v0.3／EXE-FR-001、007 | 既存権限を保持し、隔離ビルド・目録・署名前後検査・未達時の公開禁止を追加 |
+| `docs/desktop/desktop-update-design.md` | v0.1 → v0.2／REQ-003、004、FR-004、API-006、保存領域 | 通常終了と共通の保存・プロセス調停と固定originの参照を追加。更新の操作は変更なし |
 | `README.md` | Windows版の配布・更新方針 | 新しい入口とプライバシー方針を追加。現行Web版で実装済みではないことを明記 |
-| `docs/adr/ADR-002-private-data-and-consent.md` | EXE-REQ-001、003 | 画像・資料・認証の境界と明示許可 |
-| `docs/adr/ADR-003-desktop-runtime.md` | EXE-REQ-002、004、007 | 固定origin・同梱Node・Windows supervisorによる製品実行 |
-| `docs/adr/ADR-004-font-acquisition.md` | EXE-REQ-005 | 作品文字を送らずフォント取得を維持 |
-| `docs/adr/ADR-005-release-artifact-boundary.md` | EXE-REQ-001、002、006 | 許可リスト・隔離ビルド・最終配布物検査 |
+| `docs/desktop/adr/ADR-002-private-data-and-consent.md` | EXE-REQ-001、003 | 画像・資料・認証の境界と明示許可 |
+| `docs/desktop/adr/ADR-003-desktop-runtime.md` | EXE-REQ-002、004、007 | 固定origin・同梱Node・Windows supervisorによる製品実行 |
+| `docs/desktop/adr/ADR-004-font-acquisition.md` | EXE-REQ-005 | 作品文字を送らずフォント取得を維持 |
+| `docs/desktop/adr/ADR-005-release-artifact-boundary.md` | EXE-REQ-001、002、006 | 許可リスト・隔離ビルド・最終配布物検査 |
 
 ### 影響範囲
 

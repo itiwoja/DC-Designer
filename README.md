@@ -197,7 +197,7 @@ Instagram のフィードやストーリーズに載せる画像を作る。1 �
 - exe版の追加設計では、利用者の画像・資料・資格情報を配布物やログに混ぜない。外部AIへ画像を送る場合は、送信先と対象を本人が明示確認した操作に限定する。
 - フォント取得は維持し、作品の文字を取得先へ送らず、検証したフォントをPC内で利用する設計とする。
 
-exe化本体の設計は [Windows exe版 release設計](./docs/desktop-release-design.md)、手順・権限制限・配布物の安全条件は [配布・更新ポリシー](./docs/release-policy.md)、更新の画面・動作は [起動時の更新確認・ポップアップ設計](./docs/desktop-update-design.md) を参照。これらは設計であり、現在のWeb版に画像送信確認・フォント通信制限等が実装済みという意味ではない。
+exe版の設計資料は [`docs/desktop/`](./docs/desktop/) に集約している。exe化本体の設計は [Windows exe版 release設計](./docs/desktop/README.md)、手順・権限制限・配布物の安全条件は [配布・更新ポリシー](./docs/desktop/release-policy.md)、更新の画面・動作は [起動時の更新確認・ポップアップ設計](./docs/desktop/desktop-update-design.md) を参照。これらは設計であり、現在のWeb版に画像送信確認・フォント通信制限等が実装済みという意味ではない。
 
 ## ライセンス
 

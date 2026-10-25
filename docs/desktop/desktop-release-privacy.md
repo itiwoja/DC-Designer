@@ -1,7 +1,7 @@
 # Windows版：私有データ・AI送信確認・フォント取得設計
 
 - プロジェクト：DC-Designer ／ 版数：v0.1（2026-10-25） ／ 状態：設計のみ・未実装
-- 上位設計：[Windows exe release設計](./desktop-release-design.md) ／ 既存方針：[配布・更新](./release-policy.md)
+- 上位設計：[Windows exe release設計](./README.md) ／ 既存方針：[配布・更新](./release-policy.md)
 
 > **3行で**
 > 1. 画像・資料・認証情報は利用者別の保存先へ分離し、配布物・ログ・更新通信へ混ぜない。
@@ -12,8 +12,8 @@
 
 | ID | 種類 | 論点 | おすすめ・止まるもの |
 | --- | --- | --- | --- |
-| [EXE-R-01](./desktop-release-design.md) | リスク | 外部CLI・ComfyUIの拡張が画像を外へ送る可能性 | egressを制御・検証できない経路では参考画像機能を無効化。AI送信の受け入れ判定に影響 |
-| [EXE-Q-01〜03](./desktop-release-design.md) | 未決 | コード署名・配信先・公開範囲・対象OSの確定 | 親入口へ集約。本書では決めない |
+| [EXE-R-01](./README.md) | リスク | 外部CLI・ComfyUIの拡張が画像を外へ送る可能性 | egressを制御・検証できない経路では参考画像機能を無効化。AI送信の受け入れ判定に影響 |
+| [EXE-Q-01〜03](./README.md) | 未決 | コード署名・配信先・公開範囲・対象OSの確定 | 親入口へ集約。本書では決めない |
 
 ## 全体図
 
@@ -58,10 +58,10 @@ flowchart LR
 
 | 現状の根拠 | 設計との差 |
 | --- | --- |
-| [`server/imagegen.ts:12`](../server/imagegen.ts#L12) | 生成・取り込み画像の既定保存先が`public/generated/`。私有`assets/`へ分離が必要 |
-| [`server/chatgpt-auth.ts:26–28,68–88`](../server/chatgpt-auth.ts#L26) | `chatgpt.json`にJSONで資格情報を保存。ファイルmode指定だけをWindows暗号化とはみなさない |
-| [`src/render/export.ts:65`](../src/render/export.ts#L65)、[`server/fonts.ts:76–84,104–118`](../server/fonts.ts#L76) | SVG/PPTXのフォント取得で`text=`に作品文字が入る。端末内サブセットへ変更する設計 |
-| [`server/fonts.ts:138–175`](../server/fonts.ts#L138) | Windowsユーザーフォント配置・HKCU登録がある。取得とは別の明示確認と入力制限が必要 |
+| [`server/imagegen.ts:12`](../../server/imagegen.ts#L12) | 生成・取り込み画像の既定保存先が`public/generated/`。私有`assets/`へ分離が必要 |
+| [`server/chatgpt-auth.ts:26–28,68–88`](../../server/chatgpt-auth.ts#L26) | `chatgpt.json`にJSONで資格情報を保存。ファイルmode指定だけをWindows暗号化とはみなさない |
+| [`src/render/export.ts:65`](../../src/render/export.ts#L65)、[`server/fonts.ts:76–84,104–118`](../../server/fonts.ts#L76) | SVG/PPTXのフォント取得で`text=`に作品文字が入る。端末内サブセットへ変更する設計 |
+| [`server/fonts.ts:138–175`](../../server/fonts.ts#L138) | Windowsユーザーフォント配置・HKCU登録がある。取得とは別の明示確認と入力制限が必要 |
 
 <a id="stores"></a>
 <a id="exe-fr-003"></a>
@@ -218,4 +218,4 @@ REQ→US→UCの上流対応は[技術仕様の対応表](./desktop-release-spec
 - [ADR-002](./adr/ADR-002-private-data-and-consent.md)：私有ストアと目的別通信・短命一回確認。画像プレビューとmainが直接得る最終確認を分離する設計判断。
 - [ADR-004](./adr/ADR-004-font-acquisition.md)：作品文字を送らないフルフォント取得と、別同意のOS登録を採用する設計判断。
 - AI設計値：AI／OSフォント登録の許可期限各5分、フォント1ファイル受信・展開後各32MiB。安全性の実証値ではなく、正式配信前に妥当性を検証する。
-- 署名・公開先・OS対象は[親入口](./desktop-release-design.md)、更新の振る舞いは[既存設計](./desktop-update-design.md)へ委ねる。本書は実装・CI変更・公開を許可しない。
+- 署名・公開先・OS対象は[親入口](./README.md)、更新の振る舞いは[既存設計](./desktop-update-design.md)へ委ねる。本書は実装・CI変更・公開を許可しない。
