@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { PosterSpecSchema, type PosterSpec } from "../src/schema";
 import { CATALOG, ICON_NAMES } from "../src/components/catalog";
@@ -10,8 +9,6 @@ import { referenceSources, resolveReferenceSources, type PosterReference } from 
 import { askAI } from "./ai";
 import { extractJson, type ImageRef, type Turn } from "./chatgpt";
 import { applyLayerPatch, isEmptyPatch, parsePatch } from "./layer-patch";
-
-const SAMPLE = readFileSync(new URL("../samples/ai-workshop.json", import.meta.url), "utf8");
 
 const themeTokens = (() => {
   const t = THEMES.ocean;
@@ -95,9 +92,6 @@ AssetRequest = { prompt: string(英語で具体的に), transparent?: boolean, a
 - 日本語テキストの幅はおよそ「文字数 × size」、英数字は「文字数 × size × 0.6」で見積もり、w に収まるサイズを選ぶ。
 - 画像は 2〜5 点程度に絞る（生成コストがかかるため）。
 - テキストの内容（日時・場所・URL等）はユーザーの指示を正確に使う。不明な情報は作らず、ダミーであることが分かる表記にする。
-
-# 参考: 完成済み PosterSpec の例
-${SAMPLE}
 
 # 出力
 JSON のみを出力する。前置き・説明・コードフェンスは不要。形式はユーザーのメッセージの「# 出力」に従い、指定がなければ PosterSpec の JSON を出力する。`;

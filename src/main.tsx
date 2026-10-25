@@ -5,12 +5,11 @@ import { Home } from "./editor/Home";
 import { Library } from "./editor/Library";
 import { readModeParam } from "./editor/mode";
 import { api } from "./editor/api";
-import { STORAGE_KEY } from "./editor/storage";
+import { loadInitialSpec } from "./editor/nav";
 import { ConfirmHost, RENDER_HELLO_MESSAGE, RENDER_READY_MESSAGE, RENDER_SPEC_MESSAGE } from "./editor/ui";
 import { Poster } from "./render/Poster";
 import { useRenderReady } from "./render/useRenderReady";
-import { PosterSpecSchema, type PosterSpec } from "./schema";
-import sample from "../samples/ai-workshop.json";
+import type { PosterSpec } from "./schema";
 import "./styles.css";
 
 const params = new URLSearchParams(location.search);
@@ -23,12 +22,7 @@ const params = new URLSearchParams(location.search);
 function RenderOnly() {
   const [spec, setSpec] = useState<PosterSpec | null>(() => {
     if (params.has("poster") || params.has("embed")) return null;
-    let s = PosterSpecSchema.parse(sample);
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved && !params.has("sample")) s = PosterSpecSchema.parse(JSON.parse(saved));
-    } catch { /* サンプルを使う */ }
-    return s;
+    return loadInitialSpec();
   });
   const [failed, setFailed] = useState(false);
   useEffect(() => {

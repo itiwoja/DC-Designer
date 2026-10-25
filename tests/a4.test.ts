@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { deflateSync } from "node:zlib";
 import { a4Fit, a4Instruction, a4Issues, fitToA4, safeMarginUnits, a4Size, exportPixels, imageDpi, pngA4Report, readPngInfo, setPngDpi } from "../src/editor/a4";
 import { PosterSpecSchema } from "../src/schema";
-import sample from "../samples/ai-workshop.json";
 
 const poster = (layers: object[], meta: object = {}) => PosterSpecSchema.parse({
   version: 1, meta: { title: "t", width: 1000, height: 1414, ...meta }, theme: "ocean",
@@ -144,8 +143,14 @@ describe("fitToA4", () => {
     const s = poster([{ id: "bubble", type: "component", component: "speechBubble", props: { text: "やあ" }, rotation: -10, x: 18, y: 500, w: 290, h: 235 }]);
     expect(a4Issues(fitToA4(s).spec)).toEqual([]);
   });
-  it("サンプルのポスターを A4 でない高さにしても、整えると余白の注意がなくなる", () => {
-    const s = PosterSpecSchema.parse({ ...sample, meta: { ...sample.meta, height: 1333 } });
+  it("文字・画像・QR を含む A4 でないポスターも、整えると余白の注意がなくなる", () => {
+    const s = poster([
+      text("title", { x: 10, y: 10, w: 600, h: 90, size: 64 }),
+      text("body", { x: 150, y: 1180, w: 700, h: 100, size: 32 }),
+      { id: "photo", type: "image", src: "/test.png", x: 300, y: 200, w: 400, h: 300 },
+      { id: "qr", type: "component", component: "qr", props: { url: "https://example.com" }, x: 850, y: 1266, w: 170, h: 138 },
+    ], { height: 1333 });
+    expect(a4Issues(s).length).toBeGreaterThan(0);
     expect(a4Issues(fitToA4(s).spec)).toEqual([]);
   });
   it("入りきらない大きさの文字は縮める", () => {

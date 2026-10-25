@@ -1,9 +1,11 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { Layer, PosterSpec } from "../src/schema";
 import { alignedPosition, aspectOf, diffLayers, insertAfter, moveLayerTo, patchAsset, prepareAsset, reorderLayer, safeFileName, toLayerRef } from "../src/editor/specOps";
 
-const sample: PosterSpec = JSON.parse(readFileSync(new URL("../samples/ai-workshop.json", import.meta.url), "utf8"));
+const sample: PosterSpec = {
+  version: 1, meta: { title: "テストのポスター", width: 1000, height: 1414 }, theme: "ocean",
+  layers: [{ id: "bg", type: "background", fill: "$background", x: 0, y: 0, w: 1000, h: 1414 }],
+};
 const img = (id: string, extra: object = {}) => ({ id, type: "image", x: 0, y: 0, w: 100, h: 100, ...extra }) as Layer;
 const withLayers = (...layers: Layer[]): PosterSpec => ({ ...sample, layers: [...sample.layers, ...layers] });
 
