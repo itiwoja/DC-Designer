@@ -19,7 +19,7 @@ export const readDataUrl = (blob: Blob) => new Promise<string>((res, rej) => {
   r.readAsDataURL(blob);
 });
 
-export type RefImage = { mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif"; data: string; name?: string };
+export type RefImage = { mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif"; data: string; name?: string; width?: number; height?: number };
 
 export type ChatGPTStatus =
   | { signedIn: false; previousEmail?: string; usageUrl: string }
@@ -104,7 +104,7 @@ export const api = {
   edit: (spec: PosterSpec, instruction: string, selectedIds: string[] | undefined, signal?: AbortSignal, deck?: DeckEditContext, chat?: ChatContext, instagram?: boolean, across?: { number: number; total: number; guide?: string }, references?: RefImage[]) =>
     post<{ reply: string; spec?: PosterSpec; target?: number; remove?: number[] }>("/api/edit", { spec, instruction, selectedIds, deck, across, history: chat?.history, memory: chat?.memory, instagram, references }, signal),
   /** デッキの並び（文字）とお手本のスライドから、position 番目に追加する新しいスライドを 1 枚作る（追加はしない） */
-  planSlide: (body: { instruction: string; position: number; total: number; title?: string; outline: { number: number; title?: string; texts: string[] }[]; samples: { number: number; title?: string; spec: PosterSpec }[]; instagram?: boolean }, chat?: ChatContext, signal?: AbortSignal) =>
+  planSlide: (body: { instruction: string; position: number; total: number; title?: string; outline: { number: number; title?: string; texts: string[] }[]; samples: { number: number; title?: string; spec: PosterSpec }[]; instagram?: boolean; references?: RefImage[] }, chat?: ChatContext, signal?: AbortSignal) =>
     post<{ reply: string; spec: PosterSpec }>("/api/slide", { ...body, history: chat?.history, memory: chat?.memory }, signal),
   /** デッキの全スライドの文字・画像の説明（＋既存の台本）から、targets の番号のスライドの台本を書く */
   writeNotes: (body: { title?: string; slides: { number: number; title?: string; texts: string[]; images?: string[]; notes?: string }[]; targets: number[]; request?: string }, signal?: AbortSignal) =>

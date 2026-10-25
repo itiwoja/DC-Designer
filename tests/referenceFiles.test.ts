@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createCanvas } from "@napi-rs/canvas";
-import { readReferenceFile } from "../src/editor/referenceFiles";
+import { readReferenceFile, toReferenceImages } from "../src/editor/referenceFiles";
 import { MAX_REFERENCE_FILE_BYTES } from "../src/referenceLimits";
 
 // 実際の PDF パーサーと描画処理を使い、ブラウザの canvas だけを置き換える。
@@ -25,6 +25,16 @@ function pdfFile(pages = 2) {
 }
 
 describe("PDFの参考添付", () => {
+  it("添付を配置できるよう名前と元の寸法を順番どおりAPIへ渡す", () => {
+    const img = { mediaType: "image/png" as const, data: "YWJj" };
+    expect(toReferenceImages([
+      { name: "企業ロゴ.png", img, url: "data:image/png;base64,YWJj", w: 600, h: 150 },
+      { name: "写真.png", img, url: "data:image/png;base64,YWJj", w: 800, h: 600 },
+    ])).toEqual([
+      { ...img, name: "企業ロゴ.png", width: 600, height: 150 },
+      { ...img, name: "写真.png", width: 800, height: 600 },
+    ]);
+  });
   it("複数ページを実際に描画し、ページ順と縦横比を保つ", async () => {
     vi.stubGlobal("document", { createElement: () => createCanvas(1, 1) });
     const pages = await readReferenceFile(pdfFile());
