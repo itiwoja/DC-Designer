@@ -58,10 +58,10 @@ flowchart LR
 
 | 現状の根拠 | 設計との差 |
 | --- | --- |
-| [`server/imagegen.ts:12`](../../server/imagegen.ts#L12) | 生成・取り込み画像の既定保存先が`public/generated/`。私有`assets/`へ分離が必要 |
-| [`server/chatgpt-auth.ts:26–28,68–88`](../../server/chatgpt-auth.ts#L26) | `chatgpt.json`にJSONで資格情報を保存。ファイルmode指定だけをWindows暗号化とはみなさない |
-| [`src/render/export.ts:65`](../../src/render/export.ts#L65)、[`server/fonts.ts:76–84,104–118`](../../server/fonts.ts#L76) | SVG/PPTXのフォント取得で`text=`に作品文字が入る。端末内サブセットへ変更する設計 |
-| [`server/fonts.ts:138–175`](../../server/fonts.ts#L138) | Windowsユーザーフォント配置・HKCU登録がある。取得とは別の明示確認と入力制限が必要 |
+| [`server/imagegen.ts:12`](../server/imagegen.ts#L12) | 生成・取り込み画像の既定保存先が`public/generated/`。私有`assets/`へ分離が必要 |
+| [`server/chatgpt-auth.ts:26–28,68–88`](../server/chatgpt-auth.ts#L26) | `chatgpt.json`にJSONで資格情報を保存。ファイルmode指定だけをWindows暗号化とはみなさない |
+| [`src/render/export.ts:65`](../src/render/export.ts#L65)、[`server/fonts.ts:76–84,104–118`](../server/fonts.ts#L76) | SVG/PPTXのフォント取得で`text=`に作品文字が入る。端末内サブセットへ変更する設計 |
+| [`server/fonts.ts:138–175`](../server/fonts.ts#L138) | Windowsユーザーフォント配置・HKCU登録がある。取得とは別の明示確認と入力制限が必要 |
 
 <a id="stores"></a>
 <a id="exe-fr-003"></a>
