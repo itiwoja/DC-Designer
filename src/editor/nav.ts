@@ -22,6 +22,15 @@ export const BLANK_SPEC: PosterSpec = PosterSpecSchema.parse({
   layers: [{ id: "bg", name: "背景", type: "background", fill: "$background", x: 0, y: 0, w: 1000, h: 1414 }],
 });
 
+/** ブラウザの控えを開く。未保存・破損・ストレージ利用不可の場合は白紙から始める */
+export function loadInitialSpec(): PosterSpec {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return PosterSpecSchema.parse(JSON.parse(raw));
+  } catch { /* 読み込めなければ白紙 */ }
+  return PosterSpecSchema.parse(BLANK_SPEC);
+}
+
 /** 白紙のスライド 1 枚（PowerPoint のワイド画面 16:9 = 13.333×7.5 inch を 1 inch = 100px で） */
 export const BLANK_SLIDE_SPEC: PosterSpec = PosterSpecSchema.parse({
   version: 1,

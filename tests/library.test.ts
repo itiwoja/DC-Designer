@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -8,7 +8,7 @@ const root = mkdtempSync(join(tmpdir(), "poster-gen-test-"));
 process.env.DATA_DIR = join(root, "data");
 process.env.GENERATED_DIR = join(root, "generated");
 const lib = await import("../server/library");
-const sample = JSON.parse(readFileSync(new URL("../samples/ai-workshop.json", import.meta.url), "utf8"));
+const sample = { version: 1, meta: { title: "テストのポスター", width: 1000, height: 1414 }, theme: "ocean", layers: [] };
 
 const withImage = (src: string) => ({ ...sample, layers: [...sample.layers, { id: "img", type: "image", src, x: 0, y: 0, w: 10, h: 10 }] });
 

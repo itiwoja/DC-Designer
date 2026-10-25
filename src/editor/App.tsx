@@ -13,7 +13,6 @@ import { resolveTheme } from "../themes";
 import { applyFonts, specTexts } from "../fonts";
 import { blankInstagramSpec, IG_DEFAULT_RATIO, IG_MAX_IMAGES, IG_RATIO_KEYS, IG_RATIOS, nearestRatio, ratioOf, type IgRatio } from "../instagram";
 import { CATALOG_BY_NAME } from "../components/catalog";
-import sample from "../../samples/ai-workshop.json";
 import { api, readDataUrl, type AIProgress, type AIProvider, type DeckEditContext, type RefImage, type Status } from "./api";
 import { AccountBar, ModelSelect, WelcomeModal } from "./AccountBar";
 import { unionBox } from "./canvas";
@@ -31,7 +30,7 @@ import { useFileDrop } from "./useFileDrop";
 import { NotesPanel } from "./NotesPanel";
 import { Presenter } from "./Presenter";
 import { openPresenterWindow } from "./PresenterView";
-import { HOME_URL, IMPORT_NOTICE_KEY, PENDING_BRIEF_KEY } from "./nav";
+import { HOME_URL, IMPORT_NOTICE_KEY, loadInitialSpec, PENDING_BRIEF_KEY } from "./nav";
 import { modeHomeUrl, modeLibraryUrl, modeOfDeck, MODES, readModeParam, writeLastId, type AppMode } from "./mode";
 import { isMissingNotesRequest, isWriteNotesRequest } from "./notes";
 import { isRenumberRequest } from "./pageNumbers";
@@ -97,14 +96,6 @@ const takePendingBrief = () => {
   } catch { return null; }
 };
 
-function loadInitial(): PosterSpec {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return PosterSpecSchema.parse(JSON.parse(raw));
-  } catch { /* 破損時はサンプル */ }
-  return PosterSpecSchema.parse(sample);
-}
-
 const layerName = (l: Layer) => l.name ?? l.id;
 
 /** 画像の縦横比（幅/高さ）。読み込むまでは undefined */
@@ -122,7 +113,7 @@ function useImageRatio(src?: string) {
 }
 
 export function App() {
-  const { state: spec, set: setSpec, reset: resetSpec, stash: stashHistory, undo, redo, canUndo, canRedo } = useHistory<PosterSpec>(loadInitial());
+  const { state: spec, set: setSpec, reset: resetSpec, stash: stashHistory, undo, redo, canUndo, canRedo } = useHistory<PosterSpec>(loadInitialSpec());
   const W = spec.meta.width, H = spec.meta.height;
   const theme = resolveTheme(spec.theme, spec.themeOverride);
   const pending = useMemo(() => findPendingAssets(spec), [spec]);
@@ -1012,12 +1003,6 @@ export function App() {
     setSpec((s) => ({ ...s, meta: { ...s.meta, ...a4Size(s.meta.width, s.meta.height) } }));
     notifyRestorable("用紙を A4 の大きさにそろえました", before, "info");
   };
-  const resetToSample = () => {
-    const before = spec;
-    setSpec(PosterSpecSchema.parse(sample));
-    setSelected(null);
-    notifyRestorable("サンプルに戻しました", before, "info");
-  };
 
   // ---------- PPTX エディターモード ----------
   const {
@@ -1376,7 +1361,6 @@ export function App() {
                   </>}
                   <div className="menu-sep" />
                   <button role="menuitem" onClick={saveNow} disabled={save.savingNow}><Ico name="save" /> 今すぐ保存<small><kbd>{MOD}+S</kbd></small></button>
-                  {mode === "poster" && <button role="menuitem" onClick={resetToSample}><Ico name="undo" /> サンプルに戻す</button>}
                 </div>
               )}
             </Menu>
