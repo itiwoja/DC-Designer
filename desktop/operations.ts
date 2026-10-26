@@ -1,0 +1,105 @@
+/**
+ * Windows 版（Electron）で画面から呼べる API 操作の静的な一覧（EXE-API-009）。
+ * 画面は URL・method を渡さず、ここにある operation 名と params だけを渡す。main は同じ一覧で検証してから
+ * 固定の内部 API へ中継する。段階1はローカル編集だけ（AI・フォント取得・OS 登録・認証・画像生成は載せない）
+ */
+
+export type DesktopMethod = "GET" | "POST" | "PUT" | "DELETE";
+
+export type DesktopOperation = {
+  method: DesktopMethod;
+  /** 内部 API の route。`:name` は params の同名の値（ID の形を検証してから埋める） */
+  route: string;
+  /** 本文の上限（バイト）。無ければ本文を受け付けない */
+  maxBody?: number;
+  /** 付けてよい query（値は固定の候補だけ） */
+  query?: Record<string, readonly string[]>;
+};
+
+const MB = 1024 * 1024;
+
+export const DESKTOP_OPERATIONS = {
+  "status.get": { method: "GET", route: "/api/status" },
+
+  "posters.list": { method: "GET", route: "/api/posters" },
+  "posters.create": { method: "POST", route: "/api/posters", maxBody: 40 * MB },
+  "posters.get": { method: "GET", route: "/api/posters/:id" },
+  "posters.update": { method: "PUT", route: "/api/posters/:id", maxBody: 40 * MB },
+  "posters.duplicate": { method: "POST", route: "/api/posters/:id/duplicate", maxBody: 1024 },
+  "posters.delete": { method: "DELETE", route: "/api/posters/:id" },
+  "posters.deck": { method: "GET", route: "/api/posters/:id/deck", query: { specs: ["1"] } },
+
+  "decks.list": { method: "GET", route: "/api/decks" },
+  "decks.create": { method: "POST", route: "/api/decks", maxBody: 40 * MB },
+  "decks.get": { method: "GET", route: "/api/decks/:id" },
+  "decks.duplicate": { method: "POST", route: "/api/decks/:id/duplicate", maxBody: 1024 },
+  "decks.delete": { method: "DELETE", route: "/api/decks/:id" },
+  "decks.update": { method: "PUT", route: "/api/decks/:id", maxBody: 1 * MB },
+  "decks.addSlide": { method: "POST", route: "/api/decks/:id/slides", maxBody: 40 * MB },
+  "decks.removeSlide": { method: "DELETE", route: "/api/decks/:id/slides/:posterId" },
+
+  "upload.create": { method: "POST", route: "/api/upload", maxBody: 28 * MB },
+  "generated.list": { method: "POST", route: "/api/generated/list", maxBody: 40 * MB },
+  "generated.delete": { method: "POST", route: "/api/generated/delete", maxBody: 40 * MB },
+
+  "fonts.status": { method: "POST", route: "/api/fonts/status", maxBody: 64 * 1024 },
+} as const satisfies Record<string, DesktopOperation>;
+
+export type DesktopOperationName = keyof typeof DESKTOP_OPERATIONS;
+
+/** route に埋める ID の形（server/library.ts の ID_RE と同じ） */
+export const DESKTOP_ID_RE = /^[a-z0-9]{12}$/;
+
+export type DesktopRequest = {
+  operation: DesktopOperationName;
+  params?: Record<string, string>;
+  query?: Record<string, string>;
+  body?: unknown;
+};
+
+/** 画面の (method, url) を operation に対応付ける。一覧に無ければ null（段階1で使えない機能） */
+export function matchDesktopOperation(method: string, url: string): Omit<DesktopRequest, "body"> | null {
+  const [path, search = ""] = url.split("?");
+  const segs = path.split("/");
+  for (const [name, op] of Object.entries(DESKTOP_OPERATIONS) as [DesktopOperationName, DesktopOperation][]) {
+    if (op.method !== method) continue;
+    const want = op.route.split("/");
+    if (want.length !== segs.length) continue;
+    const params: Record<string, string> = {};
+    if (!want.every((w, i) => (w.startsWith(":") ? DESKTOP_ID_RE.test(segs[i]) && ((params[w.slice(1)] = segs[i]), true) : w === segs[i]))) continue;
+    const query = Object.fromEntries(new URLSearchParams(search));
+    return { operation: name, ...(Object.keys(params).length ? { params } : {}), ...(Object.keys(query).length ? { query } : {}) };
+  }
+  return null;
+}
+
+/**
+ * main 側の検証：operation・params・query を一覧と照合し、内部 API の相対 path を組み立てる。
+ * 不正なら null（呼び出し側で INVALID_ARGUMENT にする）
+ */
+export function resolveDesktopRequest(req: unknown): { op: DesktopOperation; path: string; body?: unknown } | null {
+  if (!req || typeof req !== "object") return null;
+  const { operation, params = {}, query = {}, body, ...rest } = req as Record<string, unknown>;
+  if (Object.keys(rest).length) return null;
+  if (typeof operation !== "string" || !Object.hasOwn(DESKTOP_OPERATIONS, operation)) return null;
+  const op: DesktopOperation = DESKTOP_OPERATIONS[operation as DesktopOperationName];
+  if (!isStringRecord(params) || !isStringRecord(query)) return null;
+  const used = new Set<string>();
+  const segs: string[] = [];
+  for (const w of op.route.split("/")) {
+    if (!w.startsWith(":")) { segs.push(w); continue; }
+    const v = params[w.slice(1)];
+    if (typeof v !== "string" || !DESKTOP_ID_RE.test(v)) return null;
+    used.add(w.slice(1));
+    segs.push(v);
+  }
+  if (Object.keys(params).some((k) => !used.has(k))) return null;
+  const allowed = op.query ?? {};
+  for (const [k, v] of Object.entries(query)) if (!allowed[k]?.includes(v)) return null;
+  if (body !== undefined && op.maxBody === undefined) return null;
+  const qs = new URLSearchParams(query).toString();
+  return { op, path: segs.join("/") + (qs ? `?${qs}` : ""), ...(body !== undefined ? { body } : {}) };
+}
+
+const isStringRecord = (v: unknown): v is Record<string, string> =>
+  !!v && typeof v === "object" && !Array.isArray(v) && Object.values(v).every((x) => typeof x === "string");
