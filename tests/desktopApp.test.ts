@@ -81,6 +81,21 @@ describe("製品版の入口", () => {
     expect(await res.json()).toHaveProperty("posters");
   });
 
+  it("資格情報が復号不能でもホームの状態取得とローカル作品一覧は開ける", async () => {
+    const { SecretError, setSecretBackend } = await import("../server/secrets");
+    setSecretBackend({
+      get: async () => { throw new SecretError("reauthRequired", "復号できません"); },
+      set: async () => {}, remove: async () => {}, has: () => false,
+    });
+    try {
+      const responses = await Promise.all(["/api/status", "/api/posters", "/api/decks"].map((path) => call(path, { headers: good })));
+      expect(responses.map((r) => r.status)).toEqual([200, 200, 200]);
+      expect((await responses[0].json()).chatgpt).toMatchObject({ signedIn: false });
+    } finally {
+      setSecretBackend(null);
+    }
+  });
+
   it("drain 中は GET 以外が 503 BUSY、進行中が無ければ即 drained、resume で戻る", async () => {
     await handle.drain();
     const blocked = await call("/api/posters", { method: "POST", headers: good, body: "{}" });
