@@ -199,6 +199,10 @@ function registerIpc(): void {
     if (!isTrusted(e)) throw new Error("UNAUTHORIZED_CONTEXT");
     return runtime.retryStart();
   });
+  ipcMain.handle(IPC.windowTheme, (e, theme: unknown): void => {
+    if (!isTrusted(e) || (theme !== "light" && theme !== "dark")) return;
+    editorWindow?.setTitleBarOverlay({ symbolColor: theme === "dark" ? "#f2f2f6" : "#18181f" });
+  });
   // 資格情報：値は返さない（状態だけ）。引数の検証はストアが行う
   ipcMain.handle(IPC.secretsStatus, (e): DesktopResult => {
     if (!isTrusted(e)) return failResult("UNAUTHORIZED_CONTEXT", "この画面からは実行できません");
@@ -268,6 +272,9 @@ function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1440, height: 900, minWidth: 1024, minHeight: 640, show: false, autoHideMenuBar: true,
     title: "DC-Designer",
+    // 独立した OS タイトルバーをなくし、標準の窓操作ボタンだけを画面右上に重ねる。
+    titleBarStyle: "hidden",
+    titleBarOverlay: { color: "#00000000", symbolColor: "#18181f", height: 40 },
     webPreferences: {
       partition: PARTITION,
       preload: path.join(appRoot, "build", "desktop", "preload.cjs"),

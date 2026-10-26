@@ -1,0 +1,36 @@
+/* 独立したタイトルバーは作らず、既存の画面に標準の窓操作ボタンを重ねる。 */
+:root[data-desktop] {
+  --desktop-controls-height: env(titlebar-area-height, 40px);
+  --desktop-controls-width: calc(100vw - env(titlebar-area-width, calc(100vw - 138px)));
+}
+
+/* ホーム・成果物では、ヘッダーの余白をつかんでウィンドウを動かせる。 */
+:root[data-desktop] .topbar {
+  padding-right: calc(var(--desktop-controls-width) + 16px);
+  -webkit-app-region: drag;
+}
+:root[data-desktop] .topbar > :not(.spacer) { -webkit-app-region: no-drag; }
+
+/* エディタは右パネルの上だけを空ける。キャンバスや左パネルの操作領域は確保する。 */
+:root[data-desktop] .app::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: max(calc(var(--rw) + var(--gap)), calc(var(--desktop-controls-width) + 80px));
+  height: var(--desktop-controls-height);
+  z-index: 6;
+  -webkit-app-region: drag;
+}
+:root[data-desktop] .app > .float-panel.right { top: calc(var(--gap) + var(--desktop-controls-height)); }
+:root[data-desktop] .app > .resizer.right { top: calc(var(--gap) + var(--desktop-controls-height) + 16px); }
+:root[data-desktop] .lib-preview button { top: calc(var(--desktop-controls-height) + 16px); }
+
+/* 起動中・失敗時にも移動でき、標準の最小化・最大化・閉じるボタンは使える。 */
+:root[data-desktop] .desktop-runtime::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: var(--desktop-controls-height);
+  -webkit-app-region: drag;
+}
