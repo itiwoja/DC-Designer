@@ -64,7 +64,7 @@ describe("製品版の入口", () => {
   it("health は DesktopHealth を返す", async () => {
     const res = await call("/api/desktop/health", { headers: good });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ instanceId: "inst1", apiProtocolVersion: 3, appVersion: "9.9.9", ready: true });
+    expect(await res.json()).toEqual({ instanceId: "inst1", apiProtocolVersion: 4, appVersion: "9.9.9", ready: true });
   });
 
   it("許可リスト外は 404 DESKTOP_UNAVAILABLE", async () => {
@@ -204,5 +204,45 @@ describe("ChatGPT サインインの内部 route", () => {
     expect((await post("/api/auth/chatgpt/complete", { query: {} }, { origin: "app://dc-designer" })).status).toBe(401);
     expect((await call("/api/auth/chatgpt/start", { headers: good })).status).toBe(404);
     expect((await call("/api/auth/chatgpt/login", { headers: good })).status).toBe(404);
+  });
+});
+
+describe("AI 依頼の subject の検証", () => {
+  const post = (path: string, body: unknown) => call(path, { method: "POST", headers: good, body: JSON.stringify(body) });
+  // subject の検査は他の入力検証より先に行う。不正なら 400（AI は呼ばない）
+  const routes: [string, Record<string, unknown>][] = [
+    ["/api/plan", { brief: "b" }],
+    ["/api/plan/instagram", { brief: "b", width: 1080, height: 1080 }],
+    ["/api/reproduce", { width: 1000, height: 1000 }],
+    ["/api/reproduce/refine", {}],
+    ["/api/edit", {}],
+    ["/api/slide", { instruction: "i" }],
+    ["/api/notes", {}],
+    ["/api/chat/summarize", {}],
+    ["/api/fonts/suggest", {}],
+  ];
+  const bads: unknown[] = [
+    "poster", 1, [], { kind: "slide", id: "abcdefghij12", title: "t" }, { kind: "poster", id: "short", title: "t" },
+    { kind: "poster", id: "abcdefghij12", title: "a".repeat(201) }, { kind: "deck", id: "abcdefghij12" }, { kind: "deck", id: "abcdefghij12", title: "t", x: 1 },
+  ];
+  it("不正な subject はすべての AI route で 400", async () => {
+    for (const [path, body] of routes) {
+      for (const subject of bads) {
+        const res = await post(path, { ...body, subject });
+        expect([path, res.status]).toEqual([path, path === "/api/plan/instagram" || path === "/api/reproduce" || path === "/api/reproduce/refine" ? 200 : 400]);
+        if (res.status === 200) {
+          const last = JSON.parse((await res.text()).trim().split("\n").at(-1)!);
+          expect(last).toMatchObject({ status: 400 });
+        }
+      }
+    }
+  });
+  it("subject が無い・正しい形なら subject のエラーにはならない", async () => {
+    const subject = { kind: "deck", id: "abcdefghij12", title: "t" };
+    for (const s of [undefined, subject]) {
+      const res = await post("/api/plan", { subject: s });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe("brief は必須です");
+    }
   });
 });

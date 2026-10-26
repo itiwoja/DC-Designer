@@ -118,6 +118,60 @@ describe("AI 送信ゲート（製品版）", () => {
   });
 });
 
+describe("確認待ちの取り消しと subject", () => {
+  beforeEach(() => { process.env.DC_DESIGNER_DESKTOP = "1"; });
+  const base: AiConsentPayload = { providerId: "chatgpt", endpoint: "https://api.openai.com/v1/responses", model: "m", providerRouting: "direct", purpose: "x", instructions: "i", turns: [{ role: "user", text: "t" }] };
+
+  it("確認待ち中に中断すると ai-consent-cancel を送り 499 で終わる。送信はしない", async () => {
+    const port = fakePort(() => undefined); // main は答えない
+    setConsentBackend(createMainConsentBackend(port));
+    const ac = new AbortController();
+    const p = askChatGPT("sys", turns, undefined, ac.signal).catch((e) => e);
+    await new Promise((r) => setTimeout(r, 10));
+    const consent = port.sent.find((m) => m.type === "ai-consent");
+    ac.abort();
+    const err = await p;
+    expect(err).toMatchObject({ status: 499 });
+    expect(port.sent.find((m) => m.type === "ai-consent-cancel")).toEqual({ type: "ai-consent-cancel", requestId: consent.requestId });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("中断済みの signal なら依頼自体を出さない。取り消し後に届いた承認は failed と知らせる", async () => {
+    const sent: any[] = [];
+    let listener: (e: { data: unknown }) => void = () => {};
+    const port = { on: (_: "message", cb: typeof listener) => { listener = cb; }, postMessage: (m: any) => { sent.push(m); } };
+    setConsentBackend(createMainConsentBackend(port));
+    const done0 = new AbortController(); done0.abort();
+    await expect(requireConsent(base, done0.signal)).rejects.toMatchObject({ status: 499 });
+    expect(sent).toEqual([]);
+
+    const ac = new AbortController();
+    const p = requireConsent(base, ac.signal).catch((e) => e);
+    const requestId = sent[0].requestId;
+    ac.abort();
+    expect(await p).toMatchObject({ status: 499 });
+    // main が先に承認していた：送らないので結果を failed として返す
+    listener({ data: { type: "ai-consent-result", requestId, decision: "approve", payloadHash: "h" } });
+    expect(sent.at(-1)).toEqual({ type: "ai-outcome", requestId, outcome: "failed" });
+  });
+
+  it("runWithAiSubject の subject が payload に入り、ハッシュが変わる", async () => {
+    const { runWithAiSubject } = await import("../server/ai-consent");
+    const subject = { kind: "poster" as const, id: "abcdefghij12", title: "夏祭り" };
+    const port = fakePort(approve);
+    setConsentBackend(createMainConsentBackend(port));
+    await runWithAiSubject(subject, () => requireConsent(base));
+    await requireConsent(base);
+    const [withSubject, without] = port.sent.filter((m) => m.type === "ai-consent");
+    expect(withSubject.payload.subject).toEqual(subject);
+    expect(without.payload.subject).toBeUndefined();
+    expect(payloadHash(withSubject.payload)).not.toBe(payloadHash(without.payload));
+    const { canonicalPayload } = await import("../desktop/aiPayload");
+    expect(JSON.parse(canonicalPayload(withSubject.payload)).subject).toEqual(subject);
+    expect(JSON.parse(canonicalPayload(without.payload)).subject).toBeNull();
+  });
+});
+
 describe("開発版", () => {
   it("ゲートを通らず、切断では従来どおり送り直す", async () => {
     create

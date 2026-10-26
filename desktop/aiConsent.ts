@@ -152,6 +152,13 @@ export function createAiConsentBroker(deps: AiConsentBrokerDeps) {
     return true;
   }
 
+  /** worker からの ai-consent-cancel（確認待ちの間に操作が取り消された）。承認前なら無効にして窓を閉じ、承認後は何もしない */
+  function cancel(requestId: unknown): void {
+    if (typeof requestId !== "string") return;
+    const e = entries.get(requestId);
+    if (e && e.state === "prepared") finish(e, "invalidated");
+  }
+
   /** 窓が閉じた・Esc。承認前なら拒否 */
   function windowClosed(requestId: string): void {
     const e = entries.get(requestId);
@@ -176,5 +183,5 @@ export function createAiConsentBroker(deps: AiConsentBrokerDeps) {
     }
   }
 
-  return { request, decide, windowClosed, outcome, reset, stateOf: (requestId: string) => entries.get(requestId)?.state };
+  return { request, decide, windowClosed, cancel, outcome, reset, stateOf: (requestId: string) => entries.get(requestId)?.state };
 }

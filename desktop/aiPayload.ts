@@ -15,6 +15,17 @@ export type AiProviderId = keyof typeof AI_DESTINATIONS;
 export type AiImage = { mediaType: string; byteLength: number; sha256: string; data: string };
 export type AiTurn = { role: "user" | "assistant"; text: string; images?: AiImage[] };
 
+/** AI 依頼の対象作品（画面が要求に付ける。保存前の新規作品などでは無い） */
+export type AiSubject = { kind: "poster" | "deck"; id: string; title: string };
+
+/** subject の形の検証（worker の要求検証と main の verifyAiPayload で共有） */
+export function isAiSubject(v: unknown): v is AiSubject {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+  const o = v as Record<string, unknown>;
+  if (Object.keys(o).some((k) => k !== "kind" && k !== "id" && k !== "title")) return false;
+  return (o.kind === "poster" || o.kind === "deck") && typeof o.id === "string" && /^[a-z0-9]{12}$/.test(o.id) && typeof o.title === "string" && o.title.length <= 200;
+}
+
 export type AiConsentPayload = {
   providerId: AiProviderId;
   endpoint: string;
@@ -25,6 +36,8 @@ export type AiConsentPayload = {
   purpose: string;
   instructions: string;
   turns: AiTurn[];
+  /** 対象の作品（無ければ付けない） */
+  subject?: AiSubject;
 };
 
 /** 確認の上限（AI 設計値）：準備から5分 */
@@ -48,6 +61,7 @@ export function canonicalPayload(p: AiConsentPayload): string {
     providerRouting: p.providerRouting,
     purpose: p.purpose,
     instructions: p.instructions,
+    subject: p.subject ? { kind: p.subject.kind, id: p.subject.id, title: p.subject.title } : null,
     turns: p.turns.map((t) => ({
       role: t.role,
       text: t.text,
@@ -70,6 +84,7 @@ export function verifyAiPayload(raw: unknown): { payload: AiConsentPayload; payl
   const dest = AI_DESTINATIONS[p.providerId as AiProviderId];
   if (p.endpoint !== dest.endpoint || p.providerRouting !== "direct") return null;
   if (!str(p.model, 200) || !p.model || !str(p.purpose, 200) || !str(p.instructions, 2_000_000)) return null;
+  if (p.subject !== undefined && !isAiSubject(p.subject)) return null;
   if (!Array.isArray(p.turns) || p.turns.length === 0 || p.turns.length > 200) return null;
   let total = 0;
   for (const t of p.turns as unknown[]) {

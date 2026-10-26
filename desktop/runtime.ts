@@ -156,6 +156,10 @@ export type RuntimeDeps = {
   /** AI 送信確認（main の broker）。payload は検証前の値なので broker 側で verifyAiPayload する。無ければ invalid を返す */
   onAiConsent?: (requestId: string, payload: unknown) => Promise<AiConsentDecision>;
   onAiOutcome?: (requestId: string, outcome: AiOutcome) => void;
+  /** 確認待ちの間に操作が取り消された（確認窓を閉じる） */
+  onAiConsentCancel?: (requestId: string) => void;
+  /** 中断された ChatGPT 操作の資格情報アクセスを、worker 側の後始末のために残す時間（既定 3 秒） */
+  chatgptGraceMs?: number;
   /** worker が終了した（保留中の依頼を破棄する） */
   onAiWorkerLost?: () => void;
 };
@@ -174,6 +178,9 @@ type Instance = {
 
 const HEALTH_TIMEOUT_MS = 5_000;
 const KILL_WAIT_MS = 10_000;
+const CHATGPT_GRACE_MS = 3_000;
+/** worker が読み書きしてよい唯一の資格情報（ChatGPT 操作の実行中だけ） */
+const CHATGPT_OAUTH = secretRefOf("chatgpt", "oauth");
 const RESUME_TIMEOUT_MS = 10_000;
 
 export type Runtime = ReturnType<typeof createRuntime>;
@@ -183,6 +190,8 @@ export function createRuntime(deps: RuntimeDeps) {
   let model: RuntimeModel = initialRuntimeModel;
   let cur: Instance | null = null;
   let retrying = false;
+  /** 実行中の ChatGPT 操作（operations の chatgpt）の件数。0 のとき worker に資格情報を渡さない */
+  let chatgptActive = 0;
 
   const snapshot = (): RuntimeSnapshot => ({
     state: model.state, appVersion: deps.appVersion, ...(model.error ? { error: model.error } : {}),
@@ -269,8 +278,13 @@ export function createRuntime(deps: RuntimeDeps) {
     const { requestId, providerId, kind } = m;
     if (!deps.secrets || typeof requestId !== "string" || !requestId || requestId.length > 100) return;
     if (typeof providerId !== "string" || typeof kind !== "string") return;
-    // worker が書き換えてよいのはサインインで更新される ChatGPT の資格情報だけ（API キーは画面の設定からだけ）
-    if (m.type !== "secret-get" && !(providerId === "chatgpt" && kind === "oauth")) return;
+    if (m.type === "secret-set" && typeof m.value !== "string") return;
+    // worker が読み書きしてよいのは ChatGPT の資格情報だけ、かつ ChatGPT を使う操作の実行中だけ（API キーは画面の設定からだけ）
+    if (secretRefOf(providerId, kind) !== CHATGPT_OAUTH || chatgptActive <= 0) {
+      if (m.type !== "secret-get" && m.type !== "secret-set" && m.type !== "secret-remove") return;
+      if (!inst.exited) inst.child.postMessage({ type: "secret-result", requestId, ok: false, state: "unset", code: "SECRET_DENIED" });
+      return;
+    }
     let r;
     if (m.type === "secret-get") r = deps.secrets.get(providerId, kind);
     else if (m.type === "secret-set") {
@@ -311,6 +325,11 @@ export function createRuntime(deps: RuntimeDeps) {
     const type = (raw as { type: string }).type;
     if (type === "secret-get" || type === "secret-set" || type === "secret-remove") return onSecretMessage(inst, raw as Record<string, unknown>);
     if (type === "ai-consent") return void onAiConsentMessage(inst, raw as Record<string, unknown>);
+    if (type === "ai-consent-cancel") {
+      const { requestId } = raw as Record<string, unknown>;
+      if (typeof requestId === "string" && requestId && requestId.length <= 100) deps.onAiConsentCancel?.(requestId);
+      return;
+    }
     if (type === "ai-outcome") {
       const { requestId, outcome } = raw as Record<string, unknown>;
       if (typeof requestId === "string" && (outcome === "completed" || outcome === "failed" || outcome === "outcomeUnknown")) deps.onAiOutcome?.(requestId, outcome);
@@ -384,10 +403,26 @@ export function createRuntime(deps: RuntimeDeps) {
     op: DesktopOperation, p: string, body: unknown,
     opts: { signal?: AbortSignal; onProgress?: (p: DesktopProgress) => void } = {},
   ): Promise<DesktopResult> {
-    const { signal, onProgress } = opts;
+    const { signal } = opts;
     if (signal?.aborted) return ABORTED;
     const inst = cur;
     if (model.state !== "ready" || !alive(inst) || !inst.port) return { ok: false, error: "APIの準備ができていません", code: "INVALID_STATE" };
+    // ChatGPT を使う操作の間だけ worker に資格情報を渡す。中断では worker の後始末の分だけ少し遅らせて閉じる
+    if (!op.chatgpt) return send(inst, op, p, body, opts);
+    chatgptActive++;
+    try {
+      return await send(inst, op, p, body, opts);
+    } finally {
+      if (signal?.aborted && (deps.chatgptGraceMs ?? CHATGPT_GRACE_MS) > 0) setTimeout(() => { chatgptActive--; }, deps.chatgptGraceMs ?? CHATGPT_GRACE_MS).unref?.();
+      else chatgptActive--;
+    }
+  }
+
+  async function send(
+    inst: Instance, op: DesktopOperation, p: string, body: unknown,
+    opts: { signal?: AbortSignal; onProgress?: (p: DesktopProgress) => void },
+  ): Promise<DesktopResult> {
+    const { signal, onProgress } = opts;
     const payload = body === undefined ? undefined : JSON.stringify(body);
     if (payload !== undefined && (op.maxBody === undefined || Buffer.byteLength(payload) > op.maxBody)) {
       return { ok: false, error: "要求が大きすぎます", code: "INVALID_ARGUMENT" };

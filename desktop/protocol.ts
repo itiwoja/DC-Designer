@@ -5,7 +5,7 @@
 import type { AiConsentPayload } from "./aiPayload";
 
 /** main と worker の取り決めの版。合わなければ main は failed にする */
-export const API_PROTOCOL_VERSION = 3;
+export const API_PROTOCOL_VERSION = 4;
 
 /** 内部 API の認証ヘッダー名 */
 export const DESKTOP_TOKEN_HEADER = "x-dc-desktop-token";
@@ -56,6 +56,8 @@ export type WorkerToMain =
   | { type: "secret-remove"; requestId: string; providerId: string; kind: string }
   /** AI へ送る直前の確認依頼（EXE-API-003 相当）。payload は実際に送る bytes から作ったもの */
   | { type: "ai-consent"; requestId: string; payload: AiConsentPayload }
+  /** 確認待ちの間に操作が取り消された（確認窓を閉じ、待ち行列から外す）。承認後（dispatching）の依頼には効かない */
+  | { type: "ai-consent-cancel"; requestId: string }
   /** 確認した1回の送信の結果（確認窓の表示用。本文・秘密値は含めない） */
   | { type: "ai-outcome"; requestId: string; outcome: "completed" | "failed" | "outcomeUnknown" }
   /** 起動に失敗した（秘密値・絶対 path を含めない分類だけ） */

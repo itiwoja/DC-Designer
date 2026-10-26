@@ -15,9 +15,9 @@ import { join } from "node:path";
 
 const ISSUER = "https://auth.openai.com";
 const AUTHORIZE_URL = `${ISSUER}/api/accounts/authorize`;
-const TOKEN_URL = `${ISSUER}/api/accounts/oauth/token`;
-const REVOKE_URL = `${ISSUER}/api/accounts/oauth/revoke`;
-const JWKS_URL = `${ISSUER}/.well-known/jwks.json`;
+export const TOKEN_URL = `${ISSUER}/api/accounts/oauth/token`;
+export const REVOKE_URL = `${ISSUER}/api/accounts/oauth/revoke`;
+export const JWKS_URL = `${ISSUER}/.well-known/jwks.json`;
 const RESOURCE = "https://api.openai.com/v1";
 const PLAN_SCOPE = "chatgpt.tokens.use.direct";
 const SCOPES = `openid profile email offline_access resource.invoke ${PLAN_SCOPE}`;

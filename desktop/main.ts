@@ -75,6 +75,7 @@ const runtime = createRuntime({
   secrets,
   onAiConsent: (requestId, payload) => aiConsent.request(requestId, payload),
   onAiOutcome: (requestId, outcome) => aiConsent.outcome(requestId, outcome),
+  onAiConsentCancel: (requestId) => aiConsent.cancel(requestId),
   onAiWorkerLost: () => aiConsent.reset(),
   appVersion: app.getVersion(),
   onState: (s) => { sendToEditor(IPC.stateChanged, s); },

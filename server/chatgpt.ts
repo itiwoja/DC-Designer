@@ -146,7 +146,7 @@ export async function askChatGPT(instructions: string, turns: Turn[], onText?: (
     const details = turns.map((t) => (t.images ?? []).map((r) => r.detail));
     const requestId = await requireConsent({
       providerId: "chatgpt", endpoint: AI_DESTINATIONS.chatgpt.endpoint, model, providerRouting: "direct", purpose, instructions, turns: snapshot,
-    });
+    }, signal);
     // dispatch した後は結果にかかわらず許可を消費済み。結果は1回だけ main に知らせる
     let outcome: AiOutcome = "failed";
     try {

@@ -159,3 +159,15 @@ describe("runtime.request の stream", () => {
     expect(onProgress).not.toHaveBeenCalled();
   });
 });
+
+describe("ChatGPT の資格情報を使う操作の印", () => {
+  it("authStatus / getAccessToken / listModels / askChatGPT を呼ぶ操作と、サインインの内部操作だけに付く", async () => {
+    const { DESKTOP_INTERNAL_OPERATIONS } = await import("../desktop/operations");
+    const all = { ...DESKTOP_OPERATIONS, ...DESKTOP_INTERNAL_OPERATIONS } as Record<string, { chatgpt?: true }>;
+    const marked = Object.keys(all).filter((k) => all[k].chatgpt).sort();
+    expect(marked).toEqual([
+      "ai.edit", "ai.notes", "ai.plan", "ai.planInstagram", "ai.reproduce", "ai.reproduceRefine", "ai.slide", "ai.summarize",
+      "auth.complete", "auth.logout", "auth.start", "chatgpt.model", "fonts.suggest", "status.get",
+    ]);
+  });
+});

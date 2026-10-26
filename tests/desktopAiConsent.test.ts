@@ -97,6 +97,47 @@ describe("createAiConsentBroker", () => {
     expect(broker.stateOf("r3")).toBe("dispatching");
   });
 
+  it("cancel は prepared を invalidated にして窓を閉じ、待ち行列の次を出す。dispatching 後は無視する", async () => {
+    const { broker, wins } = setup();
+    const a = broker.request("r1", payload("a"));
+    const b = broker.request("r2", payload("b"));
+    const c = broker.request("r3", payload("c"));
+    expect(wins).toHaveLength(1);
+    // 待ち行列の中（まだ窓なし）を取り消しても、表示中は変わらない
+    broker.cancel("r2");
+    expect(await b).toEqual({ decision: "invalid" });
+    expect(broker.stateOf("r2")).toBe("invalidated");
+    expect(wins).toHaveLength(1);
+    // 表示中の取り消し：窓を閉じ、次（r3）が表示される
+    broker.cancel("r1");
+    expect(await a).toEqual({ decision: "invalid" });
+    expect(broker.stateOf("r1")).toBe("invalidated");
+    expect(wins[0].closed).toBe(true);
+    expect(wins).toHaveLength(2);
+    expect(wins[1].view.requestId).toBe("r3");
+    // 承認後（dispatching）は何もしない
+    expect(broker.decide(wins[1].senderId, approve(wins[1]))).toBe(true);
+    await c;
+    broker.cancel("r3");
+    expect(broker.stateOf("r3")).toBe("dispatching");
+    expect(wins[1].closed).toBe(false);
+    // 知らない ID・型違いは無視
+    broker.cancel("zzz");
+    broker.cancel(5);
+  });
+
+  it("subject は検証され、hash に含まれる", async () => {
+    const { broker, wins } = setup();
+    const subject = { kind: "deck" as const, id: "abcdefghij12", title: "四半期レビュー" };
+    void broker.request("r1", { ...payload(), subject });
+    expect(wins[0].view.payload.subject).toEqual(subject);
+    const plain = (await import("../desktop/aiPayload")).payloadHash(payload());
+    expect(wins[0].view.payloadHash).not.toBe(plain);
+    for (const [i, bad] of [{ kind: "x", id: "abcdefghij12", title: "t" }, { kind: "poster", id: "ABC", title: "t" }, { kind: "poster", id: "abcdefghij12", title: "a".repeat(201) }, { kind: "poster", id: "abcdefghij12", title: 1 }, { kind: "poster", id: "abcdefghij12", title: "t", extra: 1 }, "poster", null].entries()) {
+      expect(await broker.request(`bad${i}`, { ...payload(), subject: bad })).toEqual({ decision: "invalid" });
+    }
+  });
+
   it("期限切れは expired。期限後の承認は通らない", async () => {
     const { broker, wins } = setup();
     const a = broker.request("r1", payload());

@@ -16,12 +16,17 @@ export type DesktopOperation = {
   query?: Record<string, readonly string[]>;
   /** NDJSON で進み具合（{progress}）を流し、最後に {result} か {error} を返す route */
   stream?: true;
+  /**
+   * ChatGPT の資格情報（secret chatgpt/oauth）を使う操作。実行中だけ worker が資格情報を読み書きできる（EXE-API-006）。
+   * route が authStatus / getAccessToken / listModels / askChatGPT / logout / startLogin / completeLogin のどれかを呼ぶものに付ける
+   */
+  chatgpt?: true;
 };
 
 const MB = 1024 * 1024;
 
 export const DESKTOP_OPERATIONS = {
-  "status.get": { method: "GET", route: "/api/status" },
+  "status.get": { method: "GET", route: "/api/status", chatgpt: true },
 
   "posters.list": { method: "GET", route: "/api/posters" },
   "posters.create": { method: "POST", route: "/api/posters", maxBody: 40 * MB },
@@ -45,18 +50,18 @@ export const DESKTOP_OPERATIONS = {
   "generated.delete": { method: "POST", route: "/api/generated/delete", maxBody: 40 * MB },
 
   // AI 操作（送信の確認は worker の askChatGPT が送る直前に main へ依頼する）。画像生成（/api/asset）は載せない
-  "ai.plan": { method: "POST", route: "/api/plan", maxBody: 40 * MB },
-  "ai.planInstagram": { method: "POST", route: "/api/plan/instagram", maxBody: 40 * MB, stream: true },
-  "ai.reproduce": { method: "POST", route: "/api/reproduce", maxBody: 40 * MB, stream: true },
-  "ai.reproduceRefine": { method: "POST", route: "/api/reproduce/refine", maxBody: 40 * MB, stream: true },
-  "ai.edit": { method: "POST", route: "/api/edit", maxBody: 40 * MB },
-  "ai.slide": { method: "POST", route: "/api/slide", maxBody: 40 * MB },
-  "ai.notes": { method: "POST", route: "/api/notes", maxBody: 4 * MB },
-  "ai.summarize": { method: "POST", route: "/api/chat/summarize", maxBody: 1 * MB },
-  "fonts.suggest": { method: "POST", route: "/api/fonts/suggest", maxBody: 1 * MB },
-  "chatgpt.model": { method: "PUT", route: "/api/chatgpt/model", maxBody: 1024 },
+  "ai.plan": { method: "POST", route: "/api/plan", maxBody: 40 * MB, chatgpt: true },
+  "ai.planInstagram": { method: "POST", route: "/api/plan/instagram", maxBody: 40 * MB, stream: true, chatgpt: true },
+  "ai.reproduce": { method: "POST", route: "/api/reproduce", maxBody: 40 * MB, stream: true, chatgpt: true },
+  "ai.reproduceRefine": { method: "POST", route: "/api/reproduce/refine", maxBody: 40 * MB, stream: true, chatgpt: true },
+  "ai.edit": { method: "POST", route: "/api/edit", maxBody: 40 * MB, chatgpt: true },
+  "ai.slide": { method: "POST", route: "/api/slide", maxBody: 40 * MB, chatgpt: true },
+  "ai.notes": { method: "POST", route: "/api/notes", maxBody: 4 * MB, chatgpt: true },
+  "ai.summarize": { method: "POST", route: "/api/chat/summarize", maxBody: 1 * MB, chatgpt: true },
+  "fonts.suggest": { method: "POST", route: "/api/fonts/suggest", maxBody: 1 * MB, chatgpt: true },
+  "chatgpt.model": { method: "PUT", route: "/api/chatgpt/model", maxBody: 1024, chatgpt: true },
 
-  "auth.logout": { method: "POST", route: "/api/auth/chatgpt/logout" },
+  "auth.logout": { method: "POST", route: "/api/auth/chatgpt/logout", chatgpt: true },
 
   "fonts.status": { method: "POST", route: "/api/fonts/status", maxBody: 64 * 1024 },
   // 取得・埋め込み・OS 登録は main の fontGate を通す（許可・確認が済むまで worker へ送らない）。fonts.acquire は main 内部専用で載せない
@@ -69,8 +74,8 @@ export const DESKTOP_OPERATIONS = {
 export const DESKTOP_INTERNAL_OPERATIONS = {
   "fonts.acquire": { method: "POST", route: "/api/fonts/acquire", maxBody: 64 * 1024 },
   // ChatGPT サインイン：認可 URL の作成と結果の受け取り（authGate が呼ぶ。画面からは呼べない）
-  "auth.start": { method: "POST", route: "/api/auth/chatgpt/start", maxBody: 1024 },
-  "auth.complete": { method: "POST", route: "/api/auth/chatgpt/complete", maxBody: 16 * 1024 },
+  "auth.start": { method: "POST", route: "/api/auth/chatgpt/start", maxBody: 1024, chatgpt: true },
+  "auth.complete": { method: "POST", route: "/api/auth/chatgpt/complete", maxBody: 16 * 1024, chatgpt: true },
 } as const satisfies Record<string, DesktopOperation>;
 
 export type DesktopOperationName = keyof typeof DESKTOP_OPERATIONS;
