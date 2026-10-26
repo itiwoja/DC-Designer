@@ -90,7 +90,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | 1 | Electron＋`app://dc-designer`＋限定IPC（`apiTransport`の差し替え）、`utilityProcess`のAPI、`userRoot`（`%LOCALAPPDATA%/DC-Designer/`）への保存先分離、iframeサムネイルの置き換え、許可リストによる隔離ビルド・配布物検査、名前付きパイプlease、通常終了の保存調停。Codex・ComfyUI連携は無効 | EXE-FR-001、002、003（保存先分離）、006（通常終了）、008、009 | 社内確認用（正式配信しない） |
 | 2 | AI送信の確認（確認窓1回）、フォント`text=`廃止と全文字埋め込み、資格情報のDPAPI保護、目的別egressゲート | EXE-FR-003（資格情報保護）、004、005 | 社内確認用 |
-| 3 | `electron-updater`による更新（[既存の更新設計](./desktop-update-design.md)どおり）、コード署名、配信CI・権限制限。ここまでにEXE-Q-01・Q-02を決める | EXE-FR-007 | 正式配信の候補 |
+| 3 | `electron-updater`による更新（[既存の更新設計](./desktop-update-design.md)どおり）、コード署名、配信CI・権限制限。配信先は公開GitHub Releases、署名はSignPath Foundation（EXE-D-10・11） | EXE-FR-007 | 正式配信の候補 |
 | 4 | 任意：Codex連携を入れる場合に、native supervisor＋Job Objectを追加する（付録の設計）。同梱ランタイム・Windows用ヘルパー・RuntimeLeaseJournal（EXE-TBL-006）・子孫プロセス回収もここで扱う | EXE-FR-006（子孫回収） | 段階4の検証後 |
 
 - 段階1で必須となる実装の手間：サムネイル／描画プレビューは現行`src/editor/ui.tsx`で同一originのReactアプリを`iframe src="?view=render&embed=1"`として開いている。製品版では使えないため、**受動的な描画snapshot（画像化したプレビュー）への置き換え**を必須タスクとする。
@@ -237,6 +237,8 @@ Windows native supervisorの生成時Job所属・HANDLE監視と、その適用�
 | EXE-D-07 | 対応プラットフォームはWindowsのみ。macOS・Linux版はWon't。版・CPUはWindows 10 / 11のx64をAI推奨とし、実機確認した版だけ対応と表示（2026-10-26）。EXE-Q-03は一部決定 | ユーザー回答（Windowsのみ）／AI推奨（版・CPU） |
 | EXE-D-08 | [段階分け](#phases)（段階1〜4）を採用。API実行は`utilityProcess`、保存先の排他は名前付きパイプlease、Codex・ComfyUI連携は段階1〜3で製品版無効、native supervisor＋Job Objectは段階4（2026-10-26）。iframeサムネイルの置き換えを段階1の必須タスクにする | ユーザー（改善案の適用を承認）／AI設計判断／[ADR-003](./adr/ADR-003-desktop-runtime.md) |
 | EXE-D-09 | AI送信の確認は、mainが生成する専用の確認窓（別webContents・別preload）での1回に簡素化し、ネイティブ確認ダイアログとの二重確認をやめる。フォント埋め込みは段階2で端末内サブセット化せず全文字のまま。`text=`廃止は維持（2026-10-26） | ユーザー（改善案の適用を承認）／[ADR-002](./adr/ADR-002-private-data-and-consent.md)、[ADR-004](./adr/ADR-004-font-acquisition.md) |
+| EXE-D-10 | 配信先は公開GitHub Releases（EXE-Q-01）。インストーラー・`latest.yml`等の更新用成果物を版単位で置き、公開済みアセットは差し替えない。リポジトリは公開・MITのため、利用者の更新確認・取得にトークンは不要 | ユーザー回答（2026-10-26） |
+| EXE-D-11 | コード署名は[SignPath Foundation](https://signpath.org/)（EXE-Q-02）。GitHub Actionsのタグ起点のビルド成果物を、SignPath上で本人が承認した署名要求だけ署名する。期待する発行者（証明書のsubject）は「SignPath Foundation」で、`electron-updater`の発行者検証もこの名前に固定する。前提：OSSライセンスの維持、リポジトリへのコード署名ポリシーの掲載、コミット権限者の多要素認証。審査が通らない場合は正式配信せず、署名方式を再検討する | ユーザー回答（2026-10-26）。運用条件はAI設計 |
 
 ## このドキュメントで決まったこと
 
