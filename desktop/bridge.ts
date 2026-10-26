@@ -29,6 +29,12 @@ export type DesktopBridge = {
     /** 解除関数を返す */
     onStateChanged(cb: (s: RuntimeSnapshot) => void): () => void;
   };
+  /** 資格情報（EXE-FR-003）。値は読み戻せない。結果は { ok, data: 状態 } の形で返す */
+  secrets: {
+    status(): Promise<DesktopResult>;
+    set(providerId: string, kind: string, value: string): Promise<DesktopResult>;
+    remove(secretRef: string): Promise<DesktopResult>;
+  };
   close: {
     /** 解除関数を返す */
     onPrepare(cb: (req: PrepareCloseRequest) => void): () => void;
@@ -44,4 +50,7 @@ export const IPC = {
   stateChanged: "dc:runtime-state",
   prepareClose: "dc:prepare-close",
   completeClose: "dc:complete-close",
+  secretsStatus: "dc:secrets-status",
+  secretsSet: "dc:secrets-set",
+  secretsRemove: "dc:secrets-remove",
 } as const;

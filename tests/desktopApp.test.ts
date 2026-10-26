@@ -56,7 +56,7 @@ describe("製品版の入口", () => {
   it("health は DesktopHealth を返す", async () => {
     const res = await call("/api/desktop/health", { headers: good });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ instanceId: "inst1", apiProtocolVersion: 1, appVersion: "9.9.9", ready: true });
+    expect(await res.json()).toEqual({ instanceId: "inst1", apiProtocolVersion: 2, appVersion: "9.9.9", ready: true });
   });
 
   it("許可リスト外は 404 DESKTOP_UNAVAILABLE", async () => {

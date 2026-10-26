@@ -13,6 +13,6 @@ const { app } = createApp({ mode: "dev", port });
 
 // OAuth のコールバックは http://127.0.0.1:<port> 固定。既定の "::" だと WSL が Windows 側へ [::1] しか転送せず、
 // ブラウザから 127.0.0.1 に届かないので IPv4 ループバックに明示的にバインドする
-app.listen(port, "127.0.0.1", () => {
-  console.log(`[api] http://127.0.0.1:${port}  AI: ${aiProvider() ?? "なし"}${openRouterAvailable() ? ` (OpenRouter: ${openRouterModel()})` : ""}  image provider: ${imageProviderName()} (available: ${availableProviders().join(", ")})`);
+app.listen(port, "127.0.0.1", async () => {
+  console.log(`[api] http://127.0.0.1:${port}  AI: ${(await aiProvider()) ?? "なし"}${openRouterAvailable() ? ` (OpenRouter: ${openRouterModel()})` : ""}  image provider: ${imageProviderName()} (available: ${availableProviders().join(", ")})`);
 });

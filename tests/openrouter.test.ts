@@ -160,12 +160,12 @@ describe("OpenRouter のモデル", () => {
 describe("AI の選択", () => {
   it("自動: ChatGPT プランが使えれば ChatGPT、無ければ OpenRouter", async () => {
     const ai = await import("../server/ai");
-    expect(ai.aiProvider()).toBe("openrouter");
+    expect(await ai.aiProvider()).toBe("openrouter");
     auth.status = { signedIn: true, planEnabled: true };
-    expect(ai.aiProvider()).toBe("chatgpt");
+    expect(await ai.aiProvider()).toBe("chatgpt");
     delete process.env.OPENROUTER_API_KEY;
     auth.status = { signedIn: false };
-    expect(ai.aiProvider()).toBeUndefined();
+    expect(await ai.aiProvider()).toBeUndefined();
   });
 
   it("画面で選んだ AI が .env の AI_PROVIDER より優先され、空文字で自動に戻る", async () => {
@@ -176,7 +176,7 @@ describe("AI の選択", () => {
     ai.setAIProvider("chatgpt");
     expect(await ai.aiStatus()).toMatchObject({ provider: "chatgpt", choice: "chatgpt", explicit: "chatgpt" });
     ai.setAIProvider("");
-    expect(ai.aiProvider()).toBe("openrouter");
+    expect(await ai.aiProvider()).toBe("openrouter");
     expect(() => ai.setAIProvider("gemini")).toThrow(/不明な AI/);
   });
 
@@ -185,7 +185,7 @@ describe("AI の選択", () => {
     process.env.AI_PROVIDER = "openrouter";
     delete process.env.OPENROUTER_API_KEY;
     const ai = await import("../server/ai");
-    expect(ai.aiProvider()).toBeUndefined();
+    expect(await ai.aiProvider()).toBeUndefined();
     // 画面には「.env で OpenRouter を選んでいる」と伝え、ChatGPT プランの案内にしない
     expect(await ai.aiStatus()).toMatchObject({ provider: undefined, choice: "", explicit: "openrouter", openrouter: null });
     await expect(ai.askAI("S", [{ role: "user", text: "x" }])).rejects.toThrow(/OPENROUTER_API_KEY/);

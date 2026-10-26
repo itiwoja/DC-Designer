@@ -34,16 +34,16 @@ export function setAIProvider(provider: string): void {
   renameSync(CHOICE_FILE + ".tmp", CHOICE_FILE);
 }
 
-function usable(p: AIProvider): boolean {
+async function usable(p: AIProvider): Promise<boolean> {
   if (p === "openrouter") return openRouterAvailable();
-  const s = authStatus();
+  const s = await authStatus();
   return s.signedIn && s.planEnabled;
 }
 
 /** 明示（画面の選択か .env）があればそれ（使えなければ undefined）、無ければ使えるほう */
-function resolve(explicit: AIProvider | undefined): AIProvider | undefined {
-  if (explicit) return usable(explicit) ? explicit : undefined;
-  return usable("chatgpt") ? "chatgpt" : usable("openrouter") ? "openrouter" : undefined;
+async function resolve(explicit: AIProvider | undefined): Promise<AIProvider | undefined> {
+  if (explicit) return (await usable(explicit)) ? explicit : undefined;
+  return (await usable("chatgpt")) ? "chatgpt" : (await usable("openrouter")) ? "openrouter" : undefined;
 }
 const envChoice = () => { const p = (process.env.AI_PROVIDER || "").toLowerCase(); return isProvider(p) ? p : undefined; };
 
@@ -56,10 +56,10 @@ export const aiProvider = () => resolve(savedChoice() ?? envChoice());
  */
 export async function aiStatus() {
   return {
-    provider: aiProvider(),
+    provider: await aiProvider(),
     choice: savedChoice() ?? "",
     explicit: savedChoice() ?? envChoice(),
-    autoProvider: resolve(envChoice()),
+    autoProvider: await resolve(envChoice()),
     openrouter: openRouterAvailable() ? await openRouterSettings() : null,
   };
 }
@@ -68,7 +68,7 @@ export async function aiStatus() {
  * 会話を今使う AI に送り、返ってきたテキスト全体を返す。
  * 使えないときは明示した AI（無ければ ChatGPT）に送り、そちらのエラー（キーが無い・サインインが要る）にする
  */
-export function askAI(instructions: string, turns: Turn[], onText?: (text: string) => void, signal?: AbortSignal): Promise<string> {
-  const p = aiProvider() ?? savedChoice() ?? envChoice();
+export async function askAI(instructions: string, turns: Turn[], onText?: (text: string) => void, signal?: AbortSignal): Promise<string> {
+  const p = (await aiProvider()) ?? savedChoice() ?? envChoice();
   return p === "openrouter" ? askOpenRouter(instructions, turns, onText, signal) : askChatGPT(instructions, turns, onText, signal);
 }

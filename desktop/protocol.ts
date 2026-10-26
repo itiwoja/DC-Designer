@@ -4,7 +4,7 @@
  */
 
 /** main と worker の取り決めの版。合わなければ main は failed にする */
-export const API_PROTOCOL_VERSION = 1;
+export const API_PROTOCOL_VERSION = 2;
 
 /** 内部 API の認証ヘッダー名 */
 export const DESKTOP_TOKEN_HEADER = "x-dc-desktop-token";
@@ -16,10 +16,17 @@ export const STARTUP_TIMEOUT_MS = 30_000;
 export const LEASE_TIMEOUT_MS = 30_000;
 export const STOP_TIMEOUT_MS = 30_000;
 
+/** 資格情報の状態（値は含めない） */
+export type SecretState = "configured" | "unset" | "reauthRequired";
+
 /** main → worker */
 export type MainToWorker =
-  /** 起動直後に1回だけ送る */
-  | { type: "init"; token: string; instanceId: string; appVersion: string }
+  /** 起動直後に1回だけ送る。secretStates は "providerId/kind" ごとの状態（hasSecret の初期値） */
+  | { type: "init"; token: string; instanceId: string; appVersion: string; secretStates: Record<string, SecretState> }
+  /** worker の問い合わせへの応答。value は secret-get の configured のときだけ */
+  | { type: "secret-result"; requestId: string; ok: boolean; value?: string; state: SecretState; code?: string }
+  /** 画面側の設定で状態が変わった（worker の状態キャッシュ用。値は送らない） */
+  | { type: "secret-changed"; secretRef: string; state: SecretState }
   /** 新しい書き込み要求の受付を止め、進行中の書き込みが終わったら drained を返す */
   | { type: "drain"; requestId: string }
   /** drain を取り消して受付を再開する（終了をやめて編集へ戻るとき） */
@@ -37,6 +44,10 @@ export type WorkerToMain =
   | { type: "ready"; port: number; instanceId: string; apiProtocolVersion: number; appVersion: string }
   | { type: "drained"; requestId: string; busy: boolean }
   | { type: "resumed"; requestId: string }
+  /** 資格情報の読み出し・保存・削除（main が safeStorage で扱う） */
+  | { type: "secret-get"; requestId: string; providerId: string; kind: string }
+  | { type: "secret-set"; requestId: string; providerId: string; kind: string; value: string }
+  | { type: "secret-remove"; requestId: string; providerId: string; kind: string }
   /** 起動に失敗した（秘密値・絶対 path を含めない分類だけ） */
   | { type: "fatal"; code: "LISTEN_FAILED" | "INIT_INVALID" | "INTERNAL" };
 

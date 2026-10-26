@@ -7,13 +7,14 @@ import { fileURLToPath } from "node:url";
 import type { ChatCompletionContentPart, ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import type { Turn } from "./chatgpt";
 import { httpError } from "./http-error";
+import { getSecret, hasSecret } from "./secrets";
 
 const BASE_URL = "https://openrouter.ai/api/v1";
 /** OPENROUTER_MODEL が無いときのモデル（画像を読めるモデルにする。参考画像の再現・見比べで画像を渡す） */
 export const DEFAULT_OPENROUTER_MODEL = "anthropic/claude-sonnet-5.5";
 const CREDITS_URL = "https://openrouter.ai/settings/credits";
 
-export const openRouterAvailable = () => !!process.env.OPENROUTER_API_KEY;
+export const openRouterAvailable = () => hasSecret("openrouter", "apiKey");
 
 export type OpenRouterModel = { slug: string; display_name: string };
 let modelCache: OpenRouterModel[] | null = null;
@@ -24,7 +25,7 @@ let modelCache: OpenRouterModel[] | null = null;
  */
 export async function listOpenRouterModels(): Promise<OpenRouterModel[]> {
   if (modelCache) return modelCache;
-  const res = await fetch(`${BASE_URL}/models`, { headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}` } });
+  const res = await fetch(`${BASE_URL}/models`, { headers: { Authorization: `Bearer ${await getSecret("openrouter", "apiKey")}` } });
   const json: any = await res.json().catch(() => ({}));
   if (!res.ok) throw openRouterError(res.status, json?.error?.message ?? `HTTP ${res.status}`);
   modelCache = (json.data ?? [])
@@ -100,10 +101,11 @@ const STREAM_RETRIES = 2;
 
 /** 会話を送り、ストリームで返ってきたテキスト全体を返す。onText には受け取り途中のテキスト全体を渡す（進み具合の表示用） */
 export async function askOpenRouter(instructions: string, turns: Turn[], onText?: (text: string) => void, signal?: AbortSignal): Promise<string> {
-  if (!openRouterAvailable()) throw httpError(400, "OpenRouter の API キーがありません。.env に OPENROUTER_API_KEY を設定して、API サーバーを再起動してください");
+  const apiKey = openRouterAvailable() ? await getSecret("openrouter", "apiKey") : undefined;
+  if (!apiKey) throw httpError(400, "OpenRouter の API キーがありません。.env に OPENROUTER_API_KEY を設定して、API サーバーを再起動してください");
   // 再送はこちらで制御する（SDK の既定の再送に任せると、レート制限などの表示が最長 10 秒ほど遅れる。chatgpt.ts と同じ）
   const { default: OpenAI } = await import("openai");
-  const client = new OpenAI({ apiKey: process.env.OPENROUTER_API_KEY, baseURL: BASE_URL, maxRetries: 0, defaultHeaders: { "X-Title": "DC-Designer" } });
+  const client = new OpenAI({ apiKey, baseURL: BASE_URL, maxRetries: 0, defaultHeaders: { "X-Title": "DC-Designer" } });
   const maxTokens = Number(process.env.OPENROUTER_MAX_TOKENS) || undefined;
   const aborted = () => httpError(499, "OpenRouter へのリクエストを中断しました");
   for (let attempt = 0; ; attempt++) {

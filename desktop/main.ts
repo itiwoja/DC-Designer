@@ -9,7 +9,7 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
-  app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session, shell, utilityProcess,
+  app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, safeStorage, session, shell, utilityProcess,
   type IpcMainInvokeEvent, type MenuItemConstructorOptions,
 } from "electron";
 import {
@@ -21,6 +21,7 @@ import { createCloseCoordinator } from "./close";
 import { resolveDesktopRequest } from "./operations";
 import { USER_ROOT_DIRS } from "./protocol";
 import { buildWorkerEnv, createRuntime, type WorkerChild } from "./runtime";
+import { createSecretStore, type SecretResult } from "./secrets";
 
 const PARTITION = "persist:dc-designer";
 
@@ -54,7 +55,11 @@ const sendToEditor = (channel: string, payload: unknown): boolean => {
   return true;
 };
 
+// 資格情報は main だけが持つ（safeStorage の呼び出しは app ready 後に初めて行われる）
+const secrets = createSecretStore({ dir: path.join(userRoot, "secrets"), crypto: safeStorage });
+
 const runtime = createRuntime({
+  secrets,
   appVersion: app.getVersion(),
   onState: (s) => { sendToEditor(IPC.stateChanged, s); },
   fork: () =>
@@ -117,6 +122,13 @@ function isTrusted(e: IpcMainInvokeEvent): boolean {
 
 const failResult = (code: string, error: string): DesktopResult => ({ ok: false, error, code });
 
+/** 画面へ返す資格情報の結果（値は含めない）。変わった状態は worker のキャッシュへも伝える */
+function secretResult(r: SecretResult): DesktopResult {
+  if (!r.ok) return failResult(r.code ?? "INTERNAL", "資格情報を保存できませんでした");
+  if (r.secretRef) runtime.notifySecretChanged(r.secretRef, r.state);
+  return { ok: true, data: { secretRef: r.secretRef, state: r.state } };
+}
+
 function registerIpc(): void {
   ipcMain.handle(IPC.request, async (e, req: unknown): Promise<DesktopResult> => {
     if (!isTrusted(e)) return failResult("UNAUTHORIZED_CONTEXT", "この画面からは実行できません");
@@ -131,6 +143,19 @@ function registerIpc(): void {
   ipcMain.handle(IPC.retryStart, (e) => {
     if (!isTrusted(e)) throw new Error("UNAUTHORIZED_CONTEXT");
     return runtime.retryStart();
+  });
+  // 資格情報：値は返さない（状態だけ）。引数の検証はストアが行う
+  ipcMain.handle(IPC.secretsStatus, (e): DesktopResult => {
+    if (!isTrusted(e)) return failResult("UNAUTHORIZED_CONTEXT", "この画面からは実行できません");
+    return { ok: true, data: secrets.status() };
+  });
+  ipcMain.handle(IPC.secretsSet, (e, providerId: unknown, kind: unknown, value: unknown): DesktopResult => {
+    if (!isTrusted(e)) return failResult("UNAUTHORIZED_CONTEXT", "この画面からは実行できません");
+    return secretResult(secrets.set(providerId, kind, value));
+  });
+  ipcMain.handle(IPC.secretsRemove, (e, secretRef: unknown): DesktopResult => {
+    if (!isTrusted(e)) return failResult("UNAUTHORIZED_CONTEXT", "この画面からは実行できません");
+    return secretResult(secrets.remove(secretRef));
   });
   ipcMain.handle(IPC.completeClose, (e, r: unknown) => {
     if (!isTrusted(e) || !r || typeof r !== "object") return;

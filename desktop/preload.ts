@@ -19,6 +19,11 @@ const bridge: DesktopBridge = {
     retryStart: () => ipcRenderer.invoke(IPC.retryStart),
     onStateChanged: (cb) => subscribe<RuntimeSnapshot>(IPC.stateChanged, cb),
   },
+  secrets: {
+    status: () => ipcRenderer.invoke(IPC.secretsStatus),
+    set: (providerId, kind, value) => ipcRenderer.invoke(IPC.secretsSet, providerId, kind, value),
+    remove: (secretRef) => ipcRenderer.invoke(IPC.secretsRemove, secretRef),
+  },
   close: {
     onPrepare: (cb) => subscribe<PrepareCloseRequest>(IPC.prepareClose, cb),
     complete: (result) => { void ipcRenderer.invoke(IPC.completeClose, result).catch(() => {}); },

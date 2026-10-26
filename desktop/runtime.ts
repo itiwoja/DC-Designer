@@ -6,9 +6,10 @@ import { randomBytes, randomUUID } from "node:crypto";
 import path from "node:path";
 import type { DesktopResult, RuntimeError, RuntimeSnapshot, RuntimeState } from "./bridge";
 import type { DesktopOperation } from "./operations";
+import { secretRefOf, type SecretStore } from "./secrets";
 import {
   API_PROTOCOL_VERSION, DESKTOP_ORIGIN, DESKTOP_TOKEN_HEADER, LEASE_TIMEOUT_MS, STARTUP_TIMEOUT_MS,
-  WORKER_ENV_ALLOWLIST, type DesktopHealth, type MainToWorker, type WorkerToMain,
+  WORKER_ENV_ALLOWLIST, type DesktopHealth, type MainToWorker, type SecretState, type WorkerToMain,
 } from "./protocol";
 
 // ---- 状態遷移（純粋関数） ----
@@ -49,6 +50,7 @@ export function buildWorkerEnv(userRoot: string, env: NodeJS.ProcessEnv): Record
   out.DATA_DIR = path.join(userRoot, "workspace");
   out.GENERATED_DIR = path.join(userRoot, "assets", "generated");
   out.DC_DESIGNER_CONFIG_DIR = path.join(userRoot, "secrets");
+  out.FONT_CACHE_DIR = path.join(userRoot, "fonts", "cache");
   out.DC_DESIGNER_DESKTOP = "1";
   out.DC_DESIGNER_USER_ROOT = userRoot;
   return out;
@@ -68,6 +70,8 @@ export type RuntimeDeps = {
   appVersion: string;
   onState: (s: RuntimeSnapshot) => void;
   fetchImpl?: typeof fetch;
+  /** 資格情報ストア（main が持つ）。worker の secret-* 要求に応える */
+  secrets?: SecretStore;
 };
 
 type Instance = {
@@ -173,8 +177,36 @@ export function createRuntime(deps: RuntimeDeps) {
     dispatch({ type: "ready" });
   }
 
+  /** worker の資格情報要求に答える。形が不正なら何もしない */
+  function onSecretMessage(inst: Instance, m: Record<string, unknown>): void {
+    const { requestId, providerId, kind } = m;
+    if (!deps.secrets || typeof requestId !== "string" || !requestId || requestId.length > 100) return;
+    if (typeof providerId !== "string" || typeof kind !== "string") return;
+    // worker が書き換えてよいのはサインインで更新される ChatGPT の資格情報だけ（API キーは画面の設定からだけ）
+    if (m.type !== "secret-get" && !(providerId === "chatgpt" && kind === "oauth")) return;
+    let r;
+    if (m.type === "secret-get") r = deps.secrets.get(providerId, kind);
+    else if (m.type === "secret-set") {
+      if (typeof m.value !== "string") return;
+      r = deps.secrets.set(providerId, kind, m.value);
+    } else r = deps.secrets.remove(secretRefOf(providerId, kind));
+    if (inst.exited) return;
+    inst.child.postMessage({
+      type: "secret-result", requestId, ok: r.ok, state: r.state,
+      ...(m.type === "secret-get" && r.value !== undefined ? { value: r.value } : {}),
+      ...(r.code ? { code: r.code } : {}),
+    });
+  }
+
+  /** 画面側の設定で状態が変わったことを worker の状態キャッシュへ伝える（値は送らない） */
+  function notifySecretChanged(secretRef: string, state: Extract<MainToWorker, { type: "secret-changed" }>["state"]): void {
+    if (alive(cur)) cur.child.postMessage({ type: "secret-changed", secretRef, state });
+  }
+
   function onMessage(inst: Instance, raw: unknown): void {
     if (inst !== cur || !raw || typeof raw !== "object" || typeof (raw as { type?: unknown }).type !== "string") return;
+    const type = (raw as { type: string }).type;
+    if (type === "secret-get" || type === "secret-set" || type === "secret-remove") return onSecretMessage(inst, raw as Record<string, unknown>);
     const msg = raw as WorkerToMain;
     for (const w of [...inst.waiters]) if (w.pred(msg)) w.resolve(msg);
     if (model.state !== "starting" && model.state !== "waiting-lease") return;
@@ -197,6 +229,9 @@ export function createRuntime(deps: RuntimeDeps) {
     }
   }
 
+  const secretStates = (): Record<string, SecretState> =>
+    Object.fromEntries((deps.secrets?.status() ?? []).map((e) => [e.secretRef, e.state]));
+
   function start(): void {
     if (alive(cur)) return;
     dispatch({ type: "start" });
@@ -215,7 +250,7 @@ export function createRuntime(deps: RuntimeDeps) {
     child.on("message", (m) => onMessage(inst, m));
     child.on("exit", () => onExit(inst));
     inst.timer = setTimeout(() => fail(inst, "STARTUP_FAILED"), STARTUP_TIMEOUT_MS);
-    child.postMessage({ type: "init", token, instanceId, appVersion: deps.appVersion });
+    child.postMessage({ type: "init", token, instanceId, appVersion: deps.appVersion, secretStates: secretStates() });
   }
 
   /** 前の worker の exit を確認できたときだけ新しい個体を起動する */
@@ -322,7 +357,7 @@ export function createRuntime(deps: RuntimeDeps) {
   }
 
   return {
-    start, retryStart, request, snapshot, beginClosing, drain, resume, shutdown, waitWorkerExit, forceStop,
+    start, retryStart, request, snapshot, notifySecretChanged, beginClosing, drain, resume, shutdown, waitWorkerExit, forceStop,
     hasLiveWorker: () => alive(cur),
   };
 }

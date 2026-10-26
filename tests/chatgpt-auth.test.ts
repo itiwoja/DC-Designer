@@ -71,7 +71,7 @@ afterEach(() => {
 describe("コールバックの失敗は戻り先へ渡す（AUTH-002）", () => {
   it("トークン交換のネットワーク失敗でも例外にせず、popup=1 付きで戻り先へ返す", async () => {
     const auth = await load();
-    const { state } = stateAndNonce(auth.startLogin({ port: 8787, returnTo: "http://localhost:5174", popup: true }));
+    const { state } = stateAndNonce(await auth.startLogin({ port: 8787, returnTo: "http://localhost:5174", popup: true }));
     route = (url) => { if (url === TOKEN_URL) throw new TypeError("fetch failed"); throw new Error(`unexpected ${url}`); };
     const result = await auth.handleCallback({ state, code: "CODE", client_id: "oaiapp_NEW" });
     expect(result.startsWith("http://localhost:5174/?")).toBe(true);
@@ -82,7 +82,7 @@ describe("コールバックの失敗は戻り先へ渡す（AUTH-002）", () =>
 
   it("JWKS の取得に失敗しても戻り先へ返す", async () => {
     const auth = await load();
-    const { state, nonce } = stateAndNonce(auth.startLogin({ port: 8787, returnTo: "http://localhost:5174", popup: true }));
+    const { state, nonce } = stateAndNonce(await auth.startLogin({ port: 8787, returnTo: "http://localhost:5174", popup: true }));
     route = (url) => {
       if (url === TOKEN_URL) return tokenOk(idToken("A", "oaiapp_NEW", nonce));
       if (url === JWKS_URL) return json({}, 500);
@@ -108,7 +108,7 @@ describe("別のアカウントへの切り替え（AUTH-003）", () => {
   it("newAccount は保存済みの資格情報を使わず新規登録の URL を作る", async () => {
     saveAccountA();
     const auth = await load();
-    const url = new URL(auth.startLogin({ port: 8787, returnTo: "http://localhost:5173", newAccount: true }));
+    const url = new URL(await auth.startLogin({ port: 8787, returnTo: "http://localhost:5173", newAccount: true }));
     expect(url.searchParams.get("client_id")).toBe("dynamic_agent_client");
     expect(url.searchParams.get("agent_name_hint")).toBe("DC-Designer");
     expect(url.searchParams.has("login_hint")).toBe(false);
@@ -118,7 +118,7 @@ describe("別のアカウントへの切り替え（AUTH-003）", () => {
   it("別アカウントでサインインすると資格情報が差し替わり、古い更新トークンは失効する", async () => {
     saveAccountA();
     const auth = await load();
-    const { state, nonce } = stateAndNonce(auth.startLogin({ port: 8787, returnTo: "http://localhost:5173", newAccount: true }));
+    const { state, nonce } = stateAndNonce(await auth.startLogin({ port: 8787, returnTo: "http://localhost:5173", newAccount: true }));
     route = (url) => {
       if (url === TOKEN_URL) return tokenOk(idToken("B", "oaiapp_B", nonce));
       if (url === JWKS_URL) return json({ keys: [jwk] });
@@ -138,7 +138,7 @@ describe("別のアカウントへの切り替え（AUTH-003）", () => {
   it("再認可で別のアカウントが返ったら、新しい案内文で拒否し資格情報は変えない", async () => {
     saveAccountA();
     const auth = await load();
-    const { state, nonce } = stateAndNonce(auth.startLogin({ port: 8787, returnTo: "http://localhost:5173" }));
+    const { state, nonce } = stateAndNonce(await auth.startLogin({ port: 8787, returnTo: "http://localhost:5173" }));
     route = (url) => {
       if (url === TOKEN_URL) return tokenOk(idToken("B", "oaiapp_A", nonce));
       if (url === JWKS_URL) return json({ keys: [jwk] });
@@ -154,14 +154,14 @@ describe("別のアカウントへの切り替え（AUTH-003）", () => {
     const auth = await load();
     route = (url) => { if (url === REVOKE_URL) return json({}); throw new Error(`unexpected ${url}`); };
     await auth.logout();
-    expect(auth.authStatus()).toEqual({ signedIn: false, previousEmail: "a@x" });
+    expect(await auth.authStatus()).toEqual({ signedIn: false, previousEmail: "a@x" });
   });
 
   it("新規登録の code 交換が invalid_grant なら資格情報を書き換えず、発行済み client_id で認可をやり直す", async () => {
     saveAccountA();
     const before = readFileSync(credPath(), "utf8");
     const auth = await load();
-    const { state } = stateAndNonce(auth.startLogin({ port: 8787, returnTo: "http://localhost:5173", newAccount: true }));
+    const { state } = stateAndNonce(await auth.startLogin({ port: 8787, returnTo: "http://localhost:5173", newAccount: true }));
     route = (url) => { if (url === TOKEN_URL) return invalidGrant(); throw new Error(`unexpected ${url}`); };
     const result = await auth.handleCallback({ state, code: "CODE", client_id: "oaiapp_NEW" });
     const url = new URL(result);
