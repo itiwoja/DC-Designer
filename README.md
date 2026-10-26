@@ -28,6 +28,7 @@ npm run dev            # http://localhost:5173
 
 レイアウト生成と AI 修正は ChatGPT で行う。エディタ左下の「ChatGPTでログイン」でサインインすると、ChatGPT Plus / Pro のプラン枠で使える（API キー不要）。左下にはアカウントのメニューと ⚙（AI の設定）もある。
 
+- **ChatGPT 無料プランはこの連携に非対応**（2026-10-26 の利用者による動作確認）。ChatGPT Plus / Pro などの対象プランと、ChatGPT プランをこのアプリで使う許可が必要。デスクトップ版の手動編集・保存・書き出しはサインイン不要。
 - [OpenAI の OSS 向けフロー](https://developers.openai.com/siwc/token-sharing-open-source)（`dynamic_agent_client` による動的登録 + PKCE）を使う。初回に発行された `client_id` は保存して再利用する
 - コールバックは `http://127.0.0.1:<API_PORT>/auth/callback`。API サーバーが直接受ける
 - 資格情報は `~/.config/dc-designer/chatgpt.json`（0600）に保存。アクセストークンは利用時に有効期限（サーバーから返る `expires_in` に基づく）を確認し、期限の 60 秒前以降なら自動更新する

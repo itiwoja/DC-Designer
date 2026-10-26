@@ -222,7 +222,7 @@ export function Home({ mode }: { mode?: AppMode }) {
         <main className="login-main">
           <div className="login-card">
             <h1>DC-Designer</h1>
-            <p>ChatGPT アカウントでログインして始めましょう。<br />ChatGPT のプランの枠でレイアウト生成・AI 修正が使えます（無料プランでも使えます）。</p>
+            <p>ChatGPT のプラン枠でレイアウト生成・AI 修正が使えます。<br />この連携には ChatGPT Plus / Pro などの対象プランが必要です。無料プランは非対応です。</p>
             <button className="primary login-btn" autoFocus onClick={api.chatgptLogin}>ChatGPTでログイン</button>
             {previousEmail && <>
               <p className="login-sub">前回: {previousEmail}</p>
@@ -248,9 +248,9 @@ export function Home({ mode }: { mode?: AppMode }) {
         // 製品版の AI は ChatGPT プランだけ（OpenRouter は使えない）。ホームからもサインインできる
         <button
           className="home-signin" disabled={signingIn} onClick={() => { setSigningIn(true); api.chatgptLogin(); }}
-          title="既定のブラウザで ChatGPT にサインインします（レイアウト生成・AI 修正に使います）"
+          title="既定のブラウザで ChatGPT にサインインします。ChatGPT Plus / Pro などの対象プランが必要です（無料プランは非対応）"
         >
-          {signingIn ? "ブラウザでサインインを続けてください" : "ChatGPT にサインイン"}
+          {signingIn ? "ブラウザでサインインを続けてください" : "ChatGPT にサインイン（対象の有料プラン）"}
         </button>
       ) : (
         <span className="home-account" title="レイアウト生成・AI 修正は OpenRouter の API キーで行います（ChatGPT にはエディタ左下からサインインできます）">

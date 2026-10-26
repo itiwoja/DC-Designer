@@ -1323,7 +1323,7 @@ export function App() {
     <p className="notice-inline">
       {status?.ai?.explicit === "openrouter"
         ? "OpenRouter の API キー（.env の OPENROUTER_API_KEY）が無いため、この機能は使えません（AI の設定で切り替えられます）。"
-        : gpt?.signedIn ? `このアカウントでは ChatGPT プランを利用できないため、この機能は使えません${orHint}。` : `この機能は ChatGPT へのサインインが必要です${orHint}。`}
+        : gpt?.signedIn ? `このアカウントでは ChatGPT プランを利用できないため、この機能は使えません${orHint}。` : `この機能は ChatGPT Plus / Pro などの対象プランでのサインインが必要です（無料プランは非対応）${orHint}。`}
       {status?.ai?.explicit !== "openrouter" && !gpt?.signedIn && <button className="small" onClick={api.chatgptLogin}>サインイン</button>}
     </p>
   );

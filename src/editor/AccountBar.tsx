@@ -76,7 +76,7 @@ export function AccountBar({ status, imageChoices, imageProvider, onImageProvide
           )}
         </Menu>
       ) : status && <>
-        <button className="chatgpt-btn" onClick={api.chatgptLogin} title={previousEmail ? `前回のアカウント（${previousEmail}）でサインインします` : "ChatGPT アカウントでサインインし、ChatGPT プランでレイアウトを生成します"}>
+        <button className="chatgpt-btn" onClick={api.chatgptLogin} title={`${previousEmail ? `前回のアカウント（${previousEmail}）でサインインします。` : ""}ChatGPT Plus / Pro などの対象プランが必要です（無料プランは非対応）`}>
           ChatGPTでログイン
         </button>
         {previousEmail && <button className="link" onClick={api.chatgptLoginNewAccount} title="別の ChatGPT アカウント・ワークスペースでサインインします">別のアカウント</button>}
@@ -116,6 +116,7 @@ export function AccountBar({ status, imageChoices, imageProvider, onImageProvide
                         : "未サインイン（左下からサインイン）"}
                   </span>
                 </div>
+                {!ready && <p className="hint">この連携には ChatGPT Plus / Pro などの対象プランが必要です。無料プランは非対応です。</p>}
                 {ready && gpt?.signedIn && gpt.models?.length ? (
                   <div className="status-row">
                     <span className="status-label">モデル</span>
