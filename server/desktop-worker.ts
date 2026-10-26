@@ -64,7 +64,7 @@ async function start(init: Extract<MainToWorker, { type: "init" }>) {
 
     parentPort!.on("message", ({ data }) => {
       const m = data as MainToWorker;
-      if (m.type === "drain") void handle.drain().then(() => send({ type: "drained", requestId: m.requestId, busy: false }));
+      if (m.type === "drain") void handle.drain().then(({ busy }) => send({ type: "drained", requestId: m.requestId, busy }));
       else if (m.type === "resume") { handle.resume(); send({ type: "resumed", requestId: m.requestId }); }
       else if (m.type === "shutdown") {
         server.close(async () => { await lease.release(); process.exit(0); });

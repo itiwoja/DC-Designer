@@ -26,8 +26,11 @@ export type AppOptions =
 
 export type AppHandle = {
   app: express.Express;
-  /** 新しい書き込み（GET 以外）を 503 にし、進行中の書き込みが 0 になったら解決する */
-  drain: () => Promise<void>;
+  /**
+   * AI 操作が進行中なら受付を止めずにすぐ { busy: true } を返す。
+   * そうでなければ新しい書き込み（GET 以外）を 503 にし、進行中の書き込みが 0 になったら { busy: false } で解決する
+   */
+  drain: () => Promise<{ busy: boolean }>;
   /** drain を取り消して受付を再開する */
   resume: () => void;
 };
@@ -51,11 +54,19 @@ export function isDesktopAllowed(method: string, path: string): boolean {
   });
 }
 
+/** AI 操作の route（操作表の ai.* と fonts.suggest）。閉じる調停で「処理が実行中」として扱う */
+const AI_ROUTES: ReadonlySet<string> = new Set(
+  Object.entries(DESKTOP_OPERATIONS)
+    .filter(([name]) => name.startsWith("ai.") || name === "fonts.suggest")
+    .map(([, op]) => (op as DesktopOperation).route),
+);
+
 export function createApp(opts: AppOptions): AppHandle {
   const app = express();
   const desktop = opts.mode === "desktop";
   let draining = false;
   let inflight = 0;
+  let aiInflight = 0;
   let waiters: (() => void)[] = [];
   const settle = () => { if (inflight === 0) { const w = waiters; waiters = []; w.forEach((f) => f()); } };
 
@@ -78,7 +89,9 @@ export function createApp(opts: AppOptions): AppHandle {
       if (req.method !== "GET") {
         if (draining) return void res.status(503).json({ error: "終了処理中です", code: "BUSY" });
         inflight++;
-        res.on("close", () => { inflight--; settle(); });
+        const ai = req.method === "POST" && AI_ROUTES.has(path);
+        if (ai) aiInflight++;
+        res.on("close", () => { inflight--; if (ai) aiInflight--; settle(); });
       }
       next();
     });
@@ -100,16 +113,26 @@ export function createApp(opts: AppOptions): AppHandle {
     }
   }
 
-  function sendError(res: express.Response, e: unknown) {
-    // 製品版は例外の中身（path を含みうる）をログ・応答に出さない
-    if (desktop) console.error("[api] error:", e instanceof Error ? e.name : "unknown");
-    else console.error(e);
-    if (e instanceof ChatGPTAuthError) return res.status(401).json({ error: e.message, code: "chatgpt_auth" });
-    if (e instanceof ChatGPTError) return res.status(e.status >= 400 ? e.status : 502).json({ error: e.message, code: e.code });
+  /** 例外を応答用の (status, message, code) にする。製品版は利用者向けでない例外の中身を出さない */
+  function describeError(e: unknown): { status: number; message: string; code?: string } {
+    if (e instanceof ChatGPTAuthError) return { status: 401, message: e.message, code: "chatgpt_auth" };
+    if (e instanceof ChatGPTError) return { status: e.status >= 400 ? e.status : 502, message: e.message, code: e.code };
     const status = (e as { status?: number })?.status;
     const client = !!status && status >= 400 && status < 500;
     const message = desktop && !client ? "内部エラーが発生しました" : e instanceof Error ? e.message : String(e);
-    res.status(client ? status : 500).json({ error: message });
+    return { status: client ? status : 500, message };
+  }
+
+  function logError(e: unknown) {
+    // 製品版は例外の中身（path を含みうる）をログ・応答に出さない
+    if (desktop) console.error("[api] error:", e instanceof Error ? e.name : "unknown");
+    else console.error(e);
+  }
+
+  function sendError(res: express.Response, e: unknown) {
+    logError(e);
+    const { status, message, code } = describeError(e);
+    res.status(status).json(code ? { error: message, code } : { error: message });
   }
 
   /** fn の戻り値を JSON で返す。例外は sendError でエラー応答にする（400 などは httpError で投げる） */
@@ -146,10 +169,9 @@ export function createApp(opts: AppOptions): AppHandle {
       line({ result });
     } catch (e) {
       clearTimeout(timer);
-      console.error(e);
-      const status = e instanceof ChatGPTAuthError ? 401 : e instanceof ChatGPTError ? (e.status >= 400 ? e.status : 502) : (e as { status?: number })?.status ?? 500;
-      const code = e instanceof ChatGPTAuthError ? "chatgpt_auth" : e instanceof ChatGPTError ? e.code : undefined;
-      line({ error: e instanceof Error ? e.message : String(e), code, status });
+      logError(e);
+      const { status, message, code } = describeError(e);
+      line({ error: message, code, status });
     }
     res.end();
   };
@@ -352,7 +374,11 @@ export function createApp(opts: AppOptions): AppHandle {
 
   return {
     app,
-    drain: () => { draining = true; return new Promise<void>((r) => { waiters.push(r); settle(); }); },
+    drain: () => {
+      if (aiInflight > 0) return Promise.resolve({ busy: true });
+      draining = true;
+      return new Promise<{ busy: boolean }>((r) => { waiters.push(() => r({ busy: false })); settle(); });
+    },
     resume: () => { draining = false; },
   };
 }

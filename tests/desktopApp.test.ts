@@ -3,7 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { createServer, type Server } from "node:http";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+// progressRoute の失敗を作るため、再現の生成だけ差し替える
+const reproduceFail = vi.hoisted(() => ({ error: undefined as unknown }));
+vi.mock("../server/planner", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../server/planner")>()),
+  reproducePoster: async () => { throw reproduceFail.error; },
+}));
 
 // library.ts などは import 時に保存先を読むので、app を読む前に一時ディレクトリを指す
 process.env.DATA_DIR = mkdtempSync(join(tmpdir(), "dc-app-"));
@@ -16,6 +23,7 @@ let base = "";
 let port = 0;
 let handle: import("../server/app").AppHandle;
 
+// server/app の読み込みは /mnt/c 上だと 10 秒を超えることがあるので、前処理の期限を延ばす
 beforeAll(async () => {
   const { createApp } = await import("../server/app");
   handle = createApp({ mode: "desktop", token: TOKEN, instanceId: "inst1", appVersion: "9.9.9", getPort: () => port });
@@ -23,8 +31,8 @@ beforeAll(async () => {
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   port = (server.address() as AddressInfo).port;
   base = `http://127.0.0.1:${port}`;
-});
-afterAll(() => { server.closeAllConnections(); server.close(); });
+}, 60_000);
+afterAll(() => { server?.closeAllConnections(); server?.close(); });
 
 const good = { "x-dc-desktop-token": TOKEN, origin: "app://dc-designer" };
 const call = (path: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}) =>
@@ -98,6 +106,79 @@ describe("製品版の入口", () => {
     await p;
     expect(drained).toBe(true);
     handle.resume();
+  });
+});
+
+describe("AI 操作中の drain", () => {
+  it("AI 操作が進行中なら busy:true がすぐ返り、受付は止まらない", async () => {
+    const http = await import("node:http");
+    const req = http.request({ host: "127.0.0.1", port, path: "/api/plan", method: "POST", headers: { ...good, "content-type": "application/json", "content-length": "100" } });
+    req.on("error", () => {});
+    req.write("{");
+    await new Promise((r) => setTimeout(r, 200));
+    expect(await handle.drain()).toEqual({ busy: true });
+    expect((await call("/api/posters", { method: "POST", headers: good, body: "{}" })).status).not.toBe(503);
+    req.destroy();
+    await new Promise((r) => setTimeout(r, 200));
+    // AI 操作が終われば従来どおり
+    expect(await handle.drain()).toEqual({ busy: false });
+    handle.resume();
+  });
+
+  it("AI 操作が無ければ書き込みの完了を待って busy:false", async () => {
+    const http = await import("node:http");
+    const req = http.request({ host: "127.0.0.1", port, path: "/api/posters", method: "POST", headers: { ...good, "content-type": "application/json", "content-length": "100" } });
+    req.on("error", () => {});
+    req.write("{");
+    await new Promise((r) => setTimeout(r, 200));
+    let result: { busy: boolean } | undefined;
+    const p = handle.drain().then((r) => { result = r; });
+    await new Promise((r) => setTimeout(r, 200));
+    expect(result).toBeUndefined();
+    req.destroy();
+    await p;
+    expect(result).toEqual({ busy: false });
+    handle.resume();
+  });
+});
+
+describe("進み具合つき route のエラー", () => {
+  const body = JSON.stringify({ width: 800, height: 600, reference: { mediaType: "image/png", data: "AAAA" } });
+  const errorLine = async (h: Record<string, string>, b: string, url = base) => {
+    const res = await fetch(url + "/api/reproduce", { method: "POST", headers: { ...h, "content-type": "application/json" }, body: b });
+    const lines = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
+    return lines[lines.length - 1] as { error: string; code?: string; status: number };
+  };
+
+  it("製品版は内部例外の中身（絶対パス）を出さない", async () => {
+    reproduceFail.error = new Error("ENOENT: /home/secret/path/file.json");
+    const r = await errorLine(good, body);
+    expect(r.error).toBe("内部エラーが発生しました");
+    expect(r.status).toBe(500);
+  });
+
+  it("製品版でも 4xx の httpError と ChatGPTError は message が残る", async () => {
+    const { httpError } = await import("../server/http-error");
+    const { ChatGPTError } = await import("../server/chatgpt");
+    const { ChatGPTAuthError } = await import("../server/chatgpt-auth");
+    reproduceFail.error = httpError(400, "参考画像が不正です");
+    expect(await errorLine(good, body)).toMatchObject({ error: "参考画像が不正です", status: 400 });
+    reproduceFail.error = new ChatGPTError("利用上限です", 429, "usage_limit");
+    expect(await errorLine(good, body)).toMatchObject({ error: "利用上限です", status: 429, code: "usage_limit" });
+    reproduceFail.error = new ChatGPTAuthError("サインインしてください");
+    expect(await errorLine(good, body)).toMatchObject({ error: "サインインしてください", status: 401, code: "chatgpt_auth" });
+  });
+
+  it("開発版は従来どおり message をそのまま返す", async () => {
+    const { createApp } = await import("../server/app");
+    const dev = createApp({ mode: "dev", port: 0 });
+    const srv = createServer(dev.app);
+    await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+    try {
+      reproduceFail.error = new Error("ENOENT: /home/x/file.json");
+      const r = await errorLine({}, body, `http://127.0.0.1:${(srv.address() as AddressInfo).port}`);
+      expect(r.error).toBe("ENOENT: /home/x/file.json");
+    } finally { srv.closeAllConnections(); srv.close(); }
   });
 });
 
