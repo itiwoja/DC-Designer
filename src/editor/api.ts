@@ -1,6 +1,8 @@
 import type { AssetContext, AssetRequest, PosterSpec } from "../schema";
 import { postWithProgress, request, type AIProgress } from "./apiTransport";
 import { withSubject, type AiSubject } from "./aiSubject";
+import { DESKTOP_ACCOUNT_CHANGED } from "./accountView";
+import { desktopBridge } from "./desktop";
 export type { AIProgress } from "./apiTransport";
 /** 画像生成 1 回の待ち時間の上限（ミリ秒） */
 const ASSET_TIMEOUT_MS = 16 * 60_000;
@@ -70,6 +72,12 @@ export const AUTH_STARTED_EVENT = "dc-designer:chatgpt-auth-started";
 
 /** サインイン用タブを開く（newAccount のとき、保存済みのアカウントの情報を使わず新しく登録する） */
 function openChatGPTLogin(newAccount: boolean) {
+  // 製品版は main が既定のブラウザとループバックの受け口でサインインする（画面から別タブは開けない）
+  const bridge = desktopBridge();
+  if (bridge) {
+    void bridge.auth.signIn({ newAccount }).catch(() => {}).finally(() => window.dispatchEvent(new Event(DESKTOP_ACCOUNT_CHANGED)));
+    return;
+  }
   const params: Record<string, string> = { returnTo: location.origin, popup: "1" };
   if (newAccount) params.account = "new";
   window.open(`/api/auth/chatgpt/login?${new URLSearchParams(params)}`, "_blank", "noopener");

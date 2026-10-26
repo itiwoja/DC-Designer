@@ -1317,7 +1317,8 @@ export function App() {
   const canGenImage = !busy && !!imgPrompt.trim();
   // 未サインインで AI ボタンが押せない理由をボタンのそばに出す
   // OpenRouter のキーがあるのに使えない = AI の設定で ChatGPT を選んでいる
-  const orHint = openrouter ? "（AI の設定で OpenRouter に切り替えられます）" : "（または .env に OPENROUTER_API_KEY を設定）";
+  // 製品版の AI は ChatGPT プランだけなので、OpenRouter の案内は出さない
+  const orHint = desktopBridge() ? "" : openrouter ? "（AI の設定で OpenRouter に切り替えられます）" : "（または .env に OPENROUTER_API_KEY を設定）";
   const signinNote = !aiReady && (
     <p className="notice-inline">
       {status?.ai?.explicit === "openrouter"

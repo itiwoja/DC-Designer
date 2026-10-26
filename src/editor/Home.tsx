@@ -5,6 +5,7 @@ import { PDF_FILE_ACCEPT } from "../import/pdfDocument";
 import { findPendingAssets } from "../schema";
 import { blankInstagramSpec, IG_RATIO_KEYS, IG_RATIOS, type IgRatio } from "../instagram";
 import { api, AUTH_CHANNEL, deckBySlide, type Deck, type SavedPoster, type Status } from "./api";
+import { DESKTOP_ACCOUNT_CHANGED } from "./accountView";
 import { desktopBridge } from "./desktop";
 import { BLANK_SLIDE_SPEC, BLANK_SPEC, IMPORT_NOTICE_KEY, HOME_URL, openDeckInEditor, openInEditor } from "./nav";
 import { MODE_KEYS, MODES, modeHomeUrl, modeLibraryUrl, modeOfDeck, readLastId, type AppMode } from "./mode";
@@ -66,6 +67,13 @@ export function Home({ mode }: { mode?: AppMode }) {
   }, [reload]);
   // 結果が別タブから届かなくても、サインインが済んだら取り直す
   useSignInWatch(reload);
+  // 製品版：ホームからのサインイン（既定のブラウザ）が終わったら取り直す
+  const [signingIn, setSigningIn] = useState(false);
+  useEffect(() => {
+    const onChanged = () => { setSigningIn(false); reload(); };
+    window.addEventListener(DESKTOP_ACCOUNT_CHANGED, onChanged);
+    return () => window.removeEventListener(DESKTOP_ACCOUNT_CHANGED, onChanged);
+  }, [reload]);
 
   const gpt = status?.chatgpt;
 
@@ -231,10 +239,19 @@ export function Home({ mode }: { mode?: AppMode }) {
       <ThemeMenu />
       {gpt?.signedIn ? (
         <span className="home-account" title={gpt.email}>
-          {gpt.picture && <img src={gpt.picture} alt="" />}
+          {/* 製品版は外部の画像を読み込まない */}
+          {gpt.picture && !desktopBridge() && <img src={gpt.picture} alt="" />}
           <span>{gpt.name || gpt.email || "ChatGPT"}</span>
           {!gpt.planEnabled && <small className="warn">プラン利用不可</small>}
         </span>
+      ) : desktopBridge() ? (
+        // 製品版の AI は ChatGPT プランだけ（OpenRouter は使えない）。ホームからもサインインできる
+        <button
+          className="home-signin" disabled={signingIn} onClick={() => { setSigningIn(true); api.chatgptLogin(); }}
+          title="既定のブラウザで ChatGPT にサインインします（レイアウト生成・AI 修正に使います）"
+        >
+          {signingIn ? "ブラウザでサインインを続けてください" : "ChatGPT にサインイン"}
+        </button>
       ) : (
         <span className="home-account" title="レイアウト生成・AI 修正は OpenRouter の API キーで行います（ChatGPT にはエディタ左下からサインインできます）">
           <span>OpenRouter</span>
