@@ -55,6 +55,7 @@ export function DesktopAccountBar({ bridge, status, onSignOut }: { bridge: Deskt
                 <span className="status-val"><span className={"dot " + (view.kind === "signedIn" ? "ok" : "warn")} aria-hidden />{describeDesktopAccount(view)}</span>
               </div>
               {"email" in view && view.email && <div className="status-row"><span className="status-label">メール</span><span className="status-val">{view.email}</span></div>}
+              {view.kind !== "signedIn" && <p className="hint">この連携には ChatGPT Plus / Pro などの対象プランが必要です。無料プランは非対応です。手動編集・保存・書き出しはサインインせずに使えます。</p>}
               {view.kind === "signedOut" && view.previousEmail && <p className="hint">前回のアカウント: {view.previousEmail}</p>}
               {busy && <p className="hint" role="status">ブラウザでサインインを続けてください</p>}
               {!busy && message && <p className={"hint " + message.tone} role={message.tone === "error" ? "alert" : "status"}>{message.text}</p>}
@@ -64,7 +65,7 @@ export function DesktopAccountBar({ bridge, status, onSignOut }: { bridge: Deskt
                 {!(view.kind === "signedIn") && <button className="primary" disabled={busy} onClick={() => void signIn(false)}>サインイン</button>}
               </div>
               <div className="divider" />
-              <p className="hint">AI 機能（レイアウト生成・修正）は今後の更新で使えるようになります。</p>
+              <p className="hint">AI 機能（レイアウト生成・修正）には、連携した ChatGPT のプラン枠を使います。</p>
             </div>
           </div>
         )}
