@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ensureWebFont, FONT_BY_FAMILY, FONT_CATALOG, FONT_ROLE_LABELS, FONT_SCRIPT_LABELS, fontCovers } from "../fonts";
+import type { AiSubject } from "./aiSubject";
 import { api, type FontProposal, type FontStatus } from "./api";
 import { FontCatalog, type FontPick } from "./FontCatalog";
 
@@ -16,7 +17,7 @@ const SUBJECTS = {
  * フォント変更: 雰囲気を伝える → ChatGPT が 3 案提案 → 選ぶ（または一覧から条件で絞り込んで選ぶ）→ 未インストールなら PC に入れる → 全スライド（ポスターならその 1 枚）に適用
  */
 export function FontDialog({
-  kind = "slides", deckName, texts, current, onApply, onError, onClose,
+  kind = "slides", deckName, texts, current, subject, onApply, onError, onClose,
 }: {
   kind?: keyof typeof SUBJECTS;
   /** デッキ名（ポスターならタイトル） */
@@ -24,6 +25,8 @@ export function FontDialog({
   /** 全スライド（ポスター）の文面（提案の材料とプレビュー） */
   texts: string[];
   current: { display?: string; body?: string };
+  /** 提案を頼む対象の保存済み作品（製品版の送信確認に出す） */
+  subject?: AiSubject;
   onApply: (fonts: { display: string; body: string }) => Promise<void>;
   onError: (e: unknown) => void;
   onClose: () => void;
@@ -65,7 +68,7 @@ export function FontDialog({
     abort.current = new AbortController();
     setPhase("suggest");
     try {
-      const r = await api.suggestFonts({ kind, mood, title: deckName, texts: texts.slice(0, 200), current }, abort.current.signal);
+      const r = await api.suggestFonts({ kind, mood, title: deckName, texts: texts.slice(0, 200), current, ...(subject ? { subject } : {}) }, abort.current.signal);
       r.proposals.forEach((p) => { ensureWebFont(p.display); ensureWebFont(p.body); });
       setProposals(r.proposals);
       setPicked(0);

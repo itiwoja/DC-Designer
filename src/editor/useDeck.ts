@@ -9,6 +9,8 @@ import { applyFonts, specTexts } from "../fonts";
 import { slideContent } from "../notes";
 import { PosterSpecSchema, type PosterSpec } from "../schema";
 import type { resolveTheme } from "../themes";
+import { deckSubject, watchWork, WORK_CHANGED_MESSAGE } from "./aiSubject";
+import { desktopBridge } from "./desktop";
 import { api, type ChatContext, type Deck, type DeckKind, type RefImage } from "./api";
 import { addPageNumber, renumberPages } from "./pageNumbers";
 import { diffLayers, safeFileName } from "./specOps";
@@ -424,7 +426,9 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
       const targets = missing.slice(i, i + NOTES_BATCH);
       let res: Awaited<ReturnType<typeof api.writeNotes>>;
       try {
-        res = await api.writeNotes({ title: d.name, slides, targets, request: opts.request }, signal);
+        const changed = watchWork(!!desktopBridge(), () => d.slides.map((s) => specOf(s.id)));
+        res = await api.writeNotes({ title: d.name, slides, targets, request: opts.request, subject: deckSubject(d) }, signal);
+        if (changed()) throw new Error(WORK_CHANGED_MESSAGE);
       } catch (e) {
         // 途中まで書けていれば、書けた分は残して（元に戻せるようにして）止める
         if (!written.length) throw e;
@@ -480,7 +484,7 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
       const old = specOf(slide.id);
       if (!old) return;
       try {
-        const res = await api.edit(old, instruction, undefined, signal, undefined, chat, instagram || undefined, { number: i + 1, total, guide }, references);
+        const res = await api.edit(old, instruction, undefined, signal, undefined, chat, instagram || undefined, { number: i + 1, total, guide }, references, deckSubject(d));
         if (signal.aborted) return;
         if (i === cur && res.reply) guide = res.reply;
         if (!res.spec || !diffLayers(old, res.spec).hasChanges || specOf(slide.id) !== old) return;
@@ -532,7 +536,9 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
       const sp = specs[n - 1];
       return sp ? [{ number: n, title: sp.meta.title, spec: sp }] : [];
     });
-    const res = await api.planSlide({ instruction, position, total, title: d.name, outline, samples, references, ...(instagram ? { instagram } : {}) }, chat, signal);
+    const changed = watchWork(!!desktopBridge(), () => [deckRef.current, ...d.slides.map((s) => specOf(s.id))]);
+    const res = await api.planSlide({ instruction, position, total, title: d.name, outline, samples, references, subject: deckSubject(d), ...(instagram ? { instagram } : {}) }, chat, signal);
+    if (changed()) throw new Error(WORK_CHANGED_MESSAGE);
     if (signal.aborted) throw new Error("aborted");
     const r = await api.addDeckSlide(d.id, { spec: res.spec, after: d.slides[Math.max(position - 2, 0)].id });
     let nd = r.deck;

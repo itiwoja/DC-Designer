@@ -9,6 +9,8 @@ type View = {
   requestId: string; payloadHash: string; expiresAt: number;
   payload: {
     endpoint: string; model: string; providerRouting: string; purpose: string; instructions: string;
+    /** 送信の対象になった保存済み作品（無いこともある。形は信用せず読むときに確かめる） */
+    subject?: unknown;
     turns: { role: "user" | "assistant"; text: string; images?: Img[] }[];
   };
 };
@@ -33,6 +35,14 @@ function section(title: string, id: string): HTMLElement {
   return s;
 }
 
+/** payload.subject を安全に読む（形が違えば表示しない） */
+function readSubject(raw: unknown): { kind: string; id: string; title: string } | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const s = raw as Record<string, unknown>;
+  if ((s.kind !== "poster" && s.kind !== "deck") || typeof s.id !== "string" || typeof s.title !== "string") return null;
+  return { kind: s.kind === "deck" ? "スライド" : "ポスター", id: s.id, title: s.title };
+}
+
 function render(v: View): void {
   const root = document.getElementById("root");
   if (!root) return;
@@ -51,6 +61,21 @@ function render(v: View): void {
   ];
   for (const [k, val] of rows) dl.append(el("dt", k), el("dd", val));
   dest.append(dl);
+
+  // 対象の作品（どの作品について AI に頼むのか）。無ければ欄ごと出さない
+  const subject = readSubject(p.subject);
+  let work: HTMLElement | null = null;
+  if (subject) {
+    work = section("対象の作品", "h-work");
+    const wl = el("dl");
+    const idNote = el("small", `ID: ${subject.id}`, "work-id");
+    idNote.style.opacity = "0.7";
+    idNote.style.fontSize = "0.8em";
+    const dd = el("dd", subject.title || "（題名なし）");
+    dd.append(document.createElement("br"), idNote);
+    wl.append(el("dt", subject.kind), dd);
+    work.append(wl);
+  }
 
   const body = section("送信する本文", "h-body");
   const addBlock = (label: string, text: string, imgs: Img[] = []) => {
@@ -89,7 +114,7 @@ function render(v: View): void {
   send.disabled = true;
   bar.append(cancel, send);
 
-  root.replaceChildren(h1, lead, dest, body, status, remain, bar);
+  root.replaceChildren(...[h1, lead, dest, work, body].filter((n): n is HTMLElement => n !== null), status, remain, bar);
 
   let done = false;
   const decide = (decision: "approve" | "deny") => {

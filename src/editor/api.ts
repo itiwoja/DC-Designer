@@ -1,5 +1,6 @@
 import type { AssetContext, AssetRequest, PosterSpec } from "../schema";
 import { postWithProgress, request, type AIProgress } from "./apiTransport";
+import { withSubject, type AiSubject } from "./aiSubject";
 export type { AIProgress } from "./apiTransport";
 /** 画像生成 1 回の待ち時間の上限（ミリ秒） */
 const ASSET_TIMEOUT_MS = 16 * 60_000;
@@ -97,17 +98,17 @@ export const api = {
   reproduce: (reference: RefImage, width: number, height: number, brief: string, onProgress?: (p: AIProgress) => void, signal?: AbortSignal) =>
     postWithProgress<{ spec: PosterSpec }>("/api/reproduce", { reference, width, height, brief }, onProgress, signal),
   /** 再現の仕上げ: 参考画像と今の描画結果を見比べて直した spec（直すところが無ければ spec なし） */
-  refineReproduction: (reference: RefImage, render: RefImage, spec: PosterSpec, onProgress?: (p: AIProgress) => void, signal?: AbortSignal) =>
-    postWithProgress<{ reply: string; spec?: PosterSpec }>("/api/reproduce/refine", { reference, render, spec }, onProgress, signal),
+  refineReproduction: (reference: RefImage, render: RefImage, spec: PosterSpec, onProgress?: (p: AIProgress) => void, signal?: AbortSignal, subject?: AiSubject) =>
+    postWithProgress<{ reply: string; spec?: PosterSpec }>("/api/reproduce/refine", withSubject({ reference, render, spec }, subject), onProgress, signal),
   /** チャットでの修正。spec が無ければ変更なし（質問への回答など） */
   /** across はデッキの全スライドへの指示を 1 枚ずつ当てるときの、そのスライドの位置と先に直したスライドの方針 */
-  edit: (spec: PosterSpec, instruction: string, selectedIds: string[] | undefined, signal?: AbortSignal, deck?: DeckEditContext, chat?: ChatContext, instagram?: boolean, across?: { number: number; total: number; guide?: string }, references?: RefImage[]) =>
-    post<{ reply: string; spec?: PosterSpec; target?: number; remove?: number[] }>("/api/edit", { spec, instruction, selectedIds, deck, across, history: chat?.history, memory: chat?.memory, instagram, references }, signal),
+  edit: (spec: PosterSpec, instruction: string, selectedIds: string[] | undefined, signal?: AbortSignal, deck?: DeckEditContext, chat?: ChatContext, instagram?: boolean, across?: { number: number; total: number; guide?: string }, references?: RefImage[], subject?: AiSubject) =>
+    post<{ reply: string; spec?: PosterSpec; target?: number; remove?: number[] }>("/api/edit", withSubject({ spec, instruction, selectedIds, deck, across, history: chat?.history, memory: chat?.memory, instagram, references }, subject), signal),
   /** デッキの並び（文字）とお手本のスライドから、position 番目に追加する新しいスライドを 1 枚作る（追加はしない） */
-  planSlide: (body: { instruction: string; position: number; total: number; title?: string; outline: { number: number; title?: string; texts: string[] }[]; samples: { number: number; title?: string; spec: PosterSpec }[]; instagram?: boolean; references?: RefImage[] }, chat?: ChatContext, signal?: AbortSignal) =>
+  planSlide: (body: { instruction: string; position: number; total: number; title?: string; outline: { number: number; title?: string; texts: string[] }[]; samples: { number: number; title?: string; spec: PosterSpec }[]; instagram?: boolean; references?: RefImage[]; subject?: AiSubject }, chat?: ChatContext, signal?: AbortSignal) =>
     post<{ reply: string; spec: PosterSpec }>("/api/slide", { ...body, history: chat?.history, memory: chat?.memory }, signal),
   /** デッキの全スライドの文字・画像の説明（＋既存の台本）から、targets の番号のスライドの台本を書く */
-  writeNotes: (body: { title?: string; slides: { number: number; title?: string; texts: string[]; images?: string[]; notes?: string }[]; targets: number[]; request?: string }, signal?: AbortSignal) =>
+  writeNotes: (body: { title?: string; slides: { number: number; title?: string; texts: string[]; images?: string[]; notes?: string }[]; targets: number[]; request?: string; subject?: AiSubject }, signal?: AbortSignal) =>
     post<{ notes: { number: number; notes: string }[] }>("/api/notes", body, signal),
   /** 古いやりとりを既存の要約に畳み込む（ローリング要約） */
   summarizeChat: (summary: string | undefined, turns: ChatTurn[]) => post<{ summary: string }>("/api/chat/summarize", { summary, turns }),
@@ -157,7 +158,7 @@ export const api = {
   uploadBlob: async (blob: Blob, mediaType: string) =>
     post<{ src: string }>("/api/upload", { mediaType, data: (await readDataUrl(blob)).split(",")[1] }),
   // ---------- フォント ----------
-  suggestFonts: (body: { kind?: "slides" | "poster" | "instagram"; mood: string; title?: string; texts: string[]; current?: { display?: string; body?: string } }, signal?: AbortSignal) =>
+  suggestFonts: (body: { kind?: "slides" | "poster" | "instagram"; mood: string; title?: string; texts: string[]; current?: { display?: string; body?: string }; subject?: AiSubject }, signal?: AbortSignal) =>
     post<{ proposals: FontProposal[] }>("/api/fonts/suggest", body, signal),
   fontStatus: (families: string[]) => post<FontStatus>("/api/fonts/status", { families }),
   installFonts: (families: string[]) => post<{ target: FontStatus["target"]; installed: string[]; already: string[] }>("/api/fonts/install", { families }),
