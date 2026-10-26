@@ -4,7 +4,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import OpenAI from "openai";
 import type { ChatCompletionContentPart, ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import type { Turn } from "./chatgpt";
 import { httpError } from "./http-error";
@@ -103,6 +102,7 @@ const STREAM_RETRIES = 2;
 export async function askOpenRouter(instructions: string, turns: Turn[], onText?: (text: string) => void, signal?: AbortSignal): Promise<string> {
   if (!openRouterAvailable()) throw httpError(400, "OpenRouter の API キーがありません。.env に OPENROUTER_API_KEY を設定して、API サーバーを再起動してください");
   // 再送はこちらで制御する（SDK の既定の再送に任せると、レート制限などの表示が最長 10 秒ほど遅れる。chatgpt.ts と同じ）
+  const { default: OpenAI } = await import("openai");
   const client = new OpenAI({ apiKey: process.env.OPENROUTER_API_KEY, baseURL: BASE_URL, maxRetries: 0, defaultHeaders: { "X-Title": "DC-Designer" } });
   const maxTokens = Number(process.env.OPENROUTER_MAX_TOKENS) || undefined;
   const aborted = () => httpError(499, "OpenRouter へのリクエストを中断しました");
