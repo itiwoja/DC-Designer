@@ -76,7 +76,7 @@ function openChatGPTLogin(newAccount: boolean) {
 }
 
 export const api = {
-  status: () => fetch("/api/status").then((r) => r.json() as Promise<Status>),
+  status: () => get<Status>("/api/status"),
   /** Sign in with ChatGPT は別タブで行う（API サーバー → OpenAI → ループバック → ?popup=1 付きでここへ戻り、結果を元のタブへ渡して閉じる） */
   chatgptLogin: () => openChatGPTLogin(false),
   /** 別の ChatGPT アカウント・ワークスペースでサインインする（新しく登録し直す） */

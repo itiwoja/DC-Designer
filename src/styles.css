@@ -508,7 +508,7 @@ button.primary.danger, button.primary.danger:hover:not(:disabled) { background: 
 .lib-card.project.expanded:hover { transform: none; }
 .lib-card.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .lib-thumb { position: relative; display: block; width: 100%; padding: 0; border: none; border-radius: 0; border-bottom: 1px solid var(--line); background: var(--surface); overflow: hidden; }
-.lib-thumb iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; pointer-events: none; }
+.lib-thumb img.snap { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; user-select: none; }
 .lib-thumb.img { aspect-ratio: 1; }
 .lib-thumb.img img { width: 100%; height: 100%; object-fit: contain; display: block;
   background: repeating-conic-gradient(var(--line) 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
@@ -614,7 +614,7 @@ button.primary.danger, button.primary.danger:hover:not(:disabled) { background: 
 .deck-thumb {
   position: relative; display: block; padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: #fff;
 }
-.deck-thumb iframe { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; pointer-events: none; }
+.deck-thumb img.snap { position: absolute; left: 0; top: 0; max-width: none; transform-origin: 0 0; pointer-events: none; user-select: none; }
 .deck-thumb[aria-current="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
 .deck-thumb:hover:not(:disabled) { border-color: var(--accent); }
 /* ドラッグ＆ドロップでの並べ替え: 掴んだスライドは薄く、落とす位置に縦線を出す */

@@ -56,8 +56,9 @@ export function availableProviders(): ImageProvider[] {
   const list: ImageProvider[] = [];
   if (process.env.OPENAI_API_KEY) list.push("openai");
   if (process.env.GEMINI_API_KEY) list.push("gemini");
-  list.push("comfyui");
-  if ((process.env.IMAGE_PROVIDER || "").toLowerCase() === "codex") list.push("codex");
+  const desktop = process.env.DC_DESIGNER_DESKTOP === "1"; // 製品版は Codex・ComfyUI を使わない
+  if (!desktop) list.push("comfyui");
+  if (!desktop && (process.env.IMAGE_PROVIDER || "").toLowerCase() === "codex") list.push("codex");
   list.push("placeholder");
   return list;
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PosterSpec } from "../schema";
 import { api, isNotFound } from "./api";
+import { desktopBridge, registerCloseSave } from "./desktop";
 import { clearOpenRequest, CREATING_KEY, readCurrentId, readOpenRequest, readSynced, STORAGE_KEY, writeCurrentId, writeSynced } from "./storage";
 
 const hadSavedSpec = () => { try { return !!localStorage.getItem(STORAGE_KEY); } catch { return false; } };
@@ -240,8 +241,16 @@ export function useAutoSave(spec: PosterSpec, setSpec: (s: PosterSpec) => void, 
     return () => clearTimeout(t);
   }, [spec, flushSave, apiUp]);
 
-  // 保存待ちのままタブを閉じたときも取りこぼさない
+  // 保存待ちのままタブを閉じたときも取りこぼさない（製品版は main の閉じる調停で保存するので keepalive は使わない）
   useEffect(() => {
+    if (desktopBridge()) {
+      // 閉じる前に、開いているスライドと裏で保存待ちの別スライドをすべて保存する
+      return registerCloseSave(async () => {
+        if (loadingRef.current) return true;
+        for (const [id, s] of [...unsaved.current]) saveOther(id, s);
+        return (await flushSave()) && !unsaved.current.size;
+      });
+    }
     const onUnload = () => {
       const send = (id: string, s: PosterSpec) =>
         fetch(`/api/posters/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spec: s }), keepalive: true });
@@ -251,7 +260,7 @@ export function useAutoSave(spec: PosterSpec, setSpec: (s: PosterSpec) => void, 
     };
     window.addEventListener("pagehide", onUnload);
     return () => window.removeEventListener("pagehide", onUnload);
-  }, []);
+  }, [saveOther, flushSave]);
 
   /** 保存ボタン / Ctrl+S: 自動保存の待ち時間を飛ばしてすぐ保存する。成果物に保存できたら true */
   // 自動保存の待ち中（serverSave === "saving"）も押せるよう、ボタンの無効化は保存ボタン自身の処理中だけにする

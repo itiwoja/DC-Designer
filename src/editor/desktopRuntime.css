@@ -1,0 +1,36 @@
+/* 製品版の起動状態オーバーレイ（ready 前は下の画面を操作させない） */
+.desktop-runtime {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(243, 243, 246, .92);
+  backdrop-filter: blur(4px);
+}
+.desktop-runtime-card {
+  width: min(420px, 100%);
+  padding: 24px;
+  background: var(--panel);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+  color: var(--ink);
+  text-align: center;
+}
+.desktop-runtime-title { margin: 0 0 8px; font-size: 16px; font-weight: 700; color: var(--ink-2); }
+.desktop-runtime-detail { margin: 0 0 16px; font-size: 13px; line-height: 1.7; color: var(--muted); }
+.desktop-runtime-card.failed .desktop-runtime-title { color: var(--danger); }
+.desktop-runtime-retry {
+  padding: 8px 20px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.desktop-runtime-retry:hover { background: var(--accent-2); }
+.desktop-runtime-retry:disabled { background: var(--disabled-bg); color: var(--muted); cursor: default; }
+.desktop-runtime-retry:focus-visible { outline: 2px solid var(--sel-line); outline-offset: 2px; }
