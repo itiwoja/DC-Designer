@@ -3,6 +3,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProp
 import { THEME_LABELS, THEME_ORDER, useTheme } from "../theme";
 import { Ico } from "./uiIcons";
 import type { PosterSpec } from "../schema";
+import { snapshots } from "../render/snapshot";
+import { api } from "./api";
 
 /**
  * ボタンで開閉するメニュー。外側のクリック・Esc で閉じる（Esc は preventDefault して、ほかのショートカットには使わせない）。
@@ -74,78 +76,71 @@ export function ThemeMenu() {
   );
 }
 
-/** 保存済みの成果物を ?view=render で描画するサムネイル（updatedAt が変わると読み直す） */
 /** 画像などの描画が済むまで重ねる、読み込み中のぐるぐる（すぐ済むときはちらつかないよう少し遅れて出る） */
 export function RenderLoading() {
   return <span className="render-loading" role="status" aria-label="読み込み中"><span className="spinner" aria-hidden /></span>;
 }
 
-/** 描画用ページ（?view=render）が「描き終わった」と知らせてくるメッセージ */
-export const RENDER_READY_MESSAGE = "poster-render-ready";
-/** ?view=render&embed=1 が「spec を受け取れる」と知らせてくるメッセージ */
-export const RENDER_HELLO_MESSAGE = "poster-render-hello";
-/** 親画面から ?view=render&embed=1 へ描く spec を渡すメッセージの種類 */
-export const RENDER_SPEC_MESSAGE = "poster-render-spec";
-
 /**
- * 手元の spec を ?view=render&embed=1 で描くサムネイル（サーバーを介さないので未保存の編集もすぐ映る）。
- * 編集中は spec が細かく変わるので、少し落ち着いてから送り直す
+ * spec の snapshot（画像化したプレビュー）の Blob URL を返す。作れるまでは null。
+ * 編集中は spec が細かく変わるので、最初の 1 枚のあとは少し落ち着いてから作り直す（それまでは前の絵を出す）
  */
-export function SpecFrame({ spec, style }: { spec: PosterSpec; style?: CSSProperties }) {
-  const ref = useRef<HTMLIFrameElement>(null);
-  const [listening, setListening] = useState(false);
-  const [ready, setReady] = useState(false);
-  const sent = useRef<PosterSpec | null>(null);
-  const latest = useRef(spec);
-  latest.current = spec;
+function useSnapshot(spec: PosterSpec | null): { url: string | null; failed: boolean } {
+  const [state, setState] = useState<{ url: string | null; failed: boolean }>({ url: null, failed: false });
+  // 表示中の絵は、次の絵が出来るまで借りたままにする（先に返すと Blob URL が revoke され得る）
+  const shown = useRef<ReturnType<typeof snapshots.acquire> | null>(null);
+  useEffect(() => () => shown.current?.release(), []);
   useEffect(() => {
-    const onMessage = (e: MessageEvent) => {
-      if (e.origin !== location.origin || e.source !== ref.current?.contentWindow) return;
-      // iframe は DOM 上で動かされる（スライドの並べ替えなど）と読み込み直されて中身が空になるので、
-      // 挨拶が来るたびに最新の spec をその場で送り直す（listening はもう true なので effect には頼れない）
-      if (e.data === RENDER_HELLO_MESSAGE) {
-        sent.current = latest.current;
-        ref.current?.contentWindow?.postMessage({ type: RENDER_SPEC_MESSAGE, spec: latest.current }, location.origin);
-        setReady(false);
-        setListening(true);
-      }
-      else if (e.data === RENDER_READY_MESSAGE) setReady(true);
+    if (!spec) return;
+    let handle: ReturnType<typeof snapshots.acquire> | undefined;
+    let alive = true;
+    const start = () => {
+      const h = (handle = snapshots.acquire(spec));
+      h.promise.then(
+        (url) => {
+          if (!alive) return;
+          if (shown.current !== h) { shown.current?.release(); shown.current = h; }
+          handle = undefined;
+          setState({ url, failed: false });
+        },
+        () => { if (alive) setState((s) => ({ url: s.url, failed: !s.url })); },
+      );
     };
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, []);
-  useEffect(() => {
-    if (!listening || sent.current === spec) return;
-    const send = () => { sent.current = spec; ref.current?.contentWindow?.postMessage({ type: RENDER_SPEC_MESSAGE, spec }, location.origin); };
-    if (!sent.current) { send(); return; }
-    const t = setTimeout(send, 300);
-    return () => clearTimeout(t);
-  }, [spec, listening]);
+    const t = shown.current ? setTimeout(start, 300) : undefined;
+    if (!t) start();
+    return () => { alive = false; clearTimeout(t); handle?.release(); };
+  }, [spec]);
+  return state;
+}
+
+function Snapshot({ spec, style, failed: loadFailed }: { spec: PosterSpec | null; style?: CSSProperties; failed?: boolean }) {
+  const snap = useSnapshot(spec);
+  const url = snap.url;
+  const failed = snap.failed || !!loadFailed;
   return (
     <>
-      <iframe ref={ref} src="?view=render&embed=1" tabIndex={-1} aria-hidden title="" style={style} />
-      {!ready && <RenderLoading />}
+      {url && <img className="snap" src={url} alt="" draggable={false} aria-hidden style={style} />}
+      {!url && !failed && <RenderLoading />}
     </>
   );
 }
 
+/** 手元の spec のサムネイル（サーバーを介さないので未保存の編集もすぐ映る） */
+export function SpecFrame({ spec, style }: { spec: PosterSpec; style?: CSSProperties }) {
+  return <Snapshot spec={spec} style={style} />;
+}
+
+/** 保存済みの成果物のサムネイル（updatedAt が変わると読み直す） */
 export function PosterFrame({ poster, style }: { poster: { id: string; updatedAt: string }; style?: CSSProperties }) {
-  const src = `?view=render&poster=${poster.id}&v=${encodeURIComponent(poster.updatedAt)}`;
-  const ref = useRef<HTMLIFrameElement>(null);
-  const [readySrc, setReadySrc] = useState<string | null>(null);
+  const [spec, setSpec] = useState<PosterSpec | null>(null);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
-    const onMessage = (e: MessageEvent) => {
-      if (e.origin === location.origin && e.data === RENDER_READY_MESSAGE && e.source === ref.current?.contentWindow) setReadySrc(src);
-    };
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, [src]);
-  return (
-    <>
-      <iframe ref={ref} src={src} loading="lazy" tabIndex={-1} aria-hidden title="" style={style} />
-      {readySrc !== src && <RenderLoading />}
-    </>
-  );
+    let alive = true;
+    setFailed(false);
+    api.poster(poster.id).then((p) => { if (alive) setSpec(p.spec); }, () => { if (alive) setFailed(true); });
+    return () => { alive = false; };
+  }, [poster.id, poster.updatedAt]);
+  return <Snapshot spec={spec} style={style} failed={failed && !spec} />;
 }
 
 /**
