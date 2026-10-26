@@ -31,6 +31,7 @@ it("複数の子の編集状態を終了・失敗・再起動で維持し、終�
       onStateChanged: (cb: typeof notify) => { notify = cb; return offState; },
     },
     close: { onPrepare: () => offClose, complete },
+    window: { setTheme: vi.fn() },
   } as unknown as DesktopBridge;
   vi.stubGlobal("dcDesktop", bridge);
   let mounts = 0;

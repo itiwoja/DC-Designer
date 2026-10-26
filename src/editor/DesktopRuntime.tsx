@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { RuntimeError, RuntimeSnapshot } from "../../desktop/bridge";
 import { desktopBridge, listenForClose } from "./desktop";
 import "./desktopRuntime.css";
+import "./desktopWindow.css";
 
 const ERROR_TEXT: Record<RuntimeError, string> = {
   STARTUP_FAILED: "内部の処理を起動できませんでした。",
@@ -20,6 +21,17 @@ export function DesktopRuntime({ children }: { children: ReactNode }) {
   const [snap, setSnap] = useState<RuntimeSnapshot | null>(null);
   const [retrying, setRetrying] = useState(false);
   const retryRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!bridge) return;
+    const root = document.documentElement;
+    root.dataset.desktop = "";
+    const syncTheme = () => bridge.window.setTheme(root.dataset.theme === "dark" ? "dark" : "light");
+    syncTheme();
+    const observer = new MutationObserver(syncTheme);
+    observer.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => { observer.disconnect(); delete root.dataset.desktop; };
+  }, [bridge]);
 
   useEffect(() => {
     if (!bridge) return;

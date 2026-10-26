@@ -34,6 +34,9 @@ const bridge: DesktopBridge = {
     retryStart: () => ipcRenderer.invoke(IPC.retryStart),
     onStateChanged: (cb) => subscribe<RuntimeSnapshot>(IPC.stateChanged, cb),
   },
+  window: {
+    setTheme: (theme) => { void ipcRenderer.invoke(IPC.windowTheme, theme).catch(() => {}); },
+  },
   secrets: {
     status: () => ipcRenderer.invoke(IPC.secretsStatus),
     set: (providerId, kind, value) => ipcRenderer.invoke(IPC.secretsSet, providerId, kind, value),

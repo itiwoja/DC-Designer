@@ -40,6 +40,10 @@ export type DesktopBridge = {
     /** 解除関数を返す */
     onStateChanged(cb: (s: RuntimeSnapshot) => void): () => void;
   };
+  window: {
+    /** 標準の窓操作ボタンの色を画面のテーマに合わせる */
+    setTheme(theme: "light" | "dark"): void;
+  };
   /** 資格情報（EXE-FR-003）。値は読み戻せない。結果は { ok, data: 状態 } の形で返す */
   secrets: {
     status(): Promise<DesktopResult>;
@@ -67,6 +71,7 @@ export const IPC = {
   getState: "dc:runtime-get-state",
   retryStart: "dc:runtime-retry",
   stateChanged: "dc:runtime-state",
+  windowTheme: "dc:window-theme",
   prepareClose: "dc:prepare-close",
   completeClose: "dc:complete-close",
   secretsStatus: "dc:secrets-status",
