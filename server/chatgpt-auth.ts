@@ -15,9 +15,9 @@ import { join } from "node:path";
 
 const ISSUER = "https://auth.openai.com";
 const AUTHORIZE_URL = `${ISSUER}/api/accounts/authorize`;
-const TOKEN_URL = `${ISSUER}/api/accounts/oauth/token`;
-const REVOKE_URL = `${ISSUER}/api/accounts/oauth/revoke`;
-const JWKS_URL = `${ISSUER}/.well-known/jwks.json`;
+export const TOKEN_URL = `${ISSUER}/api/accounts/oauth/token`;
+export const REVOKE_URL = `${ISSUER}/api/accounts/oauth/revoke`;
+export const JWKS_URL = `${ISSUER}/.well-known/jwks.json`;
 const RESOURCE = "https://api.openai.com/v1";
 const PLAN_SCOPE = "chatgpt.tokens.use.direct";
 const SCOPES = `openid profile email offline_access resource.invoke ${PLAN_SCOPE}`;
@@ -202,30 +202,59 @@ export async function startLogin(opts: { port: number; returnTo: string; popup?:
   return `${AUTHORIZE_URL}?${params}`;
 }
 
+export type LoginOutcome =
+  | { kind: "done"; result: "signed-in" | "no-plan" }
+  | { kind: "error"; message: string }
+  | { kind: "retry"; url: string };
+
+/** state に対応する保留中のサインインを取り出す（1回限り）。無ければ null */
+function takePending(query: Record<string, unknown>): Pending | null {
+  const state = typeof query.state === "string" ? query.state : undefined;
+  const p = state ? pending.get(state) : undefined;
+  if (!state || !p) return null;
+  pending.delete(state);
+  return p;
+}
+
+const STATE_MISMATCH = "サインインの状態が一致しません。もう一度お試しください";
+
+/** コールバックの結果を構造化して返す（製品版の main が使う。戻り先 URL は作らない） */
+export async function completeLogin(query: Record<string, unknown>): Promise<LoginOutcome> {
+  const p = takePending(query);
+  if (!p) return { kind: "error", message: STATE_MISMATCH };
+  return finishLogin(p, query);
+}
+
 /** /auth/callback の処理。戻り先 URL（エディタ）を返す */
 export async function handleCallback(query: Record<string, unknown>): Promise<string> {
-  const q = (k: string) => (typeof query[k] === "string" ? (query[k] as string) : undefined);
-  const state = q("state");
-  const p = state ? pending.get(state) : undefined;
-  if (!p) throw new Error("サインインの状態が一致しません。もう一度お試しください");
-  pending.delete(state!);
+  const p = takePending(query);
+  if (!p) throw new Error(STATE_MISMATCH);
+  const out = await finishLogin(p, query);
   const back = (params: Record<string, string>) => `${p.returnTo}/?${new URLSearchParams(p.popup ? { ...params, popup: "1" } : params)}`;
+  if (out.kind === "retry") return out.url;
+  if (out.kind === "error") return back({ chatgpt_error: out.message });
+  return back({ chatgpt: out.result });
+}
 
-  // 戻り先が分かっているので、以降の失敗は例外で抜けずに戻り先へエラーとして渡す（popup も保つ）
+async function finishLogin(p: Pending, query: Record<string, unknown>): Promise<LoginOutcome> {
+  const q = (k: string) => (typeof query[k] === "string" ? (query[k] as string) : undefined);
+  const back = (message: string): LoginOutcome => ({ kind: "error", message });
+
+  // 以降の失敗は例外で抜けずにエラー結果として返す
   try {
     if (q("error")) {
-      return back({ chatgpt_error: q("error") === "access_denied" ? "サインインがキャンセルされました" : q("error_description") || q("error")! });
+      return back(q("error") === "access_denied" ? "サインインがキャンセルされました" : q("error_description") || q("error")!);
     }
     const code = q("code");
-    if (!code) return back({ chatgpt_error: "認可コードが返されませんでした" });
+    if (!code) return back("認可コードが返されませんでした");
 
     // 新規登録ではコールバックの client_id を使う。再認可で異なる client_id が来たら拒否
     const cbClient = q("client_id");
     let clientId = p.clientId;
     if (clientId) {
-      if (cbClient && cbClient !== clientId) return back({ chatgpt_error: "別のクライアント登録が返されました。もう一度お試しください" });
+      if (cbClient && cbClient !== clientId) return back("別のクライアント登録が返されました。もう一度お試しください");
     } else {
-      if (!cbClient || cbClient === "dynamic_agent_client") return back({ chatgpt_error: "クライアント登録が完了しませんでした" });
+      if (!cbClient || cbClient === "dynamic_agent_client") return back("クライアント登録が完了しませんでした");
       clientId = cbClient;
     }
 
@@ -246,16 +275,16 @@ export async function handleCallback(query: Record<string, unknown>): Promise<st
       // 資格情報は本人確認が済むまで保存しない（既存のサインインを消さないため）
       if (!p.clientId) {
         // 新規登録時のみ 1 回だけ自動でやり直す（再認可で失敗したらループさせずにエラー表示）
-        return await startLogin({ port: Number(new URL(p.redirectUri).port), returnTo: p.returnTo, popup: p.popup, registeredClientId: clientId });
+        return { kind: "retry", url: await startLogin({ port: Number(new URL(p.redirectUri).port), returnTo: p.returnTo, popup: p.popup, registeredClientId: clientId }) };
       }
-      return back({ chatgpt_error: `認可コードの交換に失敗しました（${e.message}）。もう一度サインインしてください` });
+      return back(`認可コードの交換に失敗しました（${e.message}）。もう一度サインインしてください`);
     }
     if (!tok.id_token) throw new Error("ID トークンが返されませんでした");
     const claims = await verifyIdToken(tok.id_token, clientId, p.nonce);
 
     // 再認可時は同じアカウントであることを確認してから資格情報を置き換える
     if (p.expectSubject && p.expectSubject !== claims.sub) {
-      return back({ chatgpt_error: "以前と別の ChatGPT アカウントでサインインされました。別のアカウントを使う場合は「別のアカウントでログイン」からやり直してください" });
+      return back("以前と別の ChatGPT アカウントでサインインされました。別のアカウントを使う場合は「別のアカウントでログイン」からやり直してください");
     }
     const prev = await loadCred();
     const scopes = parseScopes(tok.scope ?? "");
@@ -278,10 +307,10 @@ export async function handleCallback(query: Record<string, unknown>): Promise<st
     });
     // 別のアカウント・別の登録に替わったら、置き換えられた古い更新トークンは失効させる
     if (prev && (prev.client_id !== clientId || prev.subject !== claims.sub)) await revokeRefreshToken(prev);
-    return back({ chatgpt: scopes.includes(PLAN_SCOPE) ? "signed-in" : "no-plan" });
+    return { kind: "done", result: scopes.includes(PLAN_SCOPE) ? "signed-in" : "no-plan" };
   } catch (e) {
     console.error("[chatgpt-auth] callback failed:", e);
-    return back({ chatgpt_error: e instanceof Error ? e.message : String(e) });
+    return back(e instanceof Error ? e.message : String(e));
   }
 }
 

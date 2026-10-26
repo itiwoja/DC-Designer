@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { PosterSpec } from "../schema";
 import { api, type ChatContext, type ChatTurn, type RefImage } from "./api";
+import { desktopBridge } from "./desktop";
 import { uid } from "./specOps";
 import { Ico } from "./uiIcons";
 
@@ -125,9 +126,10 @@ export function useChat({ ready, posterId, posterTitle }: { ready: boolean; post
     setMemory(null);
   };
 
-  // 返答待ちの間は要約しない。失敗したら次の発言のあとに再試行
+  // 返答待ちの間は要約しない。失敗したら次の発言のあとに再試行。
+  // 製品版は AI への送信ごとに本人の確認が要るので、頼まれていない裏の要約はしない（直近のやりとりだけを渡す）
   useEffect(() => {
-    if (compacting || pending || !ready) return;
+    if (compacting || pending || !ready || desktopBridge()) return;
     const c = compactionCandidate(messages, memory);
     if (!c) return;
     const started = epoch.current;

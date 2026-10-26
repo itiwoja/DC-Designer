@@ -85,6 +85,15 @@ describe("製品版（main への問い合わせ）", () => {
     expect(hasSecret("gemini", "apiKey")).toBe(true);
   });
 
+  it("main が ChatGPT 操作の外として断ったら、状態を変えずに分かりやすい SecretError にする", async () => {
+    const f = fakePort((m) => ({ type: "secret-result", requestId: (m as { requestId: string }).requestId, ok: false, state: "unset", code: "SECRET_DENIED" }));
+    setSecretBackend(createMainBackend(f.port, { "chatgpt/oauth": "configured" }));
+    await expect(getSecret("chatgpt", "oauth")).rejects.toMatchObject({ state: "failed", message: expect.stringContaining("ChatGPT を使う操作の外") });
+    await expect(setSecret("chatgpt", "oauth", "v")).rejects.toMatchObject({ state: "failed" });
+    await expect(removeSecret("chatgpt", "oauth")).rejects.toMatchObject({ state: "failed" });
+    expect(hasSecret("chatgpt", "oauth")).toBe(true);
+  });
+
   it("reauthRequired は例外、応答が無ければ時間切れ", async () => {
     const f = fakePort((m) => (m.type === "secret-get" ? { type: "secret-result", requestId: m.requestId, ok: false, state: "reauthRequired" } : null));
     setSecretBackend(createMainBackend(f.port, {}, 20));

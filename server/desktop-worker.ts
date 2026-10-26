@@ -6,6 +6,8 @@
 import { createServer, type Server } from "node:http";
 import { API_PROTOCOL_VERSION, LEASE_TIMEOUT_MS, type MainToWorker, type SecretState, type WorkerToMain } from "../desktop/protocol";
 import { acquireLease, leasePipePath } from "./lease";
+import { createMainConsentBackend, setConsentBackend } from "./ai-consent";
+import { installEgress } from "./egress";
 import { createMainBackend, setSecretBackend } from "./secrets";
 
 // Electron の型が無くても通るよう、使う分だけ宣言する
@@ -47,8 +49,12 @@ async function start(init: Extract<MainToWorker, { type: "init" }>) {
   const lease = await acquireLease(leasePipePath(userRoot), { timeoutMs: LEASE_TIMEOUT_MS, onWaiting: () => send({ type: "lease-waiting" }) });
   if (!lease.ok) return die(1, { type: "lease-failed", reason: lease.reason });
 
+  // 外部通信は目的別の許可表に合うものだけ通す（app を import する前に fetch を包む）
+  installEgress();
   // 資格情報は main に問い合わせる（環境変数には載せない）
   setSecretBackend(createMainBackend(parentPort!, init.secretStates));
+  // AI への送信は main の確認を通す（EXE-FR-004）
+  setConsentBackend(createMainConsentBackend(parentPort!));
 
   let server: Server;
   try {
@@ -61,7 +67,7 @@ async function start(init: Extract<MainToWorker, { type: "init" }>) {
 
     parentPort!.on("message", ({ data }) => {
       const m = data as MainToWorker;
-      if (m.type === "drain") void handle.drain().then(() => send({ type: "drained", requestId: m.requestId, busy: false }));
+      if (m.type === "drain") void handle.drain().then(({ busy }) => send({ type: "drained", requestId: m.requestId, busy }));
       else if (m.type === "resume") { handle.resume(); send({ type: "resumed", requestId: m.requestId }); }
       else if (m.type === "shutdown") {
         server.close(async () => { await lease.release(); process.exit(0); });

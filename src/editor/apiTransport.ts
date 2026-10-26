@@ -1,26 +1,45 @@
 /** 生成の進み具合（サーバーの Progress と同じ形） */
 export type AIProgress = { phase: "thinking" | "writing"; attempt: number; chars?: number; items?: number };
 
-import { matchDesktopOperation } from "../../desktop/operations";
+import { matchDesktopOperation, type DesktopRequest } from "../../desktop/operations";
+import type { DesktopCallOptions, DesktopResult } from "../../desktop/bridge";
 import { desktopBridge } from "./desktop";
 
 const abortError = () => new DOMException("The operation was aborted.", "AbortError");
-const unavailable = () => Object.assign(new Error("Windows版（段階1）ではこの機能はまだ使えません"), { code: "DESKTOP_UNAVAILABLE", status: 404 });
+const unavailable = () => Object.assign(new Error("Windows版ではこの機能は使えません"), { code: "DESKTOP_UNAVAILABLE", status: 404 });
 
-/** 製品版：限定 IPC で呼ぶ。signal が中断されたら結果を捨てる（IPC 自体は取り消さない） */
-async function desktopRequest<T>(bridge: NonNullable<ReturnType<typeof desktopBridge>>, method: string, url: string, body: unknown, signal?: AbortSignal): Promise<T> {
+/** 製品版：結果を取り出す。失敗は request と同じ形の Error、取り消された結果は AbortError にする */
+function unwrapDesktop<T>(res: DesktopResult): T {
+  if (!res.ok) {
+    if (res.code === "ABORTED") throw abortError();
+    throw Object.assign(new Error(res.error), { code: res.code, status: res.status });
+  }
+  return res.data as T;
+}
+
+/** 製品版：限定 IPC で呼ぶ。signal が中断されたら main へ取り消しを伝えて AbortError を投げる */
+async function desktopCall<T>(bridge: NonNullable<ReturnType<typeof desktopBridge>>, match: DesktopRequest, signal?: AbortSignal, onProgress?: (p: AIProgress) => void): Promise<T> {
   if (signal?.aborted) throw abortError();
-  const match = matchDesktopOperation(method, url);
-  if (!match) throw unavailable();
+  const callId = signal || onProgress ? crypto.randomUUID() : undefined;
+  const opts: DesktopCallOptions | undefined = callId ? { callId, ...(onProgress ? { onProgress } : {}) } : undefined;
   let onAbort: (() => void) | undefined;
-  const aborted = new Promise<never>((_, reject) => { onAbort = () => reject(abortError()); signal?.addEventListener("abort", onAbort); });
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = () => { if (callId) bridge.cancel(callId); reject(abortError()); };
+    signal?.addEventListener("abort", onAbort);
+  });
   try {
-    const res = await Promise.race([bridge.request({ ...match, ...(body === undefined ? {} : { body }) }), aborted]);
-    if (!res.ok) throw Object.assign(new Error(res.error), { code: res.code, status: res.status });
-    return res.data as T;
+    const res = await Promise.race([opts ? bridge.request(match, opts) : bridge.request(match), aborted]);
+    return unwrapDesktop<T>(res);
   } finally {
     if (onAbort) signal?.removeEventListener("abort", onAbort);
   }
+}
+
+async function desktopRequest<T>(bridge: NonNullable<ReturnType<typeof desktopBridge>>, method: string, url: string, body: unknown, signal?: AbortSignal, onProgress?: (p: AIProgress) => void): Promise<T> {
+  if (signal?.aborted) throw abortError();
+  const match = matchDesktopOperation(method, url);
+  if (!match) throw unavailable();
+  return desktopCall<T>(bridge, { ...match, ...(body === undefined ? {} : { body }) }, signal, onProgress);
 }
 
 /** JSON API を呼ぶ。失敗時はサーバーの error / code と HTTP ステータスを持つ Error を投げる */
@@ -38,8 +57,8 @@ export async function request<T>(method: string, url: string, body?: unknown, si
  * 失敗時は request と同じく error / code / status を持つ Error を投げる
  */
 export async function postWithProgress<T>(url: string, body: unknown, onProgress?: (p: AIProgress) => void, signal?: AbortSignal): Promise<T> {
-  // 段階1の製品版は AI 無効
-  if (desktopBridge()) throw unavailable();
+  const bridge = desktopBridge();
+  if (bridge) return desktopRequest<T>(bridge, "POST", url, body, signal, onProgress);
   const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
   const fail = (o: { error?: string; code?: string; status?: number }) =>
     Object.assign(new Error(o.error ?? `HTTP ${o.status ?? res.status}`), { code: o.code, status: o.status ?? res.status });

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, AUTH_CHANNEL, AUTH_STARTED_EVENT, type Status } from "./api";
 import { modeEditorUrl, readModeParam } from "./mode";
+import { DESKTOP_ACCOUNT_CHANGED } from "./accountView";
 import { EDITOR_URL } from "./nav";
 import { readPref, writePref } from "./storage";
 import type { Notice } from "./Toasts";
@@ -92,6 +93,14 @@ export function useChatGPTAuth({ status, setStatus, refreshStatus, notify }: {
       } else handleAuthResult(error);
     }
     return () => ch?.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 製品版：画面内のサインイン操作が終わったら状態を取り直す
+  useEffect(() => {
+    const onChanged = () => { api.status().then(setStatus).catch(() => {}); };
+    window.addEventListener(DESKTOP_ACCOUNT_CHANGED, onChanged);
+    return () => window.removeEventListener(DESKTOP_ACCOUNT_CHANGED, onChanged);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

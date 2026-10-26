@@ -55,9 +55,9 @@ const NO_TRANSPARENCY: ImageProvider[] = ["gemini", "comfyui"];
  *  ComfyUI はキー不要なので常に選択肢に出す（起動していなければ生成時に接続エラーを返す） */
 export function availableProviders(): ImageProvider[] {
   const list: ImageProvider[] = [];
-  if (hasSecret("openai", "apiKey")) list.push("openai");
-  if (hasSecret("gemini", "apiKey")) list.push("gemini");
-  const desktop = process.env.DC_DESIGNER_DESKTOP === "1"; // 製品版は Codex・ComfyUI を使わない
+  const desktop = process.env.DC_DESIGNER_DESKTOP === "1"; // 製品版は画像生成（OpenAI・Gemini）・Codex・ComfyUI を使わない
+  if (!desktop && hasSecret("openai", "apiKey")) list.push("openai");
+  if (!desktop && hasSecret("gemini", "apiKey")) list.push("gemini");
   if (!desktop) list.push("comfyui");
   if (!desktop && (process.env.IMAGE_PROVIDER || "").toLowerCase() === "codex") list.push("codex");
   list.push("placeholder");

@@ -757,6 +757,7 @@ button.primary.danger, button.primary.danger:hover:not(:disabled) { background: 
 .home-account img { width: 26px; height: 26px; border-radius: 50%; }
 .home-account span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .home-account .warn { color: var(--danger); font-weight: 700; }
+.home-signin { font-size: 13px; }
 .home-main {
   flex: 1; overflow: auto; padding: 48px 24px 56px; scrollbar-width: auto;
   background: radial-gradient(1200px 360px at 50% -120px, color-mix(in srgb, var(--accent) 12%, transparent), transparent 70%);

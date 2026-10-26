@@ -1,4 +1,5 @@
 import { PosterSpecSchema } from "../src/schema";
+import { isAiSubject, type AiSubject } from "../desktop/aiPayload";
 import { httpError } from "./http-error";
 import type { AcrossDeck, ChatTurn, DeckContext } from "./planner";
 
@@ -38,4 +39,11 @@ export function parseImage(v: any, name: string) {
     throw httpError(400, `${name} は { mediaType, data } の画像で指定してください`);
   }
   return { mediaType: v.mediaType as string, data: v.data as string };
+}
+
+/** AI 依頼の対象作品（{ kind: "poster" | "deck", id, title }）。無ければ undefined、形が違えば 400 */
+export function parseSubject(v: unknown): AiSubject | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (!isAiSubject(v)) throw httpError(400, "subject の形式が正しくありません");
+  return { kind: v.kind, id: v.id, title: v.title };
 }

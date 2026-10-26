@@ -88,7 +88,7 @@ describe("製品版（window.dcDesktop あり）", () => {
 
   it("一覧に無い操作は DESKTOP_UNAVAILABLE", async () => {
     const bridge = desktop({ ok: true, data: {} });
-    await expect(request("POST", "/api/plan", {})).rejects.toMatchObject({ code: "DESKTOP_UNAVAILABLE", status: 404, message: "Windows版（段階1）ではこの機能はまだ使えません" });
+    await expect(request("POST", "/api/asset", {})).rejects.toMatchObject({ code: "DESKTOP_UNAVAILABLE", status: 404, message: "Windows版ではこの機能は使えません" });
     expect(bridge.request).not.toHaveBeenCalled();
   });
 
@@ -98,7 +98,7 @@ describe("製品版（window.dcDesktop あり）", () => {
   });
 
   it("signal が中断済み・途中で中断されたら AbortError", async () => {
-    const bridge = { request: vi.fn(() => new Promise(() => {})) };
+    const bridge = { request: vi.fn(() => new Promise(() => {})), cancel: vi.fn() };
     vi.stubGlobal("window", { dcDesktop: bridge });
     const done = new AbortController();
     done.abort();
@@ -110,11 +110,51 @@ describe("製品版（window.dcDesktop あり）", () => {
     await expect(p).rejects.toMatchObject({ name: "AbortError" });
   });
 
-  it("postWithProgress は常に DESKTOP_UNAVAILABLE", async () => {
-    desktop({ ok: true, data: {} });
+  it("signal があるときだけ callId を付け、中断で cancel して AbortError", async () => {
+    const bridge = { request: vi.fn(() => new Promise(() => {})), cancel: vi.fn() };
+    vi.stubGlobal("window", { dcDesktop: bridge });
+    void request("GET", "/api/posters").catch(() => {});
+    expect(bridge.request.mock.calls[0]).toHaveLength(1);
+    const ac = new AbortController();
+    const p = request("GET", "/api/posters", undefined, ac.signal);
+    const callId = (bridge.request.mock.calls[1] as unknown[])[1] as { callId: string };
+    expect(callId.callId).toMatch(/^[A-Za-z0-9-]{8,64}$/);
+    ac.abort();
+    await expect(p).rejects.toMatchObject({ name: "AbortError" });
+    expect(bridge.cancel).toHaveBeenCalledWith(callId.callId);
+  });
+
+  it("ABORTED の結果は AbortError", async () => {
+    desktop({ ok: false, error: "中断しました", code: "ABORTED" });
+    await expect(request("GET", "/api/posters")).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("postWithProgress は onProgress を橋へ渡し result を返す", async () => {
+    const p1: AIProgress = { phase: "writing", attempt: 1, chars: 5 };
+    const bridge = {
+      request: vi.fn(async (_req: unknown, opts?: { onProgress?: (p: AIProgress) => void }) => { opts?.onProgress?.(p1); return { ok: true, data: { spec: 1 } }; }),
+      cancel: vi.fn(),
+    };
+    vi.stubGlobal("window", { dcDesktop: bridge });
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);
-    await expect(postWithProgress("/api/plan/instagram", {})).rejects.toMatchObject({ code: "DESKTOP_UNAVAILABLE", status: 404 });
+    const seen: AIProgress[] = [];
+    await expect(postWithProgress("/api/reproduce", { a: 1 }, (p) => seen.push(p))).resolves.toEqual({ spec: 1 });
+    expect(seen).toEqual([p1]);
+    expect(bridge.request.mock.calls[0][0]).toMatchObject({ operation: "ai.reproduce", body: { a: 1 } });
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("postWithProgress の ok:false は message / code / status、ABORTED は AbortError", async () => {
+    desktop({ ok: false, error: "no", code: "bad", status: 422 });
+    await expect(postWithProgress("/api/reproduce", {})).rejects.toMatchObject({ message: "no", code: "bad", status: 422 });
+    desktop({ ok: false, error: "中断しました", code: "ABORTED" });
+    await expect(postWithProgress("/api/reproduce", {})).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("postWithProgress も対応付けできない URL は DESKTOP_UNAVAILABLE", async () => {
+    const bridge = desktop({ ok: true, data: {} });
+    await expect(postWithProgress("/api/asset", {})).rejects.toMatchObject({ code: "DESKTOP_UNAVAILABLE", status: 404 });
+    expect(bridge.request).not.toHaveBeenCalled();
   });
 });

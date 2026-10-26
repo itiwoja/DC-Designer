@@ -91,22 +91,29 @@ export function createMainBackend(port: ParentPortLike, initial: Record<string, 
     });
   }
 
+  /** main が ChatGPT 操作の外での利用として断ったとき。状態は変えず、分かりやすい例外にする */
+  const denied = (r: Extract<MainToWorker, { type: "secret-result" }>) => {
+    if (r.code === "SECRET_DENIED") throw new SecretError("failed", "ChatGPT を使う操作の外では資格情報を使えません");
+  };
   const track = (ref: string, r: Extract<MainToWorker, { type: "secret-result" }>) => { if (r.state) states.set(ref, r.state); };
 
   return {
     async get(p, k) {
       const r = await ask({ type: "secret-get", providerId: p, kind: k });
+      denied(r);
       track(`${p}/${k}`, r);
       if (r.state === "reauthRequired") throw new SecretError("reauthRequired", "保存済みの資格情報を読み出せません。設定し直してください");
       return r.ok && r.state === "configured" ? r.value : undefined;
     },
     async set(p, k, value) {
       const r = await ask({ type: "secret-set", providerId: p, kind: k, value });
+      denied(r);
       if (!r.ok) throw new SecretError("failed", "資格情報を保存できませんでした");
       track(`${p}/${k}`, r);
     },
     async remove(p, k) {
       const r = await ask({ type: "secret-remove", providerId: p, kind: k });
+      denied(r);
       if (!r.ok) throw new SecretError("failed", "資格情報を削除できませんでした");
       track(`${p}/${k}`, r);
     },

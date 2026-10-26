@@ -7,6 +7,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { authStatus, getAccessToken, USAGE_URL } from "./chatgpt-auth";
+import { AI_DESTINATIONS, toAiImage, type AiTurn } from "../desktop/aiPayload";
+import { isDesktopMode, reportOutcome, requireConsent, type AiOutcome } from "./ai-consent";
 
 /** detail: 画像の読み取りの細かさ（再現のように細部の位置・文字を読ませるときは "high"） */
 export type ImageRef = { mediaType: string; data: string; detail?: "low" | "high" | "auto" };
@@ -94,58 +96,98 @@ export async function modelSettings() {
   return { models, modelChoice: saved && models.some((m) => m.slug === saved) ? saved : "", autoModel: auto };
 }
 
-const toInput = (turns: Turn[]) =>
-  turns.map((t) =>
+/** 確認した snapshot（AiTurn）から送る input を組み立てる。detail は元の画像と同じ位置から取る */
+const toInput = (turns: AiTurn[], details: (ImageRef["detail"])[][]) =>
+  turns.map((t, ti) =>
     t.role === "user"
       ? {
           role: "user" as const,
           content: [
-            ...(t.images ?? []).map((r) => ({ type: "input_image" as const, image_url: `data:${r.mediaType};base64,${r.data}`, detail: r.detail ?? "auto" })),
+            ...(t.images ?? []).map((r, ii) => ({ type: "input_image" as const, image_url: `data:${r.mediaType};base64,${r.data}`, detail: details[ti]?.[ii] ?? "auto" })),
             { type: "input_text" as const, text: t.text },
           ],
         }
       : { role: "assistant" as const, content: t.text },
   );
 
-/** 応答ストリームが response.completed の前に切れたとき、最初から送り直す回数（長い再現などで接続が途中で閉じられることがある） */
+/** 送る内容の snapshot。画像は実際に送る bytes から作る（確認後に turns を読み直さない） */
+const snapshotTurns = (turns: Turn[]): AiTurn[] =>
+  turns.map((t) => ({
+    role: t.role,
+    text: t.text,
+    ...(t.images?.length ? { images: t.images.map((r) => toAiImage(r.mediaType, Buffer.from(r.data, "base64"))) } : {}),
+  }));
+
+/** 応答ストリームが response.completed の前に切れたとき、最初から送り直す回数（長い再現などで接続が途中で閉じられることがある）。製品版は再送しない */
 const STREAM_RETRIES = 2;
 
 // openai SDK は読み込みに時間がかかる（/mnt/c 上だと 10 秒以上）ので、起動を遅くしないよう使うときに読み込む
-/** 会話を送り、ストリームで返ってきたテキスト全体を返す。onText には受け取り途中のテキスト全体を渡す（進み具合の表示用） */
-export async function askChatGPT(instructions: string, turns: Turn[], onText?: (text: string) => void, signal?: AbortSignal): Promise<string> {
+/**
+ * 会話を送り、ストリームで返ってきたテキスト全体を返す。onText には受け取り途中のテキスト全体を渡す（進み具合の表示用）
+ * 製品版は送る直前に main の確認を取り、確認した内容をそのまま1回だけ送る（切断しても自動で送り直さない）
+ */
+export async function askChatGPT(instructions: string, turns: Turn[], onText?: (text: string) => void, signal?: AbortSignal, purpose = "資料の作成・修正"): Promise<string> {
+  const desktop = isDesktopMode();
+  const retries = desktop ? 0 : STREAM_RETRIES;
+  const { default: OpenAI } = await import("openai");
   for (let attempt = 0; ; attempt++) {
     signal?.throwIfAborted();
     const started = Date.now();
     let text = "";
     let completed = false;
     let lastEvent = "(なし)";
-    const { default: OpenAI } = await import("openai");
-    const client = new OpenAI({ apiKey: await getAccessToken(), baseURL: API_BASE, maxRetries: 0 });
+    const model = await chatGPTModel();
+    const client = new OpenAI({
+      apiKey: await getAccessToken(), baseURL: API_BASE, maxRetries: 0,
+      // 製品版はリダイレクトを自動で追わない（別の送信先へ転送させない）
+      ...(desktop ? { fetch: (url: string | URL | Request, init?: RequestInit) => fetch(url, { ...init, redirect: "error" }) } : {}),
+    });
+    const snapshot = snapshotTurns(turns);
+    const details = turns.map((t) => (t.images ?? []).map((r) => r.detail));
+    const requestId = await requireConsent({
+      providerId: "chatgpt", endpoint: AI_DESTINATIONS.chatgpt.endpoint, model, providerRouting: "direct", purpose, instructions, turns: snapshot,
+    }, signal);
+    // dispatch した後は結果にかかわらず許可を消費済み。結果は1回だけ main に知らせる
+    let outcome: AiOutcome = "failed";
     try {
-      const stream = await client.responses.create({ model: await chatGPTModel(), instructions, input: toInput(turns), store: false, stream: true }, { signal });
+      signal?.throwIfAborted();
+      outcome = "outcomeUnknown"; // ここから先は送達したか分からない
+      const stream = await client.responses.create({ model, instructions, input: toInput(snapshot, details), store: false, stream: true }, { signal });
       for await (const ev of stream) {
         lastEvent = ev.type;
         if (ev.type === "response.output_text.delta") { text += ev.delta; onText?.(text); }
         else if (ev.type === "response.completed") completed = true;
-        else if (ev.type === "response.failed") throw chatGPTError(0, { error: ev.response.error });
-        else if (ev.type === "response.incomplete") throw new Error(`ChatGPT の応答が途中で終了しました（${ev.response.incomplete_details?.reason ?? "incomplete"}）`);
-        else if (ev.type === "error") throw chatGPTError(0, { error: { code: ev.code, message: ev.message } });
+        else if (ev.type === "response.failed") { outcome = "failed"; throw chatGPTError(0, { error: ev.response.error }); }
+        else if (ev.type === "response.incomplete") { outcome = "failed"; throw new Error(`ChatGPT の応答が途中で終了しました（${ev.response.incomplete_details?.reason ?? "incomplete"}）`); }
+        else if (ev.type === "error") { outcome = "failed"; throw chatGPTError(0, { error: { code: ev.code, message: ev.message } }); }
       }
     } catch (e) {
       // 中断（APIUserAbortError など）は ChatGPT の障害ではないので、そのまま中断として投げる
-      if (signal?.aborted) throw new ChatGPTError("ChatGPT へのリクエストを中断しました", 499, "aborted");
-      if (e instanceof OpenAI.APIError) throw chatGPTError(e.status ?? 0, { error: e.error, detail: (e.error as any)?.detail, message: e.message });
+      if (signal?.aborted) { reportOutcome(requestId, outcome); throw new ChatGPTError("ChatGPT へのリクエストを中断しました", 499, "aborted"); }
+      if (e instanceof OpenAI.APIError) {
+        // 応答（HTTP ステータス）が返っていれば失敗、返っていなければ送達不明
+        if (!(e.status ?? 0)) outcome = "outcomeUnknown"; else outcome = "failed";
+        reportOutcome(requestId, outcome);
+        if (desktop && outcome === "outcomeUnknown") throw new ChatGPTError("ChatGPT へ送信した後に接続が切れ、送達されたか分かりません。自動では再送しません。内容を確認してからもう一度操作してください", 502, "outcome_unknown");
+        throw chatGPTError(e.status ?? 0, { error: e.error, detail: (e.error as any)?.detail, message: e.message });
+      }
+      reportOutcome(requestId, outcome);
+      if (desktop && outcome === "outcomeUnknown") throw new ChatGPTError("ChatGPT へ送信した後に接続が切れ、送達されたか分かりません。自動では再送しません。内容を確認してからもう一度操作してください", 502, "outcome_unknown");
       throw e;
     }
-    if (completed) return text;
-    if (signal?.aborted) throw new ChatGPTError("ChatGPT へのリクエストを中断しました", 499, "aborted");
+    if (completed) { reportOutcome(requestId, "completed"); return text; }
+    if (signal?.aborted) { reportOutcome(requestId, "outcomeUnknown"); throw new ChatGPTError("ChatGPT へのリクエストを中断しました", 499, "aborted"); }
     // SDK は接続が閉じられても例外にせず黙って終わるので、ここで切断と判断する
     const where = `${Math.round((Date.now() - started) / 1000)} 秒・${text.length} 文字受信・最後のイベント ${lastEvent}`;
-    if (attempt < STREAM_RETRIES) {
-      console.warn(`[chatgpt] 応答ストリームが完了前に切れたので送り直します（${attempt + 1}/${STREAM_RETRIES}、${where}）`);
+    if (desktop) {
+      reportOutcome(requestId, "outcomeUnknown");
+      throw new ChatGPTError("ChatGPT の応答が完了前に切れ、送達・処理されたか分かりません。自動では再送しません。内容を確認してからもう一度操作してください", 502, "outcome_unknown");
+    }
+    if (attempt < retries) {
+      console.warn(`[chatgpt] 応答ストリームが完了前に切れたので送り直します（${attempt + 1}/${retries}、${where}）`);
       continue;
     }
-    throw new ChatGPTError(`ChatGPT の応答ストリームが完了前に切れました（${STREAM_RETRIES + 1} 回試行、最後は ${where}）。しばらくしてから再試行してください`, 502, "stream_cut");
+    throw new ChatGPTError(`ChatGPT の応答ストリームが完了前に切れました（${retries + 1} 回試行、最後は ${where}）。しばらくしてから再試行してください`, 502, "stream_cut");
   }
 }
 

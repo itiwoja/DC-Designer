@@ -1,7 +1,7 @@
 /**
  * Windows 版 Electron の main（段階1）。
  * 固定 origin の app://dc-designer で同梱の画面を出し、API は utilityProcess の worker に任せる。
- * 外部通信はこのセッションで止める
+ * 外部通信はこのセッションで止める。AI への送信は worker の依頼ごとに専用の確認窓で本人に確かめる（段階2）
  */
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
@@ -16,8 +16,12 @@ import {
   APP_ORIGIN_URL, APP_SCHEME, buildCsp, inlineScriptHashes, isAllowedRequestUrl, isAppUrl,
   isExternalHttpsUrl, resolveAppTarget, targetFilePath,
 } from "./appProtocol";
+import { createAiConsentBroker } from "./aiConsent";
+import { createAuthGate } from "./authGate";
 import { IPC, type DesktopResult, type PrepareCloseResult } from "./bridge";
+import { createCallRegistry, parseCallOptions } from "./callRegistry";
 import { createCloseCoordinator } from "./close";
+import { CONSENT_PARTITION, createConsentWindowHost, lockdownConsentSession } from "./consentWindow";
 import { consentDialogOptions, createFontGate, installDialogOptions } from "./fontGate";
 import { resolveDesktopRequest } from "./operations";
 import { USER_ROOT_DIRS } from "./protocol";
@@ -59,8 +63,20 @@ const sendToEditor = (channel: string, payload: unknown): boolean => {
 // 資格情報は main だけが持つ（safeStorage の呼び出しは app ready 後に初めて行われる）
 const secrets = createSecretStore({ dir: path.join(userRoot, "secrets"), crypto: safeStorage });
 
+// AI 送信確認：worker の依頼を検証し、確認窓（別 partition・別 preload）で本人が承認したものだけ通す
+const consentHost = createConsentWindowHost({
+  appRoot,
+  getParent: () => (editorWindow && !editorWindow.isDestroyed() ? editorWindow : null),
+  broker: () => aiConsent,
+});
+const aiConsent = createAiConsentBroker({ now: Date.now, openWindow: consentHost.openWindow });
+
 const runtime = createRuntime({
   secrets,
+  onAiConsent: (requestId, payload) => aiConsent.request(requestId, payload),
+  onAiOutcome: (requestId, outcome) => aiConsent.outcome(requestId, outcome),
+  onAiConsentCancel: (requestId) => aiConsent.cancel(requestId),
+  onAiWorkerLost: () => aiConsent.reset(),
   appVersion: app.getVersion(),
   onState: (s) => { sendToEditor(IPC.stateChanged, s); },
   fork: () =>
@@ -141,6 +157,12 @@ const fontGate = createFontGate({
   confirmInstall: async (faces) => (await showMessage(installDialogOptions(faces))) === 1,
 });
 
+// ChatGPT のサインイン：既定のブラウザで認可画面を開き、一時的なループバックの受け口で結果を受ける
+const authGate = createAuthGate({
+  request: (op, p, body) => runtime.request(op, p, body),
+  openExternal: (url) => shell.openExternal(url),
+});
+
 /** 画面へ返す資格情報の結果（値は含めない）。変わった状態は worker のキャッシュへも伝える */
 function secretResult(r: SecretResult): DesktopResult {
   if (!r.ok) return failResult(r.code ?? "INTERNAL", "資格情報を保存できませんでした");
@@ -148,13 +170,33 @@ function secretResult(r: SecretResult): DesktopResult {
   return { ok: true, data: { secretRef: r.secretRef, state: r.state } };
 }
 
+const calls = createCallRegistry();
+
 function registerIpc(): void {
-  ipcMain.handle(IPC.request, async (e, req: unknown): Promise<DesktopResult> => {
+  ipcMain.handle(IPC.request, async (e, req: unknown, callOpts?: unknown): Promise<DesktopResult> => {
     if (!isTrusted(e)) return failResult("UNAUTHORIZED_CONTEXT", "この画面からは実行できません");
     const r = resolveDesktopRequest(req);
-    if (!r) return failResult("INVALID_ARGUMENT", "要求の形式が正しくありません");
+    const call = parseCallOptions(callOpts);
+    if (!r || !call) return failResult("INVALID_ARGUMENT", "要求の形式が正しくありません");
     if (fontGate.handles(r.name)) return fontGate.handle(r.name, r);
-    return runtime.request(r.op, r.path, r.body);
+    const { callId } = call;
+    if (!callId) return runtime.request(r.op, r.path, r.body);
+    const sender = e.sender;
+    const ac = calls.begin(sender.id, callId);
+    if (!ac) return failResult("INVALID_ARGUMENT", "要求の形式が正しくありません");
+    try {
+      return await runtime.request(r.op, r.path, r.body, {
+        signal: ac.signal,
+        ...(r.op.stream ? { onProgress: (progress) => { if (!sender.isDestroyed()) sender.send(IPC.progress, { callId, progress }); } } : {}),
+      });
+    } finally {
+      calls.end(sender.id, callId, ac);
+    }
+  });
+  // 取り消し：その sender が登録した callId だけ中断する
+  ipcMain.handle(IPC.cancel, (e, callId: unknown): void => {
+    if (!isTrusted(e)) return;
+    calls.cancel(e.sender.id, callId);
   });
   ipcMain.handle(IPC.getState, (e) => {
     if (!isTrusted(e)) throw new Error("UNAUTHORIZED_CONTEXT");
@@ -177,6 +219,12 @@ function registerIpc(): void {
     if (!isTrusted(e)) return failResult("UNAUTHORIZED_CONTEXT", "この画面からは実行できません");
     return secretResult(secrets.remove(secretRef));
   });
+  ipcMain.handle(IPC.authSignIn, (e, opts: unknown): Promise<DesktopResult> | DesktopResult => {
+    if (!isTrusted(e)) return failResult("UNAUTHORIZED_CONTEXT", "この画面からは実行できません");
+    const newAccount = !!opts && typeof opts === "object" && (opts as { newAccount?: unknown }).newAccount === true;
+    return authGate.signIn({ newAccount });
+  });
+  consentHost.registerIpc();
   ipcMain.handle(IPC.completeClose, (e, r: unknown) => {
     if (!isTrusted(e) || !r || typeof r !== "object") return;
     const { requestId, allSaved, busy } = r as Partial<PrepareCloseResult>;
@@ -294,6 +342,7 @@ if (!app.requestSingleInstanceLock()) {
 
   void app.whenReady().then(() => {
     lockdownSession();
+    lockdownConsentSession(session.fromPartition(CONSENT_PARTITION));
     registerIpc();
     buildMenu();
     runtime.start();

@@ -173,6 +173,17 @@ describe("createRuntime", () => {
     expect(init.headers.origin).toBe("app://dc-designer");
     expect(await rt.request(op, "/api/x", { a: "x".repeat(20) })).toMatchObject({ ok: false, code: "INVALID_ARGUMENT" });
   });
+
+  it("閉じる途中（closing）は新しい要求を断るが、閉じる前の確定保存（closeSave）だけは通す", async () => {
+    const { rt, children, readyMsg } = setup();
+    const op = { method: "POST", route: "/api/x", maxBody: 100 } as const;
+    const save = { method: "PUT", route: "/api/posters/:id", maxBody: 100, closeSave: true } as const;
+    rt.start();
+    children[0].emit(readyMsg(children[0])); await tick();
+    expect(rt.beginClosing()).toBe(true);
+    expect(await rt.request(op, "/api/x", { a: 1 })).toMatchObject({ ok: false, code: "INVALID_STATE" });
+    expect(await rt.request(save, "/api/posters/abcdefabcdef", { a: 1 })).toEqual({ ok: true, data: { ok: 1 } });
+  });
 });
 
 describe("終了前の確定保存", () => {
@@ -291,39 +302,30 @@ describe("資格情報の中継（EXE-API-006）", () => {
   };
   const results = (c: FakeChild) => c.sent.filter((m) => m.type === "secret-result");
 
-  it("init に状態一覧（値なし）を載せ、secret-get に値を返す", () => {
+  it("init に状態一覧（値なし）を載せ、ChatGPT 操作の外では secret-get を拒否して値を返さない", () => {
     const t = withStore();
     t.store.set("openai", "apiKey", "sk-test");
+    t.store.set("chatgpt", "oauth", '{"a":1}');
     t.rt.start();
     const c = t.children[0];
     expect(c.init.secretStates["openai/apiKey"]).toBe("configured");
     expect(JSON.stringify(c.init)).not.toContain("sk-test");
     c.emit({ type: "secret-get", requestId: "r1", providerId: "openai", kind: "apiKey" });
-    c.emit({ type: "secret-get", requestId: "r2", providerId: "gemini", kind: "apiKey" });
+    c.emit({ type: "secret-get", requestId: "r2", providerId: "chatgpt", kind: "oauth" });
     c.emit({ type: "secret-get", requestId: "r3", providerId: "evil", kind: "apiKey" });
     expect(results(c)).toEqual([
-      { type: "secret-result", requestId: "r1", ok: true, state: "configured", value: "sk-test" },
-      { type: "secret-result", requestId: "r2", ok: true, state: "unset" },
-      { type: "secret-result", requestId: "r3", ok: false, state: "unset", code: "INVALID_ARGUMENT" },
+      { type: "secret-result", requestId: "r1", ok: false, state: "unset", code: "SECRET_DENIED" },
+      { type: "secret-result", requestId: "r2", ok: false, state: "unset", code: "SECRET_DENIED" },
+      { type: "secret-result", requestId: "r3", ok: false, state: "unset", code: "SECRET_DENIED" },
     ]);
+    expect(JSON.stringify(c.sent)).not.toContain("sk-test");
     rmSync(t.dir, { recursive: true, force: true });
   });
 
-  it("secret-set / secret-remove を処理し、不正なメッセージは無視する", () => {
+  it("不正なメッセージは無視する", () => {
     const t = withStore();
     t.rt.start();
     const c = t.children[0];
-    c.emit({ type: "secret-set", requestId: "s1", providerId: "chatgpt", kind: "oauth", value: '{"a":1}' });
-    expect(t.store.get("chatgpt", "oauth").value).toBe('{"a":1}');
-    c.emit({ type: "secret-remove", requestId: "s2", providerId: "chatgpt", kind: "oauth" });
-    expect(t.store.get("chatgpt", "oauth").state).toBe("unset");
-    // API キーは worker から書き換えられない（応答もしない）
-    t.store.set("openrouter", "apiKey", "k");
-    const before = results(c).length;
-    c.emit({ type: "secret-set", requestId: "s3", providerId: "openrouter", kind: "apiKey", value: "evil" });
-    c.emit({ type: "secret-remove", requestId: "s4", providerId: "openrouter", kind: "apiKey" });
-    expect(t.store.get("openrouter", "apiKey").value).toBe("k");
-    expect(results(c)).toHaveLength(before);
     const n = results(c).length;
     c.emit({ type: "secret-get", providerId: "openai", kind: "apiKey" }); // requestId なし
     c.emit({ type: "secret-get", requestId: 1, providerId: "openai", kind: "apiKey" });
@@ -340,5 +342,128 @@ describe("資格情報の中継（EXE-API-006）", () => {
     expect(t.children[0].sent.filter((m) => m.type === "secret-result")).toEqual([]);
     t.rt.notifySecretChanged("openai/apiKey", "configured");
     expect(t.children[0].sent.at(-1)).toEqual({ type: "secret-changed", secretRef: "openai/apiKey", state: "configured" });
+  });
+});
+
+describe("ChatGPT 操作の間だけ資格情報を渡す", () => {
+  afterEach(() => vi.useRealTimers());
+
+  const chatgptOp = { method: "POST", route: "/api/plan", maxBody: 1024, chatgpt: true } as const;
+  const plainOp = { method: "POST", route: "/api/posters", maxBody: 1024 } as const;
+
+  /** health だけ即答し、それ以外の fetch は resolve/reject を手で呼ぶまで待たせる */
+  function setupGated(opts: { grace?: number; withCancel?: (id: string) => void } = {}) {
+    const dir = mkdtempSync(join(tmpdir(), "rt-chatgpt-"));
+    const crypto = { isEncryptionAvailable: () => true, encryptString: (v: string) => Buffer.from(`enc:${v}`), decryptString: (b: Buffer) => b.toString().replace(/^enc:/, "") };
+    const store = createSecretStore({ dir, crypto });
+    store.set("chatgpt", "oauth", '{"tok":"x"}');
+    store.set("openai", "apiKey", "sk-test");
+    const children: FakeChild[] = [];
+    const pending: { resolve: (r: Response) => void; reject: (e: unknown) => void; signal?: AbortSignal | null }[] = [];
+    const fetchImpl = vi.fn((url: string | URL | Request, init?: RequestInit) => {
+      const u = String(url);
+      if (u.endsWith("/api/desktop/health")) {
+        return Promise.resolve(new Response(JSON.stringify({ instanceId: children.at(-1)!.init.instanceId, apiProtocolVersion: API_PROTOCOL_VERSION, appVersion: "1.0.0", ready: true })));
+      }
+      return new Promise<Response>((resolve, reject) => {
+        pending.push({ resolve, reject, signal: init?.signal });
+        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+      });
+    }) as unknown as typeof fetch;
+    const cancels: string[] = [];
+    const rt = createRuntime({
+      appVersion: "1.0.0", secrets: store, fetchImpl, onState: () => {},
+      onAiConsentCancel: (id) => cancels.push(id),
+      chatgptGraceMs: opts.grace ?? 0,
+      fork: () => { const c = new FakeChild(); children.push(c); return c; },
+    });
+    return { dir, store, rt, children, pending, cancels };
+  }
+  async function ready(t: ReturnType<typeof setupGated>) {
+    t.rt.start();
+    const c = t.children[0];
+    c.emit({ type: "ready", port: 5555, instanceId: c.init.instanceId, apiProtocolVersion: API_PROTOCOL_VERSION, appVersion: "1.0.0" });
+    await tick();
+    return c;
+  }
+  const lastResult = (c: FakeChild) => c.sent.filter((m) => m.type === "secret-result").at(-1);
+  const get = (c: FakeChild, id: string, p = "chatgpt", k = "oauth") => c.emit({ type: "secret-get", requestId: id, providerId: p, kind: k });
+
+  it("実行中は chatgpt/oauth の get/set/remove が通り、終わると再び拒否される", async () => {
+    const t = setupGated();
+    const c = await ready(t);
+    get(c, "a");
+    expect(lastResult(c)).toMatchObject({ ok: false, code: "SECRET_DENIED" });
+    expect(lastResult(c)).not.toHaveProperty("value");
+
+    const p = t.rt.request(chatgptOp, "/api/plan", { x: 1 });
+    get(c, "b");
+    expect(lastResult(c)).toEqual({ type: "secret-result", requestId: "b", ok: true, state: "configured", value: '{"tok":"x"}' });
+    c.emit({ type: "secret-set", requestId: "c", providerId: "chatgpt", kind: "oauth", value: '{"tok":"y"}' });
+    expect(t.store.get("chatgpt", "oauth").value).toBe('{"tok":"y"}');
+    c.emit({ type: "secret-remove", requestId: "d", providerId: "chatgpt", kind: "oauth" });
+    expect(t.store.get("chatgpt", "oauth").state).toBe("unset");
+    // 他の provider は実行中でも拒否
+    get(c, "e", "openai", "apiKey");
+    expect(lastResult(c)).toMatchObject({ requestId: "e", ok: false, code: "SECRET_DENIED" });
+    expect(JSON.stringify(c.sent)).not.toContain("sk-test");
+
+    t.pending[0].resolve(new Response("{}", { status: 200 }));
+    await p;
+    c.emit({ type: "secret-set", requestId: "f", providerId: "chatgpt", kind: "oauth", value: "evil" });
+    expect(lastResult(c)).toMatchObject({ requestId: "f", ok: false, code: "SECRET_DENIED" });
+    expect(t.store.get("chatgpt", "oauth").state).toBe("unset");
+    rmSync(t.dir, { recursive: true, force: true });
+  });
+
+  it("ChatGPT を使わない操作では開かない。複数並行は全部終わるまで開いたまま", async () => {
+    const t = setupGated();
+    const c = await ready(t);
+    const plain = t.rt.request(plainOp, "/api/posters", {});
+    get(c, "a");
+    expect(lastResult(c)).toMatchObject({ ok: false, code: "SECRET_DENIED" });
+    t.pending[0].resolve(new Response("{}")); await plain;
+
+    const p1 = t.rt.request(chatgptOp, "/api/plan", {});
+    const p2 = t.rt.request(chatgptOp, "/api/plan", {});
+    t.pending[1].resolve(new Response("{}")); await p1;
+    get(c, "b");
+    expect(lastResult(c)).toMatchObject({ ok: true });
+    t.pending[2].resolve(new Response("{}")); await p2;
+    get(c, "c");
+    expect(lastResult(c)).toMatchObject({ ok: false, code: "SECRET_DENIED" });
+    rmSync(t.dir, { recursive: true, force: true });
+  });
+
+  it("失敗・中断でも閉じる（中断は猶予の後）", async () => {
+    const t = setupGated({ grace: 1000 });
+    const c = await ready(t);
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    const pf = t.rt.request(chatgptOp, "/api/plan", {});
+    t.pending[0].reject(new Error("net"));
+    expect(await pf).toMatchObject({ ok: false });
+    get(c, "a");
+    expect(lastResult(c)).toMatchObject({ ok: false, code: "SECRET_DENIED" });
+
+    const ac = new AbortController();
+    const pa = t.rt.request(chatgptOp, "/api/plan", {}, { signal: ac.signal });
+    ac.abort();
+    expect(await pa).toMatchObject({ ok: false, code: "ABORTED" });
+    get(c, "b"); // worker の後始末の間はまだ通る
+    expect(lastResult(c)).toMatchObject({ ok: true });
+    vi.advanceTimersByTime(1000);
+    get(c, "d");
+    expect(lastResult(c)).toMatchObject({ ok: false, code: "SECRET_DENIED" });
+    rmSync(t.dir, { recursive: true, force: true });
+  });
+
+  it("ai-consent-cancel を onAiConsentCancel へ渡す（不正な requestId は無視）", async () => {
+    const t = setupGated();
+    const c = await ready(t);
+    c.emit({ type: "ai-consent-cancel", requestId: "c-1" });
+    c.emit({ type: "ai-consent-cancel", requestId: 5 });
+    c.emit({ type: "ai-consent-cancel" });
+    expect(t.cancels).toEqual(["c-1"]);
+    rmSync(t.dir, { recursive: true, force: true });
   });
 });

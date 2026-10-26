@@ -12,7 +12,7 @@ const ALLOWED = [
   /^LICENSE$/,
   /^dist\/index\.html$/,
   /^dist\/assets\/.+/,
-  /^build\/desktop\/(main\.cjs|preload\.cjs|worker\.mjs)$/,
+  /^build\/desktop\/(main\.cjs|preload\.cjs|consentPreload\.cjs|worker\.mjs)$/,
   /^build\/desktop\/chunks\/[^/]+\.(mjs|cjs)$/,
   /^build\/pdf-assets\/(cmaps|standard_fonts|wasm)\/.+/,
 ];

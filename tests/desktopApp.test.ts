@@ -3,7 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { createServer, type Server } from "node:http";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+// progressRoute の失敗を作るため、再現の生成だけ差し替える
+const reproduceFail = vi.hoisted(() => ({ error: undefined as unknown }));
+vi.mock("../server/planner", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../server/planner")>()),
+  reproducePoster: async () => { throw reproduceFail.error; },
+}));
 
 // library.ts などは import 時に保存先を読むので、app を読む前に一時ディレクトリを指す
 process.env.DATA_DIR = mkdtempSync(join(tmpdir(), "dc-app-"));
@@ -16,6 +23,7 @@ let base = "";
 let port = 0;
 let handle: import("../server/app").AppHandle;
 
+// server/app の読み込みは /mnt/c 上だと 10 秒を超えることがあるので、前処理の期限を延ばす
 beforeAll(async () => {
   const { createApp } = await import("../server/app");
   handle = createApp({ mode: "desktop", token: TOKEN, instanceId: "inst1", appVersion: "9.9.9", getPort: () => port });
@@ -23,8 +31,8 @@ beforeAll(async () => {
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   port = (server.address() as AddressInfo).port;
   base = `http://127.0.0.1:${port}`;
-});
-afterAll(() => { server.closeAllConnections(); server.close(); });
+}, 60_000);
+afterAll(() => { server?.closeAllConnections(); server?.close(); });
 
 const good = { "x-dc-desktop-token": TOKEN, origin: "app://dc-designer" };
 const call = (path: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}) =>
@@ -56,11 +64,11 @@ describe("製品版の入口", () => {
   it("health は DesktopHealth を返す", async () => {
     const res = await call("/api/desktop/health", { headers: good });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ instanceId: "inst1", apiProtocolVersion: 2, appVersion: "9.9.9", ready: true });
+    expect(await res.json()).toEqual({ instanceId: "inst1", apiProtocolVersion: 4, appVersion: "9.9.9", ready: true });
   });
 
   it("許可リスト外は 404 DESKTOP_UNAVAILABLE", async () => {
-    for (const [method, path] of [["POST", "/api/plan"], ["POST", "/api/fonts/suggest"], ["GET", "/auth/callback"], ["POST", "/api/asset"], ["GET", "/api/posters/NOTANID"], ["GET", "/generated/x.png"]]) {
+    for (const [method, path] of [["GET", "/auth/callback"], ["POST", "/api/asset"], ["GET", "/api/posters/NOTANID"], ["GET", "/generated/x.png"]]) {
       const res = await call(path, { method, headers: good, ...(method === "POST" ? { body: "{}" } : {}) });
       expect(res.status, `${method} ${path}`).toBe(404);
       expect((await res.json()).code).toBe("DESKTOP_UNAVAILABLE");
@@ -113,5 +121,143 @@ describe("製品版の入口", () => {
     await p;
     expect(drained).toBe(true);
     handle.resume();
+  });
+});
+
+describe("AI 操作中の drain", () => {
+  it("AI 操作が進行中なら busy:true がすぐ返り、受付は止まらない", async () => {
+    const http = await import("node:http");
+    const req = http.request({ host: "127.0.0.1", port, path: "/api/plan", method: "POST", headers: { ...good, "content-type": "application/json", "content-length": "100" } });
+    req.on("error", () => {});
+    req.write("{");
+    await new Promise((r) => setTimeout(r, 200));
+    expect(await handle.drain()).toEqual({ busy: true });
+    expect((await call("/api/posters", { method: "POST", headers: good, body: "{}" })).status).not.toBe(503);
+    req.destroy();
+    await new Promise((r) => setTimeout(r, 200));
+    // AI 操作が終われば従来どおり
+    expect(await handle.drain()).toEqual({ busy: false });
+    handle.resume();
+  });
+
+  it("AI 操作が無ければ書き込みの完了を待って busy:false", async () => {
+    const http = await import("node:http");
+    const req = http.request({ host: "127.0.0.1", port, path: "/api/posters", method: "POST", headers: { ...good, "content-type": "application/json", "content-length": "100" } });
+    req.on("error", () => {});
+    req.write("{");
+    await new Promise((r) => setTimeout(r, 200));
+    let result: { busy: boolean } | undefined;
+    const p = handle.drain().then((r) => { result = r; });
+    await new Promise((r) => setTimeout(r, 200));
+    expect(result).toBeUndefined();
+    req.destroy();
+    await p;
+    expect(result).toEqual({ busy: false });
+    handle.resume();
+  });
+});
+
+describe("進み具合つき route のエラー", () => {
+  const body = JSON.stringify({ width: 800, height: 600, reference: { mediaType: "image/png", data: "AAAA" } });
+  const errorLine = async (h: Record<string, string>, b: string, url = base) => {
+    const res = await fetch(url + "/api/reproduce", { method: "POST", headers: { ...h, "content-type": "application/json" }, body: b });
+    const lines = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
+    return lines[lines.length - 1] as { error: string; code?: string; status: number };
+  };
+
+  it("製品版は内部例外の中身（絶対パス）を出さない", async () => {
+    reproduceFail.error = new Error("ENOENT: /home/secret/path/file.json");
+    const r = await errorLine(good, body);
+    expect(r.error).toBe("内部エラーが発生しました");
+    expect(r.status).toBe(500);
+  });
+
+  it("製品版でも 4xx の httpError と ChatGPTError は message が残る", async () => {
+    const { httpError } = await import("../server/http-error");
+    const { ChatGPTError } = await import("../server/chatgpt");
+    const { ChatGPTAuthError } = await import("../server/chatgpt-auth");
+    reproduceFail.error = httpError(400, "参考画像が不正です");
+    expect(await errorLine(good, body)).toMatchObject({ error: "参考画像が不正です", status: 400 });
+    reproduceFail.error = new ChatGPTError("利用上限です", 429, "usage_limit");
+    expect(await errorLine(good, body)).toMatchObject({ error: "利用上限です", status: 429, code: "usage_limit" });
+    reproduceFail.error = new ChatGPTAuthError("サインインしてください");
+    expect(await errorLine(good, body)).toMatchObject({ error: "サインインしてください", status: 401, code: "chatgpt_auth" });
+  });
+
+  it("開発版は従来どおり message をそのまま返す", async () => {
+    const { createApp } = await import("../server/app");
+    const dev = createApp({ mode: "dev", port: 0 });
+    const srv = createServer(dev.app);
+    await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+    try {
+      reproduceFail.error = new Error("ENOENT: /home/x/file.json");
+      const r = await errorLine({}, body, `http://127.0.0.1:${(srv.address() as AddressInfo).port}`);
+      expect(r.error).toBe("ENOENT: /home/x/file.json");
+    } finally { srv.closeAllConnections(); srv.close(); }
+  });
+});
+
+describe("ChatGPT サインインの内部 route", () => {
+  const post = (path: string, body: unknown, headers: Record<string, string> = good) => call(path, { method: "POST", headers, body: JSON.stringify(body) });
+
+  it("start は port が 1024〜65535 の整数以外を 400 にする", async () => {
+    for (const bad of [{}, { port: 80 }, { port: 70000 }, { port: 1234.5 }, { port: "5000" }, { port: 5000, extra: 1 }, { port: 5000, newAccount: "yes" }]) {
+      expect((await post("/api/auth/chatgpt/start", bad)).status).toBe(400);
+    }
+  });
+
+  it("complete は文字列以外の query を 400 にし、知らない state はエラー結果を返す", async () => {
+    expect((await post("/api/auth/chatgpt/complete", { query: { code: 1 } })).status).toBe(400);
+    expect((await post("/api/auth/chatgpt/complete", { query: "x" })).status).toBe(400);
+    expect((await post("/api/auth/chatgpt/complete", {})).status).toBe(400);
+    const res = await post("/api/auth/chatgpt/complete", { query: { state: "unknown", code: "x" } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ kind: "error" });
+  });
+
+  it("token が無ければ 401、GET や旧 login route は 404", async () => {
+    expect((await post("/api/auth/chatgpt/complete", { query: {} }, { origin: "app://dc-designer" })).status).toBe(401);
+    expect((await call("/api/auth/chatgpt/start", { headers: good })).status).toBe(404);
+    expect((await call("/api/auth/chatgpt/login", { headers: good })).status).toBe(404);
+  });
+});
+
+describe("AI 依頼の subject の検証", () => {
+  const post = (path: string, body: unknown) => call(path, { method: "POST", headers: good, body: JSON.stringify(body) });
+  // subject の検査は他の入力検証より先に行う。不正なら 400（AI は呼ばない）
+  const routes: [string, Record<string, unknown>][] = [
+    ["/api/plan", { brief: "b" }],
+    ["/api/plan/instagram", { brief: "b", width: 1080, height: 1080 }],
+    ["/api/reproduce", { width: 1000, height: 1000 }],
+    ["/api/reproduce/refine", {}],
+    ["/api/edit", {}],
+    ["/api/slide", { instruction: "i" }],
+    ["/api/notes", {}],
+    ["/api/chat/summarize", {}],
+    ["/api/fonts/suggest", {}],
+  ];
+  const bads: unknown[] = [
+    "poster", 1, [], { kind: "slide", id: "abcdefghij12", title: "t" }, { kind: "poster", id: "short", title: "t" },
+    { kind: "poster", id: "abcdefghij12", title: "a".repeat(201) }, { kind: "deck", id: "abcdefghij12" }, { kind: "deck", id: "abcdefghij12", title: "t", x: 1 },
+  ];
+  it("不正な subject はすべての AI route で 400", async () => {
+    for (const [path, body] of routes) {
+      for (const subject of bads) {
+        const res = await post(path, { ...body, subject });
+        expect([path, res.status]).toEqual([path, path === "/api/plan/instagram" || path === "/api/reproduce" || path === "/api/reproduce/refine" ? 200 : 400]);
+        if (res.status === 200) {
+          const last = JSON.parse((await res.text()).trim().split("\n").at(-1)!);
+          expect(last).toMatchObject({ status: 400 });
+        }
+      }
+    }
+  });
+  it("subject が無い・正しい形なら subject のエラーにはならない", async () => {
+    const subject = { kind: "deck", id: "abcdefghij12", title: "t" };
+    for (const s of [undefined, subject]) {
+      const res = await post("/api/plan", { subject: s });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe("brief は必須です");
+    }
   });
 });

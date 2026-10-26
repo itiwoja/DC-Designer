@@ -13,6 +13,8 @@ import { resolveTheme } from "../themes";
 import { applyFonts, specTexts } from "../fonts";
 import { blankInstagramSpec, IG_DEFAULT_RATIO, IG_MAX_IMAGES, IG_RATIO_KEYS, IG_RATIOS, nearestRatio, ratioOf, type IgRatio } from "../instagram";
 import { CATALOG_BY_NAME } from "../components/catalog";
+import { workSubject, watchWork, WORK_CHANGED_MESSAGE, type AiSubject } from "./aiSubject";
+import { desktopBridge } from "./desktop";
 import { api, readDataUrl, type AIProgress, type AIProvider, type DeckEditContext, type RefImage, type Status } from "./api";
 import { AccountBar, ModelSelect, WelcomeModal } from "./AccountBar";
 import { unionBox } from "./canvas";
@@ -365,11 +367,11 @@ export function App() {
    * 再現の仕上げを 1 回（エディタには反映しない）: spec を描画して参考画像と見比べさせ、直した spec を返す。
    * 直すところが無ければ spec は target のまま
    */
-  const refineSpec = async (target: PosterSpec, img: HTMLImageElement, reference: RefImage, signal: AbortSignal, hooks: { onProgress?: (p: AIProgress) => void; onCrop?: () => void } = {}) => {
+  const refineSpec = async (target: PosterSpec, img: HTMLImageElement, reference: RefImage, signal: AbortSignal, hooks: { onProgress?: (p: AIProgress) => void; onCrop?: () => void; subject?: AiSubject } = {}) => {
     const overlay = overlayOf(target);
     const base = withoutOverlay(target);
     const render = await blobToRef(await renderSpecPng(base));
-    const res = await api.refineReproduction(reference, render, base, hooks.onProgress, signal);
+    const res = await api.refineReproduction(reference, render, base, hooks.onProgress, signal, hooks.subject);
     if (!res.spec) return { spec: target, reply: res.reply || "参考画像との違いは見つかりませんでした" };
     hooks.onCrop?.();
     let next = await resolveRefCrops(res.spec, img, uploadCrop);
@@ -382,11 +384,13 @@ export function App() {
    * 再現の仕上げを 1 回: 今の spec を描画して参考画像と見比べさせ、直した spec を反映する。
    * 返り値は反映後の spec（直すところが無ければ target のまま）
    */
-  const refineOnce = async (target: PosterSpec, img: HTMLImageElement, reference: RefImage, signal: AbortSignal, step?: [number, number]) => {
+  const refineOnce = async (target: PosterSpec, img: HTMLImageElement, reference: RefImage, signal: AbortSignal, step?: [number, number], subject?: AiSubject) => {
     setBusyLabel("描画結果を参考画像と見比べて修正中", step);
+    const changed = watchWork(!!desktopBridge() && !!subject, workRefs);
     const res = await refineSpec(target, img, reference, signal, {
-      onProgress: showAIProgress("件目の修正"), onCrop: () => setBusyLabel("参考画像から画像を切り抜き中"),
+      subject, onProgress: showAIProgress("件目の修正"), onCrop: () => setBusyLabel("参考画像から画像を切り抜き中"),
     });
+    if (changed()) throw new Error(WORK_CHANGED_MESSAGE);
     if (res.spec === target) return res;
     const next = res.spec;
     const d = diffLayers(target, next);
@@ -475,7 +479,7 @@ export function App() {
     const img = await loadImage(overlay.src);
     const reference = await blobToRef(await (await fetch(overlay.src)).blob());
     const before = spec;
-    const { spec: next, reply } = await refineOnce(spec, img, reference, signal);
+    const { spec: next, reply } = await refineOnce(spec, img, reference, signal, undefined, workSubject(deck, posterIdRef.current, spec.meta.title));
     if (next === before) { notify({ kind: "info", text: reply }); return; }
     notifyRestorable(reply, before);
     if (findPendingAssets(next).length && autoImages) await generatePending(next, signal);
@@ -534,6 +538,8 @@ export function App() {
   });
 
   // ---------- AI: チャット ----------
+  /** 製品版で「確認を待つ間に作品が編集されたか」を見張る対象（開いている作品の id と、デッキなら全スライド・ポスターなら編集中の spec の参照） */
+  const workRefs = () => [posterIdRef.current, ...(deck ? deck.slides.map((s) => specOf(s.id)) : [specOf(posterIdRef.current ?? "")])];
   /**
    * 資料全体を把握できるよう、PPTX の全スライドを渡す。現在のスライドは api.edit の spec に含まれる。
    * 言及したスライドは spec 全体（書き換えや統合の対象になる）、それ以外は文字だけ（参考）にして、枚数が多くても AI の入力を抑える
@@ -631,8 +637,10 @@ export function App() {
       });
     }
     return chatTurn(user, `${aiName} が考え中`, restore, async (signal) => {
+      const changed = watchWork(!!desktopBridge(), workRefs);
       const ctx = await deckEditContext(text);
-      const res = await api.edit(cur, requestText, ids, signal, ctx, context, instagram || undefined, undefined, references);
+      const res = await api.edit(cur, requestText, ids, signal, ctx, context, instagram || undefined, undefined, references, workSubject(deck, posterIdRef.current, cur.meta.title));
+      if (changed()) throw new Error(WORK_CHANGED_MESSAGE);
       const next = res.spec;
       if (!next) return { text: res.reply || "変更はありませんでした" };
       // 別のスライドを書き換える指示なら、そのスライドを開いてから適用する（履歴に積まれるので Ctrl+Z / 元に戻す が効く）
@@ -712,7 +720,9 @@ export function App() {
       setBusyLabel(`${aiName} が A4 に整え中`);
       // 解像度の低い画像は配置では直せないので、AI には伝えない
       const issues = a4Issues(next).filter((i) => i.kind !== "low-res");
-      const res = await api.edit(next, a4Instruction(next, issues, extra), undefined, signal, undefined, chat.context());
+      const changed = watchWork(!!desktopBridge(), workRefs);
+      const res = await api.edit(next, a4Instruction(next, issues, extra), undefined, signal, undefined, chat.context(), undefined, undefined, undefined, workSubject(deck, posterIdRef.current, next.meta.title));
+      if (changed()) throw new Error(WORK_CHANGED_MESSAGE);
       if (res.spec) {
         const ai = fitToA4({ ...res.spec, meta: { ...res.spec.meta, width: next.meta.width, height: next.meta.height } });
         next = ai.spec;
@@ -1307,7 +1317,8 @@ export function App() {
   const canGenImage = !busy && !!imgPrompt.trim();
   // 未サインインで AI ボタンが押せない理由をボタンのそばに出す
   // OpenRouter のキーがあるのに使えない = AI の設定で ChatGPT を選んでいる
-  const orHint = openrouter ? "（AI の設定で OpenRouter に切り替えられます）" : "（または .env に OPENROUTER_API_KEY を設定）";
+  // 製品版の AI は ChatGPT プランだけなので、OpenRouter の案内は出さない
+  const orHint = desktopBridge() ? "" : openrouter ? "（AI の設定で OpenRouter に切り替えられます）" : "（または .env に OPENROUTER_API_KEY を設定）";
   const signinNote = !aiReady && (
     <p className="notice-inline">
       {status?.ai?.explicit === "openrouter"
@@ -1810,14 +1821,14 @@ export function App() {
       {fontDialog && deck && (
         <FontDialog
           kind={instagram ? "instagram" : "slides"} deckName={deck.name} texts={fontDialog.texts} current={fontDialog.current}
-          onApply={applyDeckFonts} onError={notifyAIError} onClose={() => setFontDialog(null)}
+          subject={workSubject(deck, posterIdRef.current, deck.name)} onApply={applyDeckFonts} onError={notifyAIError} onClose={() => setFontDialog(null)}
         />
       )}
 
       {posterFontDialog && !deck && (
         <FontDialog
           kind="poster" deckName={spec.meta.title} texts={specTexts(spec)} current={{ display: theme.fonts.display, body: theme.fonts.body }}
-          onApply={applyPosterFonts} onError={notifyAIError} onClose={() => setPosterFontDialog(false)}
+          subject={workSubject(null, posterIdRef.current, spec.meta.title)} onApply={applyPosterFonts} onError={notifyAIError} onClose={() => setPosterFontDialog(false)}
         />
       )}
 
