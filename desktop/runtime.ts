@@ -6,6 +6,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import path from "node:path";
 import type { DesktopResult, RuntimeError, RuntimeSnapshot, RuntimeState } from "./bridge";
 import type { DesktopOperation } from "./operations";
+import type { AiConsentDecision, AiOutcome } from "./aiConsent";
 import { secretRefOf, type SecretStore } from "./secrets";
 import {
   API_PROTOCOL_VERSION, DESKTOP_ORIGIN, DESKTOP_TOKEN_HEADER, LEASE_TIMEOUT_MS, STARTUP_TIMEOUT_MS,
@@ -72,6 +73,11 @@ export type RuntimeDeps = {
   fetchImpl?: typeof fetch;
   /** 資格情報ストア（main が持つ）。worker の secret-* 要求に応える */
   secrets?: SecretStore;
+  /** AI 送信確認（main の broker）。payload は検証前の値なので broker 側で verifyAiPayload する。無ければ invalid を返す */
+  onAiConsent?: (requestId: string, payload: unknown) => Promise<AiConsentDecision>;
+  onAiOutcome?: (requestId: string, outcome: AiOutcome) => void;
+  /** worker が終了した（保留中の依頼を破棄する） */
+  onAiWorkerLost?: () => void;
 };
 
 type Instance = {
@@ -129,6 +135,7 @@ export function createRuntime(deps: RuntimeDeps) {
     for (const w of inst.exitWaiters.splice(0)) w();
     for (const w of [...inst.waiters]) w.resolve(null);
     inst.waiters.clear();
+    if (inst === cur) deps.onAiWorkerLost?.();
     if (inst === cur && !inst.expectExit) dispatch({ type: "fail", error: "WORKER_LOST" });
   }
 
@@ -198,6 +205,22 @@ export function createRuntime(deps: RuntimeDeps) {
     });
   }
 
+  /** worker の AI 送信確認依頼。決定は確認窓で本人が出したものだけ。形が不正・未配線なら invalid */
+  async function onAiConsentMessage(inst: Instance, m: Record<string, unknown>): Promise<void> {
+    const { requestId } = m;
+    if (typeof requestId !== "string" || !requestId || requestId.length > 100) return;
+    let decision: AiConsentDecision = { decision: "invalid" };
+    if (deps.onAiConsent) {
+      try { decision = await deps.onAiConsent(requestId, m.payload); } catch { decision = { decision: "invalid" }; }
+    }
+    // 返事を待つ間に worker が替わった・落ちたなら届けない
+    if (inst.exited || inst !== cur) return;
+    inst.child.postMessage({
+      type: "ai-consent-result", requestId, decision: decision.decision,
+      ...(decision.decision === "approve" && decision.payloadHash ? { payloadHash: decision.payloadHash } : {}),
+    });
+  }
+
   /** 画面側の設定で状態が変わったことを worker の状態キャッシュへ伝える（値は送らない） */
   function notifySecretChanged(secretRef: string, state: Extract<MainToWorker, { type: "secret-changed" }>["state"]): void {
     if (alive(cur)) cur.child.postMessage({ type: "secret-changed", secretRef, state });
@@ -207,6 +230,12 @@ export function createRuntime(deps: RuntimeDeps) {
     if (inst !== cur || !raw || typeof raw !== "object" || typeof (raw as { type?: unknown }).type !== "string") return;
     const type = (raw as { type: string }).type;
     if (type === "secret-get" || type === "secret-set" || type === "secret-remove") return onSecretMessage(inst, raw as Record<string, unknown>);
+    if (type === "ai-consent") return void onAiConsentMessage(inst, raw as Record<string, unknown>);
+    if (type === "ai-outcome") {
+      const { requestId, outcome } = raw as Record<string, unknown>;
+      if (typeof requestId === "string" && (outcome === "completed" || outcome === "failed" || outcome === "outcomeUnknown")) deps.onAiOutcome?.(requestId, outcome);
+      return;
+    }
     const msg = raw as WorkerToMain;
     for (const w of [...inst.waiters]) if (w.pred(msg)) w.resolve(msg);
     if (model.state !== "starting" && model.state !== "waiting-lease") return;
