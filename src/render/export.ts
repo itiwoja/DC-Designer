@@ -40,36 +40,33 @@ async function toDataUrl(src: string | Blob): Promise<string> {
   });
 }
 
-/** 使われている文字だけを含むフォントサブセットを Google Fonts から取得して @font-face を作る */
-async function buildFontCss(root: Element): Promise<string> {
-  const usage = new Map<string, { chars: Set<string>; weights: Set<number> }>();
+/** /api/fonts/files に一度に頼める face の数 */
+const FONT_FILES_CHUNK = 16;
+
+/** 使っている family×weight の TTF を API のフォントキャッシュから取って @font-face を作る（作品の文字は送らない） */
+export async function buildFontCss(root: Element): Promise<string> {
+  const usage = new Map<string, Set<number>>();
+  const add = (fam: string, w: number) => usage.set(fam, (usage.get(fam) ?? new Set()).add(snap(fam, w)));
   root.querySelectorAll("text").forEach((t) => {
     const fam = (t.getAttribute("font-family") ?? "").split(",")[0].replace(/['"]/g, "").trim();
     if (!fam || !FONT_WEIGHTS[fam]) return;
-    const u = usage.get(fam) ?? { chars: new Set(), weights: new Set() };
-    for (const ch of t.textContent ?? "") u.chars.add(ch);
-    u.weights.add(snap(fam, Number(t.getAttribute("font-weight") ?? 400)));
-    usage.set(fam, u);
+    const w = Number(t.getAttribute("font-weight") ?? 400);
+    add(fam, w);
     // かな・英数字だけのフォントに無い文字は、フォールバックの Noto Sans JP で表示されるので一緒に埋め込む
-    if (FONT_BY_FAMILY.get(fam)?.script !== "ja") {
-      const fb = usage.get(FALLBACK_FONT) ?? { chars: new Set(), weights: new Set() };
-      for (const ch of t.textContent ?? "") fb.chars.add(ch);
-      fb.weights.add(snap(FALLBACK_FONT, Number(t.getAttribute("font-weight") ?? 400)));
-      usage.set(FALLBACK_FONT, fb);
-    }
+    if (FONT_BY_FAMILY.get(fam)?.script !== "ja") add(FALLBACK_FONT, w);
   });
+  const faces = [...usage].flatMap(([family, ws]) => [...ws].sort((a, b) => a - b).map((weight) => ({ family, weight })));
   const css: string[] = [];
-  for (const [fam, u] of usage) {
-    const weights = [...u.weights].sort((a, b) => a - b);
-    const famParam = FONT_WEIGHTS[fam].length > 1 ? `${fam}:wght@${weights.join(";")}` : fam;
-    const url = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(famParam).replace(/%20/g, "+")}&text=${encodeURIComponent([...u.chars].join(""))}`;
+  for (let i = 0; i < faces.length; i += FONT_FILES_CHUNK) {
+    const chunk = faces.slice(i, i + FONT_FILES_CHUNK);
     try {
-      let text = await (await fetch(url)).text();
-      const urls = [...text.matchAll(/url\((https:[^)]+)\)/g)].map((m) => m[1]);
-      for (const fu of urls) text = text.replace(fu, await toDataUrl(fu));
-      css.push(text);
+      const res = await api.fontFiles(chunk);
+      for (const f of res.files) {
+        css.push(`@font-face { font-family: '${f.family}'; font-weight: ${f.weight}; src: url(data:font/ttf;base64,${f.data}) format('truetype'); }`);
+      }
+      for (const f of res.failed) console.warn("フォント埋め込みに失敗:", f.family, f.weight, f.code);
     } catch (e) {
-      console.warn("フォント埋め込みに失敗:", fam, e);
+      console.warn("フォント埋め込みに失敗:", chunk.map((f) => f.family).join(", "), e);
     }
   }
   return css.join("\n");
@@ -201,8 +198,8 @@ export async function buildPptx(svg: SVGSVGElement, spec: PosterSpec): Promise<B
   return finishPptx((await pptx.write({ outputType: "blob" })) as Blob, [timing], fonts, [spec]);
 }
 
-/** テキストボックスで使ったフォント（"ファミリー|太字か" → 使った文字） */
-type FontUsage = Map<string, { family: string; bold: boolean; text: string }>;
+/** テキストボックスで使ったフォント（"ファミリー|太字か"） */
+type FontUsage = Map<string, { family: string; bold: boolean }>;
 
 /**
  * pptxgenjs が書けないものを、書き出した .pptx に後から入れる。
@@ -210,7 +207,7 @@ type FontUsage = Map<string, { family: string; bold: boolean; text: string }>;
  * - フォント: カタログのフォントを埋め込む。受け取った人の PC に無くても同じフォントで表示され、文字幅が変わって崩れない
  */
 async function finishPptx(blob: Blob, timings: string[], fonts: FontUsage, specs: PosterSpec[]): Promise<Blob> {
-  const embedded = fonts.size ? await api.embedFonts([...fonts.values()]).then((r) => r.fonts).catch((e) => {
+  const embedded = fonts.size ? await api.embedFonts([...fonts.values()].map(({ family, bold }) => ({ family, bold }))).then((r) => r.fonts).catch((e) => {
     console.warn("フォントを埋め込めませんでした:", e);
     return [];
   }) : [];
@@ -363,7 +360,7 @@ async function addPosterSlide(pptx: PptxGenJS, svg: SVGSVGElement, spec: PosterS
       const bold = hasBold && (l.weight ?? 700) >= 600;
       const addUsage = (family: string) => {
         const key = `${family}|${bold}`;
-        fonts.set(key, { family, bold, text: (fonts.get(key)?.text ?? "") + l.text });
+        fonts.set(key, { family, bold });
       };
       if (FONT_WEIGHTS[face]) addUsage(face);
       // 英数字だけのフォントは、日本語の文字（東アジアのフォント）を Noto Sans JP にする（finishPptx で差し替える）

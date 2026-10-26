@@ -12,11 +12,11 @@ import { authStatus, ChatGPTAuthError, handleCallback, logout, safeReturnTo, sta
 import { chatGPTModel, ChatGPTError, modelSettings, setChatGPTModel } from "./chatgpt";
 import { aiStatus, setAIProvider } from "./ai";
 import { openRouterModel, setOpenRouterModel } from "./openrouter";
-import { embedFonts, fontStatus, installFonts, suggestFonts } from "./fonts";
+import { acquireFonts, embedFonts, fontFiles, fontStatus, installFonts, parseExpect, parseFaces, suggestFonts } from "./fonts";
 import { httpError } from "./http-error";
 import { addDeckSlide, createDeck, createPoster, deckOfPoster, deleteDeck, deleteGenerated, deletePoster, duplicateDeck, duplicatePoster, getDeck, getPoster, listDecks, listGenerated, listPosters, removeDeckSlide, updateDeck, updatePoster } from "./library";
 import { API_PROTOCOL_VERSION, DESKTOP_ORIGIN, DESKTOP_TOKEN_HEADER, type DesktopHealth } from "../desktop/protocol";
-import { DESKTOP_ID_RE, DESKTOP_OPERATIONS } from "../desktop/operations";
+import { DESKTOP_ID_RE, DESKTOP_INTERNAL_OPERATIONS, DESKTOP_OPERATIONS, type DesktopOperation } from "../desktop/operations";
 
 // このファイルとその import 先は dotenv を読まない（製品版は環境変数を worker 起動時に固定するため）。開発版は server/index.ts が読む
 
@@ -44,7 +44,7 @@ function safeEqual(a: string, b: string) {
 /** 製品版で通す (method, path) か。route パターンの `:id` は DESKTOP_ID_RE に合うものだけ */
 export function isDesktopAllowed(method: string, path: string): boolean {
   const segs = path.split("/");
-  return Object.values(DESKTOP_OPERATIONS).some((op) => {
+  return [...Object.values(DESKTOP_OPERATIONS), ...Object.values(DESKTOP_INTERNAL_OPERATIONS)].some((op: DesktopOperation) => {
     if (op.method !== method) return false;
     const want = op.route.split("/");
     return want.length === segs.length && want.every((w, i) => (w.startsWith(":") ? DESKTOP_ID_RE.test(segs[i]) : w === segs[i]));
@@ -298,12 +298,17 @@ export function createApp(opts: AppOptions): AppHandle {
     return { proposals: await suggestFonts({ kind: kind === "poster" || kind === "instagram" ? kind : "slides", mood, title, texts: strings(texts, 200), current, signal }) };
   }));
   app.post("/api/fonts/status", route((req) => fontStatus(families(req.body?.families))));
-  app.post("/api/fonts/install", route((req) => installFonts(families(req.body?.families))));
+  app.post("/api/fonts/files", route((req) => fontFiles(parseFaces(req.body?.faces))));
+  app.post("/api/fonts/acquire", route((req) => acquireFonts(parseFaces(req.body?.faces))));
+  app.post("/api/fonts/install", route((req) => {
+    const expect = req.body?.expect === undefined ? undefined : parseExpect(req.body.expect);
+    return installFonts(families(req.body?.families), expect);
+  }));
   app.post("/api/fonts/embed", route(async (req) => {
     const list: unknown[] = Array.isArray(req.body?.fonts) ? req.body.fonts.slice(0, 20) : [];
     const fonts = list.flatMap((f) => {
-      const { family, bold, text } = (f ?? {}) as Record<string, unknown>;
-      return typeof family === "string" && typeof text === "string" ? [{ family, bold: bold === true, text }] : [];
+      const { family, bold } = (f ?? {}) as Record<string, unknown>;
+      return typeof family === "string" ? [{ family, bold: bold === true }] : [];
     });
     return { fonts: await embedFonts(fonts) };
   }));

@@ -1,7 +1,7 @@
 /**
  * Windows 版（Electron）で画面から呼べる API 操作の静的な一覧（EXE-API-009）。
  * 画面は URL・method を渡さず、ここにある operation 名と params だけを渡す。main は同じ一覧で検証してから
- * 固定の内部 API へ中継する。段階1はローカル編集だけ（AI・フォント取得・OS 登録・認証・画像生成は載せない）
+ * 固定の内部 API へ中継する。AI・認証・画像生成は載せない。フォント取得・OS 登録は fontGate が許可・確認してから中継する
  */
 
 export type DesktopMethod = "GET" | "POST" | "PUT" | "DELETE";
@@ -45,6 +45,15 @@ export const DESKTOP_OPERATIONS = {
   "generated.delete": { method: "POST", route: "/api/generated/delete", maxBody: 40 * MB },
 
   "fonts.status": { method: "POST", route: "/api/fonts/status", maxBody: 64 * 1024 },
+  // 取得・埋め込み・OS 登録は main の fontGate を通す（許可・確認が済むまで worker へ送らない）。fonts.acquire は main 内部専用で載せない
+  "fonts.files": { method: "POST", route: "/api/fonts/files", maxBody: 64 * 1024 },
+  "fonts.embed": { method: "POST", route: "/api/fonts/embed", maxBody: 64 * 1024 },
+  "fonts.install": { method: "POST", route: "/api/fonts/install", maxBody: 64 * 1024 },
+} as const satisfies Record<string, DesktopOperation>;
+
+/** main だけが内部で使う操作（画面からは呼べない。worker の許可リストには入る） */
+export const DESKTOP_INTERNAL_OPERATIONS = {
+  "fonts.acquire": { method: "POST", route: "/api/fonts/acquire", maxBody: 64 * 1024 },
 } as const satisfies Record<string, DesktopOperation>;
 
 export type DesktopOperationName = keyof typeof DESKTOP_OPERATIONS;
@@ -79,7 +88,7 @@ export function matchDesktopOperation(method: string, url: string): Omit<Desktop
  * main 側の検証：operation・params・query を一覧と照合し、内部 API の相対 path を組み立てる。
  * 不正なら null（呼び出し側で INVALID_ARGUMENT にする）
  */
-export function resolveDesktopRequest(req: unknown): { op: DesktopOperation; path: string; body?: unknown } | null {
+export function resolveDesktopRequest(req: unknown): { name: DesktopOperationName; op: DesktopOperation; path: string; body?: unknown } | null {
   if (!req || typeof req !== "object") return null;
   const { operation, params = {}, query = {}, body, ...rest } = req as Record<string, unknown>;
   if (Object.keys(rest).length) return null;
@@ -100,7 +109,7 @@ export function resolveDesktopRequest(req: unknown): { op: DesktopOperation; pat
   for (const [k, v] of Object.entries(query)) if (!allowed[k]?.includes(v)) return null;
   if (body !== undefined && op.maxBody === undefined) return null;
   const qs = new URLSearchParams(query).toString();
-  return { op, path: segs.join("/") + (qs ? `?${qs}` : ""), ...(body !== undefined ? { body } : {}) };
+  return { name: operation as DesktopOperationName, op, path: segs.join("/") + (qs ? `?${qs}` : ""), ...(body !== undefined ? { body } : {}) };
 }
 
 const isStringRecord = (v: unknown): v is Record<string, string> =>

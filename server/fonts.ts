@@ -15,7 +15,8 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { embeddingRestricted, fontInfo, ttfToEot } from "./eot";
-import { FONT_BY_FAMILY, FONT_CATALOG, FONT_ROLE_LABELS, fontCovers, googleCssUrl, installWeights, type FontEntry } from "../src/fonts";
+import { fileBase, FontFetchError, getFontFace, isCatalogFace, readCachedFace, type FontFailCode } from "./font-cache";
+import { FONT_BY_FAMILY, FONT_CATALOG, FONT_ROLE_LABELS, fontCovers, installWeights, type FontEntry } from "../src/fonts";
 import { askAI } from "./ai";
 import { extractJson } from "./chatgpt";
 import { httpError } from "./http-error";
@@ -51,8 +52,6 @@ async function installedNames(): Promise<string[]> {
   return stdout.split("\n").flatMap((l) => l.split(",")).map((s) => s.trim()).filter(Boolean);
 }
 
-const fileBase = (family: string, weight: number) => `${family.replace(/\s+/g, "")}-${weight}`;
-
 /** Windows の値名で、ファミリー名の後ろに付くウェイト・スタイル名（"Shippori Mincho B1 Bold" を "Shippori Mincho" と取り違えないため） */
 const STYLE_SUFFIX = /^((extra|ultra|semi|demi)\s?)?(thin|hairline|light|regular|normal|book|medium|bold|heavy|black)(\s?italic)?$|^italic$/i;
 
@@ -73,51 +72,83 @@ export async function fontStatus(families: string[]): Promise<{ target: string; 
   return { target: fontTarget, installed: Object.fromEntries(families.map((f) => [f, hasFamily(list, f)])) };
 }
 
-/** Google Fonts から TTF を取得（UA を付けないと TrueType の URL が返る）。text を渡すとその文字だけのサブセット */
-async function downloadTtf(family: string, weight: number, text?: string): Promise<Buffer> {
-  const css = await (await fetch(googleCssUrl(family, [weight], text))).text();
-  // サブセットの URL は拡張子が付かないので format('truetype') で見分ける
-  const url = css.match(/url\((https:[^)]+)\) format\('truetype'\)/)?.[1];
-  if (!url) throw new Error(`${family} (${weight}) の TTF が見つかりませんでした`);
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${family} のダウンロードに失敗しました（HTTP ${res.status}）`);
-  return Buffer.from(await res.arrayBuffer());
+// ---------- 全文字入り TTF（取得・検証・キャッシュは font-cache.ts） ----------
+
+export type FontFace = { family: string; weight: number };
+export type FontFailure = FontFace & { code: FontFailCode };
+const MAX_FACES = 16;
+
+/** リクエストの faces を検証する。カタログ外・weight がカタログに無い・16 件超は 400。重複は 1 つにまとめる */
+export function parseFaces(v: unknown): FontFace[] {
+  if (!Array.isArray(v) || v.length > MAX_FACES) throw httpError(400, `faces は ${MAX_FACES} 件までの配列で指定してください`);
+  const seen = new Map<string, FontFace>();
+  for (const f of v) {
+    const { family, weight } = (f ?? {}) as Record<string, unknown>;
+    if (typeof family !== "string" || typeof weight !== "number" || !isCatalogFace(family, weight)) throw httpError(400, "カタログにないフォントです");
+    seen.set(fileBase(family, weight), { family, weight });
+  }
+  return [...seen.values()];
+}
+
+/** install の expect。形式が不正なら 400（内容の不一致は installFonts が 409 にする） */
+export function parseExpect(v: unknown): InstallExpect {
+  if (!Array.isArray(v) || v.length > MAX_FACES) throw httpError(400, "expect の形式が不正です");
+  return v.map((x) => {
+    const { family, weight, sha256 } = (x ?? {}) as Record<string, unknown>;
+    if (typeof family !== "string" || typeof weight !== "number" || typeof sha256 !== "string" || !/^[0-9a-f]{64}$/.test(sha256)) throw httpError(400, "expect の形式が不正です");
+    return { family, weight, sha256 };
+  });
+}
+
+const failCode = (e: unknown): FontFailCode => (e instanceof FontFetchError ? e.code : "NETWORK_FAILED");
+
+/** faces を取得（キャッシュに無ければ通信）。失敗した face は failed に入れる */
+async function acquireFaces(faces: FontFace[]) {
+  const ok: Awaited<ReturnType<typeof getFontFace>>[] = [];
+  const failed: FontFailure[] = [];
+  await Promise.all(faces.map(async (f) => {
+    try {
+      ok.push(await getFontFace(f.family, f.weight));
+    } catch (e) {
+      console.warn("フォントを用意できませんでした:", f.family, f.weight, failCode(e));
+      failed.push({ ...f, code: failCode(e) });
+    }
+  }));
+  const order = (x: FontFace, y: FontFace) => faces.findIndex((f) => f.family === x.family && f.weight === x.weight) - faces.findIndex((f) => f.family === y.family && f.weight === y.weight);
+  return { ok: ok.sort(order), failed: failed.sort(order) };
+}
+
+/** 画面の表示・SVG 書き出し用に TTF（base64）を返す */
+export async function fontFiles(faces: FontFace[]) {
+  const { ok, failed } = await acquireFaces(faces);
+  return { files: ok.map((f) => ({ family: f.family, weight: f.weight, sha256: f.sha256, data: f.data.toString("base64") })), failed };
+}
+
+/** キャッシュに用意して hash だけ返す（OS 登録の確認の前に使う） */
+export async function acquireFonts(faces: FontFace[]) {
+  const { ok, failed } = await acquireFaces(faces);
+  return { faces: ok.map((f) => ({ family: f.family, weight: f.weight, sha256: f.sha256, byteLength: f.byteLength, fromCache: f.fromCache })), failed };
 }
 
 // ---------- PPTX への埋め込み ----------
 
-/** 使った文字に足しておく文字（受け取った人がちょっと直す程度なら同じフォントのままにする） */
-const EDIT_CHARS = (() => {
-  let s = "";
-  for (let c = 0x20; c < 0x7f; c++) s += String.fromCharCode(c);
-  for (let c = 0x3041; c <= 0x3096; c++) s += String.fromCharCode(c); // ひらがな
-  for (let c = 0x30a1; c <= 0x30fc; c++) s += String.fromCharCode(c); // カタカナ・長音
-  return s + "、。・「」『』（）！？：；〜…ー　";
-})();
-/** Google Fonts は URL が約 8KB を超えると文字を絞らずに全体を返す（さらに長いと 400） */
-const MAX_URL = 7800;
-
 /**
  * PowerPoint に埋め込むフォント（EOT）を作る。標準（400 に近いウェイト）と太字（700）だけで、太字が無いフォントは標準だけ。
- * 使った文字だけのサブセットにする。文字が多すぎて絞れなければフォント全体を入れる
+ * キャッシュの全文字入り TTF から作る（作品の文字は使わない）
  */
-export async function embedFonts(requests: { family: string; bold: boolean; text: string }[]): Promise<{ family: string; bold: boolean; data: string }[]> {
+export async function embedFonts(requests: { family: string; bold: boolean }[]): Promise<{ family: string; bold: boolean; data: string }[]> {
   const out: { family: string; bold: boolean; data: string }[] = [];
   for (const r of requests) {
     const e = FONT_BY_FAMILY.get(r.family);
     if (!e) continue;
     const [regular, bold = regular] = installWeights(e);
     if (r.bold && bold === regular) continue;
-    const weight = r.bold ? bold : regular;
-    const used = [...new Set(r.text.replace(/\s/g, ""))].join("");
-    const withEdit = [...new Set(used + EDIT_CHARS)].join("");
-    const text = [withEdit, used].find((t) => googleCssUrl(e.family, [weight], t).length <= MAX_URL);
     try {
-      const ttf = await downloadTtf(e.family, weight, text);
+      const { data: ttf } = await getFontFace(e.family, r.bold ? bold : regular);
       if (embeddingRestricted(fontInfo(ttf).fsType)) continue;
       out.push({ family: r.family, bold: r.bold, data: ttfToEot(ttf).toString("base64") });
     } catch (err) {
-      console.warn("PPTX 用のフォントを用意できませんでした:", r.family, err);
+      console.warn("PPTX 用のフォントを用意できませんでした:", r.family, err instanceof FontFetchError ? err.code : "FAILED");
     }
   }
   return out;
@@ -157,20 +188,51 @@ async function installOnUnix(files: FontFile[]) {
   if (fontTarget === "linux") await run("fc-cache", ["-f", dir]).catch(() => {});
 }
 
-/** 未インストールのものだけ入れる。戻り値は新しく入れたファミリー */
-export async function installFonts(families: string[]): Promise<{ target: string; installed: string[]; already: string[] }> {
+export type InstallExpect = { family: string; weight: number; sha256: string }[];
+
+/** installWeights の face 集合が expect と完全一致し、キャッシュ実体の sha256 も一致するか（不一致は 409） */
+function verifyExpect(entries: FontEntry[], expect: InstallExpect): Map<string, string> {
+  const faces = entries.flatMap((e) => installWeights(e).map((w) => ({ family: e.family, weight: w })));
+  const want = new Map(expect.map((x) => [fileBase(x.family, x.weight), x.sha256]));
+  if (want.size !== expect.length || want.size !== new Set(faces.map((f) => fileBase(f.family, f.weight))).size) throw httpError(409, "インストールする内容が確認済みの内容と一致しません");
+  for (const f of faces) {
+    const cached = readCachedFace(f.family, f.weight);
+    if (want.get(fileBase(f.family, f.weight)) !== cached?.sha256) throw httpError(409, "インストールする内容が確認済みの内容と一致しません");
+  }
+  return want;
+}
+
+/**
+ * 未インストールのものだけ入れる。戻り値は新しく入れたファミリー。
+ * expect があれば、キャッシュ実体と一致する場合だけ実行する（再ダウンロードしない）。製品版は expect 必須
+ */
+export async function installFonts(families: string[], expect?: InstallExpect): Promise<{ target: string; installed: string[]; already: string[] }> {
   const entries = families.map((f) => {
     const e = FONT_BY_FAMILY.get(f);
     if (!e) throw httpError(400, `カタログにないフォントはインストールできません: ${f}`);
     return e;
   });
+  if (!expect && process.env.DC_DESIGNER_DESKTOP === "1") throw httpError(400, "expect は必須です");
+  const want = expect && verifyExpect(entries, expect);
   const list = await cachedInstalledNames(true);
   const todo = entries.filter((e) => !hasFamily(list, e.family));
   const already = entries.filter((e) => !todo.includes(e)).map((e) => e.family);
   if (!todo.length) return { target: fontTarget, installed: [], already };
 
   const files: FontFile[] = [];
-  for (const e of todo) for (const w of installWeights(e)) files.push({ family: e.family, weight: w, data: await downloadTtf(e.family, w) });
+  for (const e of todo) {
+    for (const w of installWeights(e)) {
+      try {
+        const face = want ? readCachedFace(e.family, w) : await getFontFace(e.family, w);
+        // 登録する bytes そのものを確認済みの hash と照合する（照合後の差し替えを防ぐ）
+        if (!face || (want && want.get(fileBase(e.family, w)) !== face.sha256)) throw httpError(409, "キャッシュが変わりました");
+        files.push({ family: e.family, weight: w, data: face.data });
+      } catch (err) {
+        if (err instanceof FontFetchError) throw httpError(502, `${e.family} のフォントを用意できませんでした`);
+        throw err;
+      }
+    }
+  }
   await (isWindows ? installOnWindows(files) : installOnUnix(files));
   namesCache = null;
   return { target: fontTarget, installed: todo.map((e) => e.family), already };

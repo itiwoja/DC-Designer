@@ -224,8 +224,8 @@ export function resolveColor(c: string | undefined, theme: Theme): string {
   return c;
 }
 
-export function resolveFont(f: string | undefined, theme: Theme): string {
+export function resolveFont(f: string | undefined, theme: Theme, weight?: number): string {
   const name = theme.fonts[f ?? "body"] ?? f ?? theme.fonts.body;
-  ensureWebFont(name); // カタログのフォントは使われた時点で読み込む（index.html で読み込んでいないもの）
+  ensureWebFont(name, weight); // カタログのフォントは使われた時点で読み込む（index.html で読み込んでいないもの）
   return `'${name}', '${FALLBACK_FONT}', sans-serif`;
 }

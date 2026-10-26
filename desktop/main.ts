@@ -18,6 +18,7 @@ import {
 } from "./appProtocol";
 import { IPC, type DesktopResult, type PrepareCloseResult } from "./bridge";
 import { createCloseCoordinator } from "./close";
+import { consentDialogOptions, createFontGate, installDialogOptions } from "./fontGate";
 import { resolveDesktopRequest } from "./operations";
 import { USER_ROOT_DIRS } from "./protocol";
 import { buildWorkerEnv, createRuntime, type WorkerChild } from "./runtime";
@@ -122,6 +123,24 @@ function isTrusted(e: IpcMainInvokeEvent): boolean {
 
 const failResult = (code: string, error: string): DesktopResult => ({ ok: false, error, code });
 
+/** 編集窓があればそれを親にしてネイティブの確認を出し、選んだボタンの番号を返す */
+async function showMessage(opts: Electron.MessageBoxOptions): Promise<number> {
+  const w = editorWindow;
+  return (w && !w.isDestroyed() ? await dialog.showMessageBox(w, opts) : await dialog.showMessageBox(opts)).response;
+}
+
+// フォントの取得は初回だけ許可を取り、OS 登録は main のダイアログで face・hash を確認してから行う
+const fontGate = createFontGate({
+  consentFile: path.join(userRoot, "fonts", "consent.json"),
+  request: (op, p, body) => runtime.request(op, p, body),
+  confirmConsent: async () => {
+    const ok = (await showMessage(consentDialogOptions())) === 1;
+    if (ok) setImmediate(buildMenu);
+    return ok;
+  },
+  confirmInstall: async (faces) => (await showMessage(installDialogOptions(faces))) === 1,
+});
+
 /** 画面へ返す資格情報の結果（値は含めない）。変わった状態は worker のキャッシュへも伝える */
 function secretResult(r: SecretResult): DesktopResult {
   if (!r.ok) return failResult(r.code ?? "INTERNAL", "資格情報を保存できませんでした");
@@ -134,6 +153,7 @@ function registerIpc(): void {
     if (!isTrusted(e)) return failResult("UNAUTHORIZED_CONTEXT", "この画面からは実行できません");
     const r = resolveDesktopRequest(req);
     if (!r) return failResult("INVALID_ARGUMENT", "要求の形式が正しくありません");
+    if (fontGate.handles(r.name)) return fontGate.handle(r.name, r);
     return runtime.request(r.op, r.path, r.body);
   });
   ipcMain.handle(IPC.getState, (e) => {
@@ -191,7 +211,15 @@ function buildMenu(): void {
     label: "編集",
     submenu: [{ role: "undo" }, { role: "redo" }, { type: "separator" }, { role: "cut" }, { role: "copy" }, { role: "paste" }, { role: "selectAll" }],
   };
-  const menu: MenuItemConstructorOptions[] = [edit];
+  const fonts: MenuItemConstructorOptions = {
+    label: "フォント",
+    submenu: [{
+      label: "Google Fonts からの取得の許可を取り消す",
+      enabled: fontGate.hasConsent(),
+      click: () => { fontGate.revokeConsent(); buildMenu(); },
+    }],
+  };
+  const menu: MenuItemConstructorOptions[] = [edit, fonts];
   if (!app.isPackaged) menu.push({ label: "開発", submenu: [{ role: "toggleDevTools" }, { role: "reload" }] });
   Menu.setApplicationMenu(Menu.buildFromTemplate(menu));
 }

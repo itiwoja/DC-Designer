@@ -161,8 +161,11 @@ export const api = {
     post<{ proposals: FontProposal[] }>("/api/fonts/suggest", body, signal),
   fontStatus: (families: string[]) => post<FontStatus>("/api/fonts/status", { families }),
   installFonts: (families: string[]) => post<{ target: FontStatus["target"]; installed: string[]; already: string[] }>("/api/fonts/install", { families }),
-  /** PPTX に埋め込むフォント（使った文字だけの EOT を base64 で） */
-  embedFonts: (fonts: { family: string; bold: boolean; text: string }[]) =>
+  /** カタログの family×weight の TTF を base64 で（最大 16 件。API のフォントキャッシュから） */
+  fontFiles: (faces: { family: string; weight: number }[]) =>
+    post<{ files: { family: string; weight: number; sha256: string; data: string }[]; failed: { family: string; weight: number; code: string }[] }>("/api/fonts/files", { faces }),
+  /** PPTX に埋め込むフォント（EOT を base64 で。使う文字は送らない） */
+  embedFonts: (fonts: { family: string; bold: boolean }[]) =>
     post<{ fonts: { family: string; bold: boolean; data: string }[] }>("/api/fonts/embed", { fonts }),
   generated: (specs: PosterSpec[] = []) => post<{ files: GeneratedFile[] }>("/api/generated/list", { specs }),
   deleteGenerated: (names: string[], specs: PosterSpec[] = []) => post<{ deleted: string[] }>("/api/generated/delete", { names, specs }),

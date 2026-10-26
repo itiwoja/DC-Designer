@@ -60,7 +60,7 @@ describe("製品版の入口", () => {
   });
 
   it("許可リスト外は 404 DESKTOP_UNAVAILABLE", async () => {
-    for (const [method, path] of [["POST", "/api/plan"], ["POST", "/api/fonts/embed"], ["GET", "/auth/callback"], ["POST", "/api/asset"], ["GET", "/api/posters/NOTANID"], ["GET", "/generated/x.png"]]) {
+    for (const [method, path] of [["POST", "/api/plan"], ["POST", "/api/fonts/suggest"], ["GET", "/auth/callback"], ["POST", "/api/asset"], ["GET", "/api/posters/NOTANID"], ["GET", "/generated/x.png"]]) {
       const res = await call(path, { method, headers: good, ...(method === "POST" ? { body: "{}" } : {}) });
       expect(res.status, `${method} ${path}`).toBe(404);
       expect((await res.json()).code).toBe("DESKTOP_UNAVAILABLE");
