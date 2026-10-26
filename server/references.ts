@@ -5,12 +5,14 @@ import { saveUpload } from "./imagegen";
 import type { ImageRef } from "./chatgpt";
 import type { PosterSpec } from "../src/schema";
 
-export type PosterReference = ImageRef & { name?: string; src?: string };
+export type PosterReference = ImageRef & { name?: string; src?: string; width?: number; height?: number };
 
 const References = z.array(z.object({
   mediaType: z.enum(["image/png", "image/jpeg", "image/webp", "image/gif"]),
   data: z.string().min(1).regex(/^[A-Za-z0-9+/]+={0,2}$/),
   name: z.string().max(300).optional(),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
 })).max(MAX_REFERENCES);
 
 export function parseReferences(value: unknown) {
@@ -27,11 +29,14 @@ export function storeReferences(value: unknown): PosterReference[] | undefined {
 }
 
 export function referenceSources(references?: PosterReference[]): string {
-  const saved = references?.flatMap((r, i) => r.src ? [{ number: i + 1, name: r.name, src: r.src }] : []) ?? [];
+  const saved = references?.flatMap((r, i) => r.src ? [{ number: i + 1, id: `user-image-${i + 1}`, name: r.name, src: r.src, width: r.width, height: r.height }] : []) ?? [];
   return saved.length ? [
     "# 添付画像の保存済みURL（画像の順番）",
     JSON.stringify(saved),
     "添付画像そのものを配置するときは、このsrcをそのまま使ってください。ファイル名や架空のURLをsrcに書かず、添付画像には画像生成用assetを作らないでください。",
+    '「添付を配置して」「このロゴを入れて」などは雰囲気の参考ではなく、原画像を使う指示です。type: "image", src: 上記URL の独立したレイヤーにし、ロゴ内の文字も含めて描き直し・画像生成・色の変更をしないでください。',
+    'ロゴは fit: "contain" で全体を見せ、トリミングや引き伸ばしをしないでください。元の width / height があるときは、その縦横比にレイヤーの w / h も合わせてください。',
+    "ロゴの位置・大きさの指定があれば優先してください。「いい感じに」だけなら、既存の文字やページ番号を避け、隅に控えめなサイズ（幅はスライド幅の 10〜15% を目安）で、縁からスライド短辺の 3〜5% の余白を取り、キャンバス内に収めてください。編集では指示と無関係な内容は変更しないでください。",
   ].join("\n") : "";
 }
 
@@ -55,12 +60,13 @@ export function resolveReferenceSources(spec: PosterSpec, references?: PosterRef
       if (key !== "src" || typeof v !== "string") { next[key] = rewrite(v); continue; }
       const bare = /^(?:\.\/)?[^/:\\]+$/.test(v);
       const filename = v.replace(/^\.\//, "");
-      // 同名の添付が複数あれば先頭（AI には user-image-N の id でも区別できるよう案内している）
-      let reference = saved.find((r) => r.name === filename);
+      // 正しいURLはそのまま。同名の添付は user-image-N の id を優先して区別する。
+      let reference = saved.find((r) => r.src === v);
       if (!reference && bare) {
         const id = String((value as { id?: unknown }).id ?? "").match(/^user-image-(\d+)$/);
         if (id) reference = references?.[Number(id[1]) - 1];
       }
+      if (!reference) reference = saved.find((r) => r.name === filename || r.src?.slice("/generated/".length) === filename);
       if (bare && reference?.src) next[key] = reference.src;
       else if (bare && !original.has(v)) throw new Error(`画像src「${v}」は保存済みURLではありません。添付画像は指定された /generated/ URLを使ってください`);
       else next[key] = v;

@@ -148,7 +148,7 @@ app.post("/api/plan/instagram", progressRoute(async (req, onProgress, signal) =>
   if (!brief) throw httpError(400, "brief は必須です");
   if (!Number.isFinite(width) || !Number.isFinite(height) || width < 100 || height < 100) throw httpError(400, "width / height が不正です");
   const n = Number.isInteger(count) && count >= 1 && count <= IG_MAX_IMAGES ? count : undefined;
-  return planCarousel({ brief, width, height, count: n, references, onProgress, signal });
+  return planCarousel({ brief, width, height, count: n, references: storeReferences(references), onProgress, signal });
 }));
 
 /** 参考画像 → それをそのまま写し取った PosterSpec（A4 モードの「参考画像を再現」） */
@@ -195,7 +195,7 @@ app.post("/api/slide", route(async (req, signal) => {
   if (!samples.length) throw httpError(400, "samples は必須です");
   return planSlide({
     instruction: String(instruction), position, total, deckTitle: optString(req.body?.title, 200), outline, samples,
-    history: parseTurns(req.body?.history).slice(-30), memory: optString(req.body?.memory, 3000), instagram: req.body?.instagram === true, signal,
+    history: parseTurns(req.body?.history).slice(-30), memory: optString(req.body?.memory, 3000), instagram: req.body?.instagram === true, references: storeReferences(req.body?.references), signal,
   });
 }));
 

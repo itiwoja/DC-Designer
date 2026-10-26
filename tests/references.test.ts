@@ -2,13 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseReferences, storeReferences, referenceSources, resolveReferenceSources } from "../server/references";
 import { MAX_REFERENCE_DATA_BYTES } from "../src/referenceLimits";
 import { api } from "../src/editor/api";
-import { PosterSpecSchema } from "../src/schema";
+import { findPendingAssets, PosterSpecSchema } from "../src/schema";
 
 const ai = vi.hoisted(() => ({ ask: vi.fn() }));
 const storage = vi.hoisted(() => ({ save: vi.fn((mediaType: string, data: string) => ({ src: `/generated/saved-${data}.png` })) }));
 vi.mock("../server/chatgpt", async (original) => ({ ...await original<typeof import("../server/chatgpt")>(), askChatGPT: ai.ask }));
 vi.mock("../server/imagegen", () => ({ saveUpload: storage.save }));
-import { editPoster, planPoster } from "../server/planner";
+import { editPoster, planCarousel, planPoster, planSlide } from "../server/planner";
 
 const spec = PosterSpecSchema.parse({ meta: { title: "添付のテスト", width: 1000, height: 1414 }, theme: "ocean", layers: [] });
 const references = [{ mediaType: "image/jpeg" as const, data: "YWJj" }, { mediaType: "image/png" as const, data: "ZGVm" }];
@@ -25,6 +25,13 @@ describe("添付資料の検証", () => {
   });
   it("合計サイズ超過を拒否する", () => {
     expect(() => parseReferences([{ ...references[0], data: "A".repeat(MAX_REFERENCE_DATA_BYTES + 1) }])).toThrow("合計サイズ");
+  });
+  it("ロゴの元の寸法を保持し、不正な寸法を拒否する", () => {
+    const logo = { ...references[0], name: "logo.png", width: 600, height: 150 };
+    expect(parseReferences([logo])).toEqual([logo]);
+    for (const width of [0, -1, 1.5, Infinity, "600"]) {
+      expect(() => parseReferences([{ ...logo, width }])).toThrow();
+    }
   });
 });
 
@@ -53,6 +60,27 @@ describe("添付画像を実際の保存URLで配置する", () => {
     expect(result.layers[0]).toMatchObject({ src: saved[1].src });
   });
 
+  it("同名の添付が複数あってもレイヤーの添付番号で区別する", () => {
+    const sameNames = saved.map((r) => ({ ...r, name: "logo.png" }));
+    const result = resolveReferenceSources(PosterSpecSchema.parse({ ...spec, layers: [image("user-image-2", "logo.png")] }), sameNames);
+    expect(result.layers[0]).toMatchObject({ src: saved[1].src });
+  });
+
+  it("保存先のファイル名だけが返された場合も保存URLへ直す", () => {
+    const result = resolveReferenceSources(PosterSpecSchema.parse({ ...spec, layers: [image("logo", "actual-0.png")] }), saved);
+    expect(result.layers[0]).toMatchObject({ src: saved[0].src });
+    expect(findPendingAssets(result)).toEqual([]);
+  });
+
+  it("グループ内や部品の添付画像もURLへ直し、元のspecを変更しない", () => {
+    const original = PosterSpecSchema.parse({ ...spec, layers: [{ id: "logos", type: "group", children: [image("user-image-1", "image.png"), { id: "photo", type: "component", component: "roundPhoto", props: { src: saved[1].name, asset: { prompt: "logo" } } }] }] });
+    const result = resolveReferenceSources(original, saved);
+    expect(JSON.stringify(result)).toContain(saved[0].src);
+    expect(JSON.stringify(result)).toContain(saved[1].src);
+    expect(JSON.stringify(result)).not.toContain('"asset"');
+    expect(JSON.stringify(original)).toContain('"src":"image.png"');
+  });
+
   it("既存画像を保ち、添付と特定できない新規の架空ファイル名は拒否する", () => {
     const previous = PosterSpecSchema.parse({ ...spec, layers: [image("old", "old.png")] });
     expect(resolveReferenceSources(previous, undefined, previous).layers[0]).toMatchObject({ src: "old.png" });
@@ -72,6 +100,54 @@ describe("添付画像を実際の保存URLで配置する", () => {
     expect(ai.ask.mock.calls[0][1][0].text).toContain(saved[1].src);
     expect(result.layers[1]).toMatchObject({ src: saved[1].src });
   });
+
+  it("全スライドへの編集にも原画像と寸法・ロゴ配置のルールを渡す", async () => {
+    const logo = saved.map((r) => ({ ...r, width: 600, height: 150 }));
+    ai.ask.mockResolvedValue(JSON.stringify({ reply: "右下に配置した", spec: withImages() }));
+    const result = await editPoster({ spec, instruction: "全スライドの右下にロゴを配置して", references: logo, across: { number: 2, total: 3, guide: "右下、余白30px" } });
+    const [system, turns] = ai.ask.mock.calls[0];
+    expect(turns[0].images).toEqual(logo);
+    expect(turns[0].text).toContain('"width":600,"height":150');
+    expect(turns[0].text).toContain('fit: "contain"');
+    expect(turns[0].text).toContain("ページ番号を避け");
+    expect(turns[0].text).toContain("右下、余白30px");
+    expect(system).toContain("添付画像・既存の src 付き画像は生成しない");
+    expect(result.spec?.layers[0]).toMatchObject({ src: saved[0].src });
+    expect(findPendingAssets(result.spec!)).toEqual([]);
+  });
+
+  it("新規スライド追加でも添付をAIに渡し、描画可能で生成不要の画像にする", async () => {
+    ai.ask.mockResolvedValue(JSON.stringify({ reply: "ロゴ入りのまとめを追加", spec: withImages() }));
+    const result = await planSlide({ instruction: "添付ロゴを隅に配置したスライドを追加", position: 2, total: 1, outline: [], samples: [{ number: 1, spec }], references: saved });
+    expect(ai.ask.mock.calls[0][1][0].images).toEqual(saved);
+    expect(ai.ask.mock.calls[0][1][0].text).toContain(saved[0].src);
+    expect(result.spec.layers[0]).toMatchObject({ src: saved[0].src });
+    expect(findPendingAssets(result.spec)).toEqual([]);
+  });
+
+  it("スライド追加時にお手本から引き継ぐ既存画像は変更しない", async () => {
+    const sample = PosterSpecSchema.parse({ ...spec, layers: [image("old-logo", "existing-logo.png")] });
+    ai.ask.mockResolvedValue(JSON.stringify({ reply: "追加", spec: sample }));
+    const result = await planSlide({ instruction: "共通ロゴを引き継いだスライドを追加", position: 3, total: 2, outline: [], samples: [{ number: 1, spec }, { number: 2, spec: sample }] });
+    expect(result.spec.layers[0]).toMatchObject({ src: "existing-logo.png" });
+  });
+
+  it("カルーセル生成でも添付の原画像を使う", async () => {
+    ai.ask.mockResolvedValue(JSON.stringify({ title: "投稿", posts: [withImages()] }));
+    const result = await planCarousel({ brief: "添付ロゴを配置", width: 1080, height: 1080, references: saved });
+    expect(ai.ask.mock.calls[0][1][0].images).toEqual(saved);
+    expect(ai.ask.mock.calls[0][1][0].text).toContain(saved[0].src);
+    expect(result.posts[0].layers[0]).toMatchObject({ src: saved[0].src });
+    expect(findPendingAssets(result.posts[0])).toEqual([]);
+  });
+
+  it("ファイル名を特定できなければ架空の画像を返さずAIに再修正させる", async () => {
+    ai.ask.mockResolvedValueOnce(JSON.stringify({ reply: "配置", spec: { ...spec, layers: [image("logo", "unknown.png")] } }))
+      .mockResolvedValueOnce(JSON.stringify({ reply: "配置", spec: withImages() }));
+    const result = await editPoster({ spec, instruction: "添付を配置して", references: saved });
+    expect(ai.ask).toHaveBeenCalledTimes(2);
+    expect(result.spec?.layers[0]).toMatchObject({ src: saved[0].src });
+  });
 });
 
 describe("AIへの添付受け渡し", () => {
@@ -87,5 +163,12 @@ describe("AIへの添付受け渡し", () => {
     vi.stubGlobal("fetch", fetchMock);
     await api.edit(spec, "資料を確認して", undefined, undefined, undefined, undefined, undefined, undefined, references);
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).references).toEqual(references);
+  });
+  it("クライアントが全スライド編集・スライド追加にも添付を含める", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response('{"reply":"配置した"}', { headers: { "Content-Type": "application/json" } })));
+    vi.stubGlobal("fetch", fetchMock);
+    await api.edit(spec, "全スライドに配置", undefined, undefined, undefined, undefined, undefined, { number: 1, total: 2 }, references);
+    await api.planSlide({ instruction: "ロゴ入りスライドを追加", position: 2, total: 1, outline: [], samples: [{ number: 1, spec }], references });
+    for (const call of fetchMock.mock.calls) expect(JSON.parse(call[1].body).references).toEqual(references);
   });
 });

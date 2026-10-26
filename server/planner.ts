@@ -57,7 +57,7 @@ type ごとのフィールド:
             align: "left"|"center"|"right", fill: Paint,
             colorRuns?: [{start, end, color}](一部の文字だけ色を変える。text の文字位置 [start,end)。改行も 1 文字。範囲外は fill), outlines?: [{color, width}](外側から。ステッカー風縁取り),
             skewX?(斜体風), fit?: "shrink"(枠からはみ出す場合に縮小。長い見出しには必ず付ける) }
-- "image": { asset: { prompt(英語), transparent?(切り抜き素材ならtrue), aspect: "square"|"portrait"|"landscape", style? }, fit: "cover"|"contain", radius?, blur? }
+- "image": { src?: 保存済み画像URL, asset?: { prompt(英語), transparent?(切り抜き素材ならtrue), aspect: "square"|"portrait"|"landscape", style? }, fit: "cover"|"contain", radius?, blur? }
 - "component": { component: 名前, props: {...} }   ※下記カタログ
 - "group": { children: Layer[] }  ※子の座標はグループ原点からの相対
 
@@ -73,11 +73,12 @@ IconName: ${ICON_NAMES.join(", ")}
 ${catalogText}
 
 AssetRequest = { prompt: string(英語で具体的に), transparent?: boolean, aspect?: "square"|"portrait"|"landscape", style?: string }
-画像が必要な箇所（写真、イラスト、アプリ画面など）は image レイヤーまたはコンポーネントの props.asset に AssetRequest を書く。src は書かない（後で生成される）。
-画像内に文字を描かせない（文字はテキストレイヤーで載せる）。ただしアプリ画面のスクリーンショットは例外。
+新しく生成する画像（写真、イラスト、アプリ画面など）に限り、image レイヤーまたはコンポーネントの props.asset に AssetRequest を書き、src は書かない（後で生成される）。
+添付画像や既存の画像を使う場合は、指定された保存済み src をそのまま使い、生成用 asset は不要。特に企業・団体のロゴは原画像のまま独立した image レイヤー（fit: "contain"）で配置し、描き直しや文字の再構成をしない。
+新しく生成する画像内に文字を描かせない（文字はテキストレイヤーで載せる）。ただしアプリ画面のスクリーンショットは例外。添付ロゴ内の文字は原画像の一部としてそのまま保持する。
 
 # 画像（ポスターになじませる）
-画像はすべて自動で生成され、そのままポスターに載る。1 枚の作品として統一感が出るように設計する。
+asset を指定した画像だけが自動で生成され、そのままポスターに載る。添付画像・既存の src 付き画像は生成しない。1 枚の作品として統一感が出るように設計する。
 - meta.imageStyle に、ポスター全体で共通の画風を英語で 1 文書く（例: "soft flat vector illustration, rounded shapes, light grain, bright daylight"）。写真調・イラスト調などを混ぜない。配色はテーマから自動で足されるので色名は控えめでよい。
 - 各 asset.prompt は「何が・どんな構図で写っているか」を具体的に書く（主題、構図、視点、余白）。画風は imageStyle に任せ、style は個別に変えたいときだけ使う。
 - aspect はレイヤーの w/h に合わせる（横長 landscape / 縦長 portrait / ほぼ正方形 square）。
@@ -126,7 +127,7 @@ async function generateJson<T>(first: Turn, parse: (json: unknown) => T, what = 
 /** ブリーフ（＋参考画像）から PosterSpec を新規に作る */
 export async function planPoster(opts: { brief: string; theme?: string; references?: PosterReference[]; signal?: AbortSignal }): Promise<PosterSpec> {
   const text = [
-    opts.references?.length ? "添付画像はデザインの参考です。構図・情報の階層・装飾の雰囲気を参考にし、文字はすべてテキストレイヤーで再構成してください。" : "",
+    opts.references?.length ? "添付画像の使い方は依頼内容に従ってください。デザインの参考なら構図・情報の階層・装飾を参考にし、配置を頼まれたロゴや写真なら原画像をそのまま使ってください。" : "",
     referenceSources(opts.references),
     opts.theme ? `テーマは "${opts.theme}" を使ってください。` : "内容に合うテーマを選んでください。",
     "# ポスターの依頼内容",
@@ -153,11 +154,12 @@ const instagramRules = (w: number, h: number) => [
  * ブリーフ（＋参考画像）から Instagram のカルーセル投稿（同じ大きさの PosterSpec を 1〜20 枚）を作る。
  * count が無ければ枚数は内容から決めさせる
  */
-export async function planCarousel(opts: { brief: string; width: number; height: number; count?: number; references?: ImageRef[]; onProgress?: OnProgress; signal?: AbortSignal }): Promise<{ title: string; posts: PosterSpec[] }> {
+export async function planCarousel(opts: { brief: string; width: number; height: number; count?: number; references?: PosterReference[]; onProgress?: OnProgress; signal?: AbortSignal }): Promise<{ title: string; posts: PosterSpec[] }> {
   const { width: w, height: h, count } = opts;
   const text = [
     "Instagram のフィードに載せる投稿を作ります。ポスターではなく SNS の投稿画像です。",
-    opts.references?.length ? "添付画像はデザインの参考です。構図・情報の階層・装飾の雰囲気を参考にし、文字はすべてテキストレイヤーで再構成してください。" : "",
+    opts.references?.length ? "添付画像の使い方は依頼内容に従ってください。デザインの参考なら構図・情報の階層・装飾を参考にし、配置を頼まれたロゴや写真なら原画像をそのまま使ってください。" : "",
+    referenceSources(opts.references),
     "# Instagram の投稿のルール",
     count
       ? `- 画像は ${count} 枚ちょうど（1 枚 = 1 つの PosterSpec）。`
@@ -177,7 +179,7 @@ export async function planCarousel(opts: { brief: string; width: number; height:
     if (!Array.isArray(o?.posts) || !o.posts.length) throw new Error('"posts" に PosterSpec の配列を入れてください');
     if (o.posts.length > IG_MAX_IMAGES) throw new Error(`画像は ${IG_MAX_IMAGES} 枚までです`);
     if (count && o.posts.length !== count) throw new Error(`画像はちょうど ${count} 枚にしてください（${o.posts.length} 枚でした）`);
-    const posts = o.posts.map((p) => fixSize(PosterSpecSchema.parse(p), w, h));
+    const posts = o.posts.map((p) => resolveReferenceSources(fixSize(PosterSpecSchema.parse(p), w, h), opts.references));
     return { title: typeof o.title === "string" && o.title.trim() ? o.title.trim() : posts[0].meta.title, posts };
   }, '{"title", "posts"} の JSON ', opts.onProgress, opts.signal);
 }
@@ -488,10 +490,11 @@ export type OutlineSlide = { number: number; title?: string; texts: string[] };
  */
 export async function planSlide(opts: {
   instruction: string; position: number; total: number; deckTitle?: string; outline: OutlineSlide[]; samples: SlideRef[];
-  history?: ChatTurn[]; memory?: string; instagram?: boolean; signal?: AbortSignal;
+  history?: ChatTurn[]; memory?: string; instagram?: boolean; references?: PosterReference[]; signal?: AbortSignal;
 }): Promise<{ reply: string; spec: PosterSpec }> {
   const base = opts.samples[0]?.spec;
   if (!base) throw new Error("お手本のスライドがありません");
+  const previous = { ...base, layers: opts.samples.flatMap((s) => s.spec?.layers ?? []) };
   const { width, height } = base.meta;
   const unit = opts.instagram ? "画像" : "スライド";
   const text = [
@@ -499,6 +502,7 @@ export async function planSlide(opts: {
       ? `これは ${opts.total} 枚の画像からなる Instagram のカルーセル投稿です。ここに新しい画像を 1 枚追加します。\n${instagramNote(base)}`
       : `これは ${opts.total} 枚のスライドからなるデッキです。ここに新しいスライドを 1 枚追加します。既存のスライドは変更しません。`,
     `新しい${unit}は追加後の${unit} ${opts.position} になります（${opts.position > opts.total ? "末尾" : `今の${unit} ${opts.position} の前`}）。ユーザーのメッセージに沿った内容の ${unit}を 1 枚、PosterSpec として新しく作ってください。`,
+    referenceSources(opts.references),
     [
       `- サイズは ${width}x${height}（meta.width / meta.height はこのまま）。theme・配色・フォント・余白・見出しの位置と大きさ・ページ番号や装飾などの共通要素は、お手本のスライドと同じデザインにそろえる（デッキの一部に見えるように）。`,
       "- 文言はデッキの内容（タイトル・発表者・団体名など）に合わせる。デッキに無い事実（日時・URL・連絡先など）は作らない。",
@@ -515,10 +519,10 @@ export async function planSlide(opts: {
     "# 出力",
     `{"reply": 返答, "spec": 新しい${unit}の PosterSpec 全体} の JSON のみを出力してください。"reply" には、どんな${unit}を何枚目に追加したか（QR の URL を入れていなければ、QR の部品を選んで右のパネルの「QR の URL」に入れると読み取れる QR になること）をユーザーに向けて日本語 1〜3 文で書いてください。`,
   ].filter(Boolean).join("\n\n");
-  return generateJson({ role: "user", text }, (j) => {
+  return generateJson({ role: "user", text, images: opts.references }, (j) => {
     const r = parseEdit(j);
     if (!r.spec) throw new Error('"spec" に新しいスライドの PosterSpec を入れてください');
-    return { reply: r.reply, spec: fixSize(r.spec, width, height) };
+    return { reply: r.reply, spec: resolveReferenceSources(fixSize(r.spec, width, height), opts.references, previous) };
   }, '{"reply", "spec"} の JSON ', undefined, opts.signal);
 }
 

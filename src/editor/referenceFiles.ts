@@ -7,6 +7,10 @@ export { isPdf } from "../import/pdfDocument";
 export const REFERENCE_FILE_ACCEPT = `${IMAGE_FILE_ACCEPT},application/pdf,.pdf`;
 export type ReferencePage = { name: string; img: RefImage; url: string };
 
+/** 参考用にも配置用にも、同じ画像データ・名前・元の寸法を全経路へ渡す。 */
+export const toReferenceImages = (pages: (ReferencePage & { w: number; h: number })[]): RefImage[] =>
+  pages.map((p) => ({ ...p.img, name: p.name, width: p.w, height: p.h }));
+
 /** PDF はページ順に画像化し、既存の画像入力と同じ経路で AI に渡す。 */
 export async function readReferenceFile(file: File, remaining = MAX_REFERENCES): Promise<ReferencePage[]> {
   if (remaining < 1) throw new Error(`参考資料は画像・PDFのページを合わせて ${MAX_REFERENCES} 枚までです`);

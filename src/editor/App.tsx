@@ -54,7 +54,7 @@ import { useChatGPTAuth } from "./useChatGPTAuth";
 import { useHistory } from "./useHistory";
 import { useZoom } from "./useZoom";
 import { MAX_REFERENCES, MAX_REFERENCE_DATA_BYTES } from "../referenceLimits";
-import { REFERENCE_FILE_ACCEPT, readReferenceFile, type ReferencePage } from "./referenceFiles";
+import { REFERENCE_FILE_ACCEPT, readReferenceFile, toReferenceImages, type ReferencePage } from "./referenceFiles";
 import { ImageAttach } from "./ImageAttach";
 import { ReferenceAttachments } from "./ReferenceAttachments";
 
@@ -326,7 +326,7 @@ export function App() {
 
   // ---------- AI: 新規作成 ----------
   const planWithAI = () => mode === "slides" ? undefined : igReproduceOn ? reproduceInstagram() : mode === "instagram" ? planInstagram() : reproduceOn ? reproduceWithAI() : run(`${aiName} がレイアウトを設計中`, async (signal) => {
-    const { spec: next } = await api.plan(brief + referenceCaption, undefined, refs.map((r) => ({ ...r.img, name: r.name })), signal);
+    const { spec: next } = await api.plan(brief + referenceCaption, undefined, toReferenceImages(refs), signal);
     const n = findPendingAssets(next).length;
     const images = n ? autoImages ? `・画像 ${n} 点を生成します` : `・画像 ${n} 点が未生成` : "";
     await openAsNewPoster(next, `新しいポスターを作成しました（${next.layers.length} レイヤー${images}）。前のポスターは成果物に保存されています`);
@@ -338,7 +338,7 @@ export function App() {
   const planInstagram = () => run(`${aiName} が投稿を設計中`, async (signal) => {
     const { w, h } = IG_RATIOS[igRatio];
     const { title, posts } = await api.planInstagram(
-      { brief, width: w, height: h, count: igCount || undefined, references: refs.slice(0, 4).map((r) => r.img) }, showAIProgress("レイヤー目"), signal,
+      { brief: brief + referenceCaption, width: w, height: h, count: igCount || undefined, references: toReferenceImages(refs) }, showAIProgress("レイヤー目"), signal,
     );
     if (signal.aborted) throw new Error("aborted");
     const n = posts.reduce((a, p) => a + findPendingAssets(p).length, 0);
@@ -600,12 +600,16 @@ export function App() {
       const targets = isWholeDeckRequest(text) ? deck.slides.map((_, i) => i + 1) : slideRefs(text, current, deck.slides.length);
       if (targets.length || current) return writeNotesTurn(regen?.msg ?? { text, mode: "chat" }, restore, { targets: targets.length ? targets : [current], request: text });
     }
+    // 通常編集だけでなく、全スライドへの適用・スライド追加・再送信でも同じ添付を使う。
+    const requestText = regen ? text : text + referenceCaption;
+    const references = regen ? regen.msg.references ?? [] : toReferenceImages(refs);
+    const user = regen?.msg ?? { text: requestText, scope: chatScope ?? (slideNo ? chatFallback : undefined), mode: "chat" as const, ...(references.length ? { references, hasReferences: true } : {}) };
     // 「最後にクロージングのスライドを追加して」: ふつうの修正は今のスライドを書き換えるだけなので、新しいスライドを作ってデッキに入れる
     const current = deck ? deck.slides.findIndex((s) => s.id === posterIdRef.current) + 1 : 0;
     const position = deck && current ? addSlidePosition(text, current, deck.slides.length) : null;
     if (position) {
-      return chatTurn(regen?.msg ?? { text, mode: "chat" }, `${aiName} が${instagram ? "画像" : "スライド"}を作成中`, restore, async (signal) => {
-        const r = await addSlideByAI(signal, text, position, context);
+      return chatTurn(user, `${aiName} が${instagram ? "画像" : "スライド"}を作成中`, restore, async (signal) => {
+        const r = await addSlideByAI(signal, requestText, position, context, references);
         if (autoImages && r.spec && findPendingAssets(r.spec).length) {
           chat.push({ role: "assistant", text: r.text, changes: r.changes });
           await generatePending(r.spec, signal);
@@ -616,8 +620,8 @@ export function App() {
     }
     // 「授業スライド全体の差し色を変えて」: ふつうの修正は今のスライドしか書き換えないので、同じ指示を全スライドに当てる
     if (deck && deck.slides.length > 1 && isWholeDeckRequest(text)) {
-      return chatTurn(regen?.msg ?? { text, mode: "chat" }, `${aiName} が全${instagram ? "画像" : "スライド"}を修正中`, restore, async (signal) => {
-        const r = await editAcrossDeck(signal, text, context);
+      return chatTurn(user, `${aiName} が全${instagram ? "画像" : "スライド"}を修正中`, restore, async (signal) => {
+        const r = await editAcrossDeck(signal, requestText, context, references);
         if (autoImages && r.ids.some((id) => { const sp = specOf(id); return sp && findPendingAssets(sp).length; })) {
           chat.push({ role: "assistant", text: r.text, changes: r.changes });
           await generateAcross(r.ids, signal);
@@ -626,9 +630,7 @@ export function App() {
         return { text: r.text, changes: r.changes };
       });
     }
-    const requestText = regen ? text : text + referenceCaption;
-    const references = regen ? regen.msg.references ?? [] : refs.map((r) => ({ ...r.img, name: r.name }));
-    return chatTurn(regen?.msg ?? { text: requestText, scope: chatScope ?? (slideNo ? chatFallback : undefined), mode: "chat", ...(references.length ? { references, hasReferences: true } : {}) }, `${aiName} が考え中`, restore, async (signal) => {
+    return chatTurn(user, `${aiName} が考え中`, restore, async (signal) => {
       const ctx = await deckEditContext(text);
       const res = await api.edit(cur, requestText, ids, signal, ctx, context, instagram || undefined, undefined, references);
       const next = res.spec;

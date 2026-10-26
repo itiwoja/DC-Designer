@@ -9,7 +9,7 @@ import { applyFonts, specTexts } from "../fonts";
 import { slideContent } from "../notes";
 import { PosterSpecSchema, type PosterSpec } from "../schema";
 import type { resolveTheme } from "../themes";
-import { api, type ChatContext, type Deck, type DeckKind } from "./api";
+import { api, type ChatContext, type Deck, type DeckKind, type RefImage } from "./api";
 import { addPageNumber, renumberPages } from "./pageNumbers";
 import { diffLayers, safeFileName } from "./specOps";
 import { readPref, writePref } from "./storage";
@@ -463,7 +463,7 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
    * 今のスライドを先に直し、その返答を方針としてほかのスライドに渡して直し方をそろえる（ほかは EDIT_PARALLEL 枚ずつ並べて頼む）。
    * 待っている間に手で直したスライドは上書きしない。途中で止まっても直せた分は残す。結果の要約と、直したスライドの id を返す。「元に戻す」は通知から
    */
-  const editAcrossDeck = async (signal: AbortSignal, instruction: string, chat?: ChatContext): Promise<{ text: string; changes?: string; ids: string[] }> => {
+  const editAcrossDeck = async (signal: AbortSignal, instruction: string, chat?: ChatContext, references?: RefImage[]): Promise<{ text: string; changes?: string; ids: string[] }> => {
     if (!deck) throw new Error("スライドのデッキを開いていません");
     const d = deck;
     const total = d.slides.length;
@@ -480,7 +480,7 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
       const old = specOf(slide.id);
       if (!old) return;
       try {
-        const res = await api.edit(old, instruction, undefined, signal, undefined, chat, instagram || undefined, { number: i + 1, total, guide });
+        const res = await api.edit(old, instruction, undefined, signal, undefined, chat, instagram || undefined, { number: i + 1, total, guide }, references);
         if (signal.aborted) return;
         if (i === cur && res.reply) guide = res.reply;
         if (!res.spec || !diffLayers(old, res.spec).hasChanges || specOf(slide.id) !== old) return;
@@ -520,7 +520,7 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
    * チャットの「最後にクロージングのスライドを 1 枚追加して」: デッキ全体の文字と前後のスライド（見た目のお手本）を渡して AI に 1 枚作らせ、
    * 追加後のスライド番号が position になるように入れて開く。既存のスライドは変えない。結果の要約を返す（チャットの返答に使う）。「元に戻す」は通知から
    */
-  const addSlideByAI = async (signal: AbortSignal, instruction: string, position: number, chat?: ChatContext): Promise<{ text: string; changes?: string; spec?: PosterSpec }> => {
+  const addSlideByAI = async (signal: AbortSignal, instruction: string, position: number, chat?: ChatContext, references?: RefImage[]): Promise<{ text: string; changes?: string; spec?: PosterSpec }> => {
     if (!deck) throw new Error("スライドのデッキを開いていません");
     if (full) return { text: `Instagram の投稿に入れられる画像は ${IG_MAX_IMAGES} 枚までです` };
     const d = deck;
@@ -532,7 +532,7 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
       const sp = specs[n - 1];
       return sp ? [{ number: n, title: sp.meta.title, spec: sp }] : [];
     });
-    const res = await api.planSlide({ instruction, position, total, title: d.name, outline, samples, ...(instagram ? { instagram } : {}) }, chat, signal);
+    const res = await api.planSlide({ instruction, position, total, title: d.name, outline, samples, references, ...(instagram ? { instagram } : {}) }, chat, signal);
     if (signal.aborted) throw new Error("aborted");
     const r = await api.addDeckSlide(d.id, { spec: res.spec, after: d.slides[Math.max(position - 2, 0)].id });
     let nd = r.deck;
