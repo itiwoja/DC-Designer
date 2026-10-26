@@ -10,6 +10,7 @@ import { authStatus } from "./chatgpt-auth";
 import { askChatGPT, type Turn } from "./chatgpt";
 import { askOpenRouter, openRouterAvailable, openRouterSettings } from "./openrouter";
 import { httpError } from "./http-error";
+import { isDesktopMode } from "./ai-consent";
 
 export type AIProvider = "chatgpt" | "openrouter";
 const isProvider = (v: unknown): v is AIProvider => v === "chatgpt" || v === "openrouter";
@@ -19,6 +20,7 @@ const CHOICE_FILE = join(process.env.DATA_DIR || fileURLToPath(new URL("../data/
 
 /** 画面で選んだ AI（未選択なら undefined = .env か自動） */
 function savedChoice(): AIProvider | undefined {
+  if (isDesktopMode()) return undefined; // 製品版は ChatGPT 固定
   try {
     if (!existsSync(CHOICE_FILE)) return undefined;
     const p = JSON.parse(readFileSync(CHOICE_FILE, "utf8"))?.provider;
@@ -29,12 +31,14 @@ function savedChoice(): AIProvider | undefined {
 /** 使う AI を保存する。空文字なら .env か自動に戻す */
 export function setAIProvider(provider: string): void {
   if (provider && !isProvider(provider)) throw httpError(400, `不明な AI です（${provider}）`);
+  if (provider === "openrouter" && isDesktopMode()) throw httpError(400, "この版では OpenRouter は使えません");
   mkdirSync(dirname(CHOICE_FILE), { recursive: true });
   writeFileSync(CHOICE_FILE + ".tmp", JSON.stringify({ provider: provider || undefined }));
   renameSync(CHOICE_FILE + ".tmp", CHOICE_FILE);
 }
 
 async function usable(p: AIProvider): Promise<boolean> {
+  if (p === "openrouter" && isDesktopMode()) return false;
   if (p === "openrouter") return openRouterAvailable();
   const s = await authStatus();
   return s.signedIn && s.planEnabled;
@@ -45,7 +49,7 @@ async function resolve(explicit: AIProvider | undefined): Promise<AIProvider | u
   if (explicit) return (await usable(explicit)) ? explicit : undefined;
   return (await usable("chatgpt")) ? "chatgpt" : (await usable("openrouter")) ? "openrouter" : undefined;
 }
-const envChoice = () => { const p = (process.env.AI_PROVIDER || "").toLowerCase(); return isProvider(p) ? p : undefined; };
+const envChoice = () => { if (isDesktopMode()) return undefined; const p = (process.env.AI_PROVIDER || "").toLowerCase(); return isProvider(p) ? p : undefined; };
 
 /** 今使う AI。どれも使えなければ undefined */
 export const aiProvider = () => resolve(savedChoice() ?? envChoice());
@@ -60,7 +64,7 @@ export async function aiStatus() {
     choice: savedChoice() ?? "",
     explicit: savedChoice() ?? envChoice(),
     autoProvider: await resolve(envChoice()),
-    openrouter: openRouterAvailable() ? await openRouterSettings() : null,
+    openrouter: !isDesktopMode() && openRouterAvailable() ? await openRouterSettings() : null,
   };
 }
 
@@ -68,7 +72,7 @@ export async function aiStatus() {
  * 会話を今使う AI に送り、返ってきたテキスト全体を返す。
  * 使えないときは明示した AI（無ければ ChatGPT）に送り、そちらのエラー（キーが無い・サインインが要る）にする
  */
-export async function askAI(instructions: string, turns: Turn[], onText?: (text: string) => void, signal?: AbortSignal): Promise<string> {
+export async function askAI(instructions: string, turns: Turn[], onText?: (text: string) => void, signal?: AbortSignal, purpose?: string): Promise<string> {
   const p = (await aiProvider()) ?? savedChoice() ?? envChoice();
-  return p === "openrouter" ? askOpenRouter(instructions, turns, onText, signal) : askChatGPT(instructions, turns, onText, signal);
+  return p === "openrouter" ? askOpenRouter(instructions, turns, onText, signal) : askChatGPT(instructions, turns, onText, signal, purpose);
 }

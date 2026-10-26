@@ -6,6 +6,7 @@
 import { createServer, type Server } from "node:http";
 import { API_PROTOCOL_VERSION, LEASE_TIMEOUT_MS, type MainToWorker, type SecretState, type WorkerToMain } from "../desktop/protocol";
 import { acquireLease, leasePipePath } from "./lease";
+import { createMainConsentBackend, setConsentBackend } from "./ai-consent";
 import { createMainBackend, setSecretBackend } from "./secrets";
 
 // Electron の型が無くても通るよう、使う分だけ宣言する
@@ -49,6 +50,8 @@ async function start(init: Extract<MainToWorker, { type: "init" }>) {
 
   // 資格情報は main に問い合わせる（環境変数には載せない）
   setSecretBackend(createMainBackend(parentPort!, init.secretStates));
+  // AI への送信は main の確認を通す（EXE-FR-004）
+  setConsentBackend(createMainConsentBackend(parentPort!));
 
   let server: Server;
   try {

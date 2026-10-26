@@ -2,9 +2,10 @@
  * Electron main と API worker（utilityProcess）の親子 IPC の約束事（段階1）。
  * token は main が起動ごとに作り、この IPC でだけ渡す（コマンドライン・環境変数・URL・ログに出さない）
  */
+import type { AiConsentPayload } from "./aiPayload";
 
 /** main と worker の取り決めの版。合わなければ main は failed にする */
-export const API_PROTOCOL_VERSION = 2;
+export const API_PROTOCOL_VERSION = 3;
 
 /** 内部 API の認証ヘッダー名 */
 export const DESKTOP_TOKEN_HEADER = "x-dc-desktop-token";
@@ -31,6 +32,11 @@ export type MainToWorker =
   | { type: "drain"; requestId: string }
   /** drain を取り消して受付を再開する（終了をやめて編集へ戻るとき） */
   | { type: "resume"; requestId: string }
+  /**
+   * ai-consent への答え。approve は確認窓で本人が「この内容を一回送信」を押したときだけ。
+   * payloadHash は main が自分で計算した値（worker は自分の snapshot と一致したときだけ送る）
+   */
+  | { type: "ai-consent-result"; requestId: string; decision: "approve" | "deny" | "expired" | "invalid"; payloadHash?: string }
   /** 正常終了（server.close → lease を閉じる → process.exit(0)） */
   | { type: "shutdown" };
 
@@ -48,6 +54,10 @@ export type WorkerToMain =
   | { type: "secret-get"; requestId: string; providerId: string; kind: string }
   | { type: "secret-set"; requestId: string; providerId: string; kind: string; value: string }
   | { type: "secret-remove"; requestId: string; providerId: string; kind: string }
+  /** AI へ送る直前の確認依頼（EXE-API-003 相当）。payload は実際に送る bytes から作ったもの */
+  | { type: "ai-consent"; requestId: string; payload: AiConsentPayload }
+  /** 確認した1回の送信の結果（確認窓の表示用。本文・秘密値は含めない） */
+  | { type: "ai-outcome"; requestId: string; outcome: "completed" | "failed" | "outcomeUnknown" }
   /** 起動に失敗した（秘密値・絶対 path を含めない分類だけ） */
   | { type: "fatal"; code: "LISTEN_FAILED" | "INIT_INVALID" | "INTERNAL" };
 
