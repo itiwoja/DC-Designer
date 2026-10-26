@@ -1,5 +1,7 @@
 # Windows exe版：要件・技術仕様
 
+> **2026-10-26の変更：** AI送信確認窓の条件（EXE-FR-004／EXE-SCR-002）は[確認窓撤去の変更](./changes/2026-10-26-desktop-ai-direct-send.md)で置き換えた。現在のexe版はAI操作から追加確認なしで送信する。
+
 - プロジェクト：DC-Designer ／ 版数：v0.2（2026-10-26）／ 状態：設計のみ・未実装
 - 入力：[読む入口・未決事項](./README.md)、[配布・更新ポリシー](./release-policy.md)
 

@@ -1,5 +1,7 @@
 # Windows exe版 release設計：読む入口
 
+> **2026-10-26の実装変更：** 利用者の依頼によりAI送信確認窓を撤去。AI操作は追加確認なしで実行する。以下の設計資料の確認窓に関する条件は、[今回の変更](./changes/2026-10-26-desktop-ai-direct-send.md)で置き換える。
+
 - プロジェクト：DC-Designer ／ 版数：v0.2（2026-10-26）／ 状態：段階1を実装中（[実装メモ](./changes/2026-10-26-desktop-phase1-impl.md)）
 - 配布運用の正本：[配布・更新ポリシー](./release-policy.md)。本書はexe化の追加設計の入口。
 
