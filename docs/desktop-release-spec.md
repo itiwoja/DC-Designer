@@ -1,6 +1,6 @@
 # Windows exe版：要件・技術仕様
 
-- プロジェクト：DC-Designer ／ 版数：v0.1（2026-10-25）／ 状態：設計のみ・未実装
+- プロジェクト：DC-Designer ／ 版数：v0.2（2026-10-26）／ 状態：設計のみ・未実装
 - 入力：[読む入口・未決事項](./README.md)、[配布・更新ポリシー](./release-policy.md)
 
 > **3行で**
@@ -30,6 +30,7 @@ flowchart LR
 ## 要点
 
 - [範囲・要件](#範囲要件)：既存アプリに対するWindows製品化の追加設計。
+- [段階分け](#phases)：実装順の正本。段階1〜3はCodex無効・utilityProcess、supervisorは任意の段階4。
 - [操作・例外](#利用者操作)：AI送信の拒否、フォント未取得、保存失敗でも作業を守る。
 - [同梱境界](#exe-fr-001同梱境界)：生成物を除外するだけでなく、必要な資源だけを許可する。
 - [診断](#exe-fr-009診断)：画像・本文・秘密情報を持たない診断だけを利用者の操作で取り出す。
@@ -52,10 +53,10 @@ flowchart LR
 | EXE-REQ-006 | 検証済みコミット・署名・混入検査・本人承認を通った配布物だけ正式公開する | Must |
 | EXE-REQ-007 | 日本語編集、取り込み・書き出し、印刷、発表者ビュー等の既存の製品対象機能を維持する | Must |
 
-- In：Electronのインストール版、ユーザー単位の配置、通常ユーザー権限、ローカル保存、任意のAI連携、フォント取得、既存方針に沿う更新。
-- Codex・ComfyUIは基本機能の起動条件にしない。未導入時は任意連携を無効化し、別途の導入・認証が必要と案内する。個別機能の安全条件を満たさなければ、その経路を出荷対象にしない。
-- Won't：ポータブルexeの自己更新、OS全体への管理者権限要求、利用者データのクラウド同期、画像収集・自動診断送信、強制更新、既存Web版の全面再設計。
-- 対応OS・CPUの最終確定はEXE-Q-03。未確認のOS・アーキテクチャを対応済みと表示しない。
+- In：Electronのインストール版（Windowsのみ）、ユーザー単位の配置、通常ユーザー権限、ローカル保存、AI送信確認つきのAI連携（段階2）、フォント取得（段階2）、既存方針に沿う更新（段階3）。
+- Codex・ComfyUIは基本機能の起動条件にしない。**段階1〜3では製品版で無効**とし、有効化は段階4（Codex連携を入れる場合）に回す。未導入・無効時は別途の導入・認証が必要と案内する。個別機能の安全条件を満たさなければ、その経路を出荷対象にしない。
+- Won't：macOS・Linux版（EXE-D-07）、ポータブルexeの自己更新、OS全体への管理者権限要求、利用者データのクラウド同期、画像収集・自動診断送信、強制更新、既存Web版の全面再設計。
+- 対応プラットフォームはWindowsのみ（ユーザー回答 2026-10-26）。版・CPUは「Windows 10 / 11 のx64」をAI推奨とし、実機で確認した版だけを対応と表示する（EXE-Q-03は一部決定）。未確認のOS・アーキテクチャを対応済みと表示しない。
 
 ### 利用者の目的
 
@@ -79,17 +80,34 @@ flowchart LR
 
 図と状態・契約の詳細は[実行構成](./desktop-release-runtime.md)と[画像保護・フォント取得](./desktop-release-privacy.md)を正本とする。
 
+### 段階分け
+
+<a id="phases"></a>
+
+実装順の正本は本節とする。他文書は本節を参照し、段階を独自に定義しない。各段階の出荷は、下表の「出荷」に書いた範囲を超えない。
+
+| 段階 | 内容 | 対応するEXE-FR | 出荷 |
+| --- | --- | --- | --- |
+| 1 | Electron＋`app://dc-designer`＋限定IPC（`apiTransport`の差し替え）、`utilityProcess`のAPI、`userRoot`（`%LOCALAPPDATA%/DC-Designer/`）への保存先分離、iframeサムネイルの置き換え、許可リストによる隔離ビルド・配布物検査、名前付きパイプlease、通常終了の保存調停。Codex・ComfyUI連携は無効 | EXE-FR-001、002、003（保存先分離）、006（通常終了）、008、009 | 社内確認用（正式配信しない） |
+| 2 | AI送信の確認（確認窓1回）、フォント`text=`廃止と全文字埋め込み、資格情報のDPAPI保護、目的別egressゲート | EXE-FR-003（資格情報保護）、004、005 | 社内確認用 |
+| 3 | `electron-updater`による更新（[既存の更新設計](./desktop-update-design.md)どおり）、コード署名、配信CI・権限制限。ここまでにEXE-Q-01・Q-02を決める | EXE-FR-007 | 正式配信の候補 |
+| 4 | 任意：Codex連携を入れる場合に、native supervisor＋Job Objectを追加する（付録の設計）。同梱ランタイム・Windows用ヘルパー・RuntimeLeaseJournal（EXE-TBL-006）・子孫プロセス回収もここで扱う | EXE-FR-006（子孫回収） | 段階4の検証後 |
+
+- 段階1で必須となる実装の手間：サムネイル／描画プレビューは現行`src/editor/ui.tsx`で同一originのReactアプリを`iframe src="?view=render&embed=1"`として開いている。製品版では使えないため、**受動的な描画snapshot（画像化したプレビュー）への置き換え**を必須タスクとする。
+- 段階1〜3で削った設計（公式Windows Nodeの別同梱、署名済みnative supervisor、Job Object、`PROC_THREAD_ATTRIBUTE_JOB_LIST`、RuntimeLeaseJournal、profile.jsonの世代印）は、削除せず「段階4の設計（現時点では実装しない）」として[実行構成の付録](./desktop-release-runtime.md)に移す。
+- 段階3に入る前に正式配信しない。段階1〜2の成果物は社内確認用であり、利用者へ案内する更新・公開の対象にしない。
+
 ### 採用する製品構成
 
 | 領域 | 採用する設計 | 理由・制約 |
 | --- | --- | --- |
 | アプリ | Electron＋React。sandbox・contextIsolationを有効化し、rendererのNode利用は無効 | 既存UIを維持し、OS操作は限定したmainの契約へ閉じ込める |
 | 画面・API | 同梱静的資源の固定`app://dc-designer`＋認可した限定IPC＋mainからの内部HTTP中継 | ブラウザ保存のoriginを維持し、実sender／frameを確認する。ループバックの動的ポートはrendererへ公開せず、開発用Vite proxyと固定8787番から独立する |
-| API実行 | 製品に同梱した公式Windows Node＋ビルド済みAPI。Windows native supervisorとJob Objectで所有プロセスを管理 | 利用者のNode導入は不要。Electronの`utilityProcess.kill()`だけで子孫終了を保証しない。サイズと追加ランタイムの保守負担は受け入れる |
+| API実行 | Electronの`utilityProcess`でビルド済みAPIを実行（段階1〜3）。保存先の排他は利用者SIDと正規化`userRoot`から作るWindows名前付きパイプ`\\.\pipe\dc-designer-lease-<hash>`の簡易lease。native supervisor＋Job Objectは段階4で追加 | 利用者のNode導入は不要。段階1〜3はCodexを無効にしAPIが孫プロセスを常駐させないため、子孫回収の保証は要らない。`utilityProcess`は親mainとのIPCが切れると終了する。残る子プロセスはフォントのOS登録の短時間PowerShellだけで、終了時は完了を待つ。`utilityProcess.kill()`だけで子孫終了を保証しないため、Codex連携を入れる段階4でsupervisorを足す |
 | 配布・更新 | `electron-builder`のNSISインストール版＋`electron-updater`、ユーザー単位の配置 | 自動取得・自動適用を無効にした既存更新設計を継承する |
-| 版の固定 | Electron・同梱Node・builder・updater・native helper・依存を互換性検証した固定版にする | 本書では未検証の版番号を発明しない。版が固定・検証されるまで正式配信しない |
+| 版の固定 | Electron・builder・updater・依存を互換性検証した固定版にする。段階4で同梱Node・native helperを追加する場合も同様 | 本書では未検証の版番号を発明しない。版が固定・検証されるまで正式配信しない |
 
-Windows native supervisorの生成時Job所属・HANDLE監視と、その適用範囲は[実行構成](./desktop-release-runtime.md)を正本とする。Job Objectは外部送信を防ぐ仕組みではなく、[画像送信の許可制](./desktop-release-privacy.md)も別途必要になる。
+Windows native supervisorの生成時Job所属・HANDLE監視と、その適用範囲（段階4の設計。現時点では実装しない）は[実行構成](./desktop-release-runtime.md)を正本とする。Job Objectは外部送信を防ぐ仕組みではなく、[画像送信の許可制](./desktop-release-privacy.md)も別途必要になる。
 
 ### 機能・技術仕様の所在
 
@@ -100,7 +118,7 @@ Windows native supervisorの生成時Job所属・HANDLE監視と、その適用�
 | EXE-FR-003 | データ・資格情報の分離と保護 | [画像保護](./desktop-release-privacy.md) |
 | EXE-FR-004 | 目的別の外部通信とAI送信確認 | [画像保護](./desktop-release-privacy.md) |
 | EXE-FR-005 | 作品情報を含まないフォント取得 | [画像保護](./desktop-release-privacy.md) |
-| EXE-FR-006 | 全保存後の終了・Windowsプロセス回収 | [実行構成](./desktop-release-runtime.md) |
+| EXE-FR-006 | 全保存後の終了（段階1）・Windowsプロセス回収（子孫回収は段階4） | [実行構成](./desktop-release-runtime.md) |
 | EXE-FR-007 | 署名・本人承認を必須とする正式配信 | [配布・更新ポリシー](./release-policy.md) |
 | EXE-FR-008 | 内部窓・外部リンク・OS機能の分離 | [実行構成](./desktop-release-runtime.md) |
 | EXE-FR-009 | 内容を含まない診断 | 本書の診断節 |
@@ -115,7 +133,7 @@ Windows native supervisorの生成時Job所属・HANDLE監視と、その適用�
 - `files`・`extraResources`は専用ステージ内の必要な生成コード・実行環境・資源だけを列挙する。リポジトリ全体・ホーム・`public/**`・作業ディレクトリを包括指定しない。
 - `public/generated/`、`data/`、`backup/`、`.output/`、`.env*`、認証JSON、実行時ログ、フォントの利用者キャッシュ、未承認画像を入力にしない。`.gitignore`や除外パターンだけを安全性の根拠にしない。
 - シンボリックリンク、Windows junction等によるステージ外参照を拒否し、コピー元・コピー先を実体パスで検証する。検査で見つかった利用者ファイルを勝手に削除して「合格」にしない。
-- Electron、同梱ランタイム、Windows用ヘルパー、製品API、preload、Web資源、PDF.jsのcmaps／standard_fonts／wasm、コードから読み込むサンプル、ライセンスを配布目録に含める。製品起動に`tsx`・watch・Vite・npmを要求しない。
+- Electron、製品API、preload、Web資源、PDF.jsのcmaps／standard_fonts／wasm、コードから読み込むサンプル、ライセンスを配布目録に含める。製品起動に`tsx`・watch・Vite・npmを要求しない。同梱ランタイム（公式Windows Node）とWindows用ヘルパー（native supervisor）は**段階4で追加する場合に**目録へ含める。段階1〜3では同梱しない。
 - ソースマップは公開配布しない。ビルド時に開発者のキーや`VITE_*`の私的情報を埋め込まない。SBOM・ライセンス一覧・リリースノートにも利用者情報を含めない。
 - GitHubがタグから自動生成するソースアーカイブも公開物として扱う。タグ対象の追跡ファイルにも禁止データがなく、画像・音声・サンプル等の由来が承認済みであることを確認する。過去に公開済みの私的情報は、今回の配布から除外するだけで未流出に戻せるとはしない。
 - 署名前だけでなく最終NSIS・展開後のアプリ・asar・extraResources・更新用ファイルまで列挙・検査する。検査不能、未説明のファイル、禁止データの検出は必ず不合格とする。
@@ -153,7 +171,7 @@ Windows native supervisorの生成時Job所属・HANDLE監視と、その適用�
 | ID | 合格値・計測の対象 | 要件 |
 | --- | --- | --- |
 | EXE-NFR-001 | 明示許可前・拒否後・失効後に送られる対象画像のバイト数は0。配布物・ログ・更新への画像混入も0 | EXE-REQ-001 |
-| EXE-NFR-002 | 基本起動に利用者が追加するNode.js・npm・WSLの数は0。実行中のAPI個体は1つ | EXE-REQ-002、004 |
+| EXE-NFR-002 | 基本起動に利用者が追加するNode.js・npm・WSLの数は0。実行中のAPI個体（`utilityProcess`）は1つ | EXE-REQ-002、004 |
 | EXE-NFR-003 | フォント取得URL・ヘッダー・本文に含まれる作品文字、画像、AI資格情報は0 | EXE-REQ-005 |
 | EXE-NFR-004 | 全対象の保存確認不足で行われる通常終了・更新適用は0。OS強制終了時は未保存分の完全復元を保証しない | EXE-REQ-003、004 |
 | EXE-NFR-005 | 未説明の同梱資源、署名不一致、未承認公開の許容数は0 | EXE-REQ-006 |
@@ -165,8 +183,9 @@ Windows native supervisorの生成時Job所属・HANDLE監視と、その適用�
 
 - **配布物**：隔離した試験用の`public/generated/`・`data/`・ホーム・`.env`に人工的なカナリアデータを置いても、配布物・CI artifact・ログに入らない。これは実在の利用者画像を使う試験ではない。未知の資源・外部参照・検査不能なアーカイブは配信を止める。
 - **送信**：同意なし／拒否／古いID／画像差し替え／自動比較画像／プロバイダ切替／リダイレクトで送信範囲を拡張できない。画像URL、base64、multipart、スクリーンショット等の全対応経路を確認する。暗号化通信は許可済み試験環境で送信直前ペイロードとネットワークの両方を検証する。
+- **段階1（社内確認用）**：iframeサムネイルがrenderアプリのiframeを使わず、受動的な描画snapshotで表示される。Codex・ComfyUI連携が製品版で無効であり、起動中・終了後にAPIの孫プロセスが残らない。名前付きパイプleaseで、同名使用中の新APIが書き込みを始めず「前回の終了処理を待っています」を表示し、期限超過で`failed`になる。
 - **製品起動**：クリーンなWindowsの通常ユーザー、日本語・空白を含むパス、Node・npm・WSL未導入で起動する。開発ポートが他アプリに使われていても、そのアプリにデータを渡さない。
-- **保存・終了**：複数スライド・ノート・IME確定待ち・保留中保存、保存先の容量不足・権限拒否・API切断で確認する。通常終了と更新、main／API／Codexの異常終了、PCのスリープ復帰で所有プロセスの残留・他人のプロセスの誤停止がないことを確かめる。
+- **保存・終了**：複数スライド・ノート・IME確定待ち・保留中保存、保存先の容量不足・権限拒否・API切断で確認する。通常終了と更新、main／APIの異常終了、PCのスリープ復帰で、`utilityProcess`とフォント登録の子プロセスの残留がなく、他人のプロセスを誤って停止しないことを確かめる（段階1〜3）。Codex連携を入れる段階4では、Codexの異常終了と子孫プロセス回収（Job Object）も確かめる。
 - **フォント・互換性**：未取得・取得済みそれぞれのオフライン動作、Google Fonts障害、不正フォント、ライセンス、OSインストール拒否を確認する。日本語入力、PDF・PPTX取り込み、PNG・SVG・PPTX書き出し、印刷、発表者ビュー、複数画面・高DPIで検証する。
 - **更新・移行**：新規インストール、旧版からの実更新、データ形式移行失敗、旧ブラウザ保存からの明示移行、アンインストール・再インストールを確認する。資格情報が復号不能なら再認証とし、作業データを削除しない。
 - **公開権限**：第三者のPR・タグ・再実行・Releases直接操作・承認バイパスで正式配信できないことを検証する。署名・配信停止・未検証キャッシュの扱いは既存更新設計の受け入れ条件にも合格する。
@@ -183,14 +202,14 @@ Windows native supervisorの生成時Job所属・HANDLE監視と、その適用�
 | EXE-REQ-001 | EXE-US-001 | EXE-UC-002、005 | EXE-FR-001、004、009 | EXE-SCR-002、007／EXE-API-003、004、007／EXE-TBL-004、005 |
 | EXE-REQ-002 | EXE-US-002 | EXE-UC-001 | EXE-FR-002 | EXE-SCR-001／EXE-API-001、009 |
 | EXE-REQ-003 | EXE-US-001 | EXE-UC-006 | EXE-FR-003 | EXE-SCR-004／EXE-API-006、009／EXE-TBL-001、002 |
-| EXE-REQ-004 | EXE-US-002 | EXE-UC-001、004 | EXE-FR-002、006 | EXE-SCR-001、005／EXE-API-001、002／EXE-TBL-006 |
+| EXE-REQ-004 | EXE-US-002 | EXE-UC-001、004 | EXE-FR-002、006 | EXE-SCR-001、005／EXE-API-001、002／EXE-TBL-006（段階4。段階1〜3は名前付きパイプlease） |
 | EXE-REQ-005 | EXE-US-003 | EXE-UC-003 | EXE-FR-005 | EXE-SCR-003／EXE-API-005／EXE-TBL-003 |
 | EXE-REQ-006 | EXE-US-004 | EXE-UC-005 | EXE-FR-007 | EXE-TBL-005／[既存の更新画面・API](./desktop-update-design.md#プロセス間通信データ) |
 | EXE-REQ-007 | EXE-US-003 | EXE-UC-001、003、004 | EXE-FR-008 | EXE-SCR-006／EXE-API-008、009 |
 
 </details>
 
-新規のRDB・クラウドDBは追加しない。EXE-TBL-001〜004の所有者・整合性・保持期間は[画像保護のデータ契約](./desktop-release-privacy.md)、EXE-TBL-006の世代間停止記録は[実行構成](./desktop-release-runtime.md#runtime-lease)、既存のポスター・デッキの構造は現行スキーマを正本とする。
+新規のRDB・クラウドDBは追加しない。EXE-TBL-001〜004の所有者・整合性・保持期間は[画像保護のデータ契約](./desktop-release-privacy.md)、EXE-TBL-006の世代間停止記録（段階4の設計。段階1〜3は名前付きパイプleaseで代替）は[実行構成](./desktop-release-runtime.md#runtime-lease)、既存のポスター・デッキの構造は現行スキーマを正本とする。
 
 ### 現状との差分と用語
 
@@ -203,18 +222,21 @@ Windows native supervisorの生成時Job所属・HANDLE監視と、その適用�
 | 配布資源 | コードと承認済み静的資源。利用者の生成画像・取り込み画像とは別物 |
 | 現行`package.json`のbuild | フロントのVite buildのみ。製品API・実行環境・プロセス管理・署名は未実装 |
 | 現行`public/generated/`・`data/` | 開発時の保存先。製品版の読み書き先やビルド入力として流用しない |
-| 現行のフォント取得 | `text=`で作品文字を送る箇所がある。製品版では廃止し、カタログ情報だけで取得する |
+| 現行のフォント取得 | `text=`で作品文字を送る箇所がある。製品版では廃止し、カタログ情報だけで全文字入りの単一TTFを取得して、そのままSVG／PPTXへ埋め込む（書き出しファイルが大きくなる。端末内サブセット化は後の任意改善） |
 
 ### 決定事項ログ
 
 | ID | 決定・理由 | 決定者 |
 | --- | --- | --- |
 | EXE-D-01 | 画像の混入・無断送信は禁止。外部AIは対象と送信先を明示確認した操作だけ許可 | ユーザー回答／[ADR-002](./adr/ADR-002-private-data-and-consent.md) |
-| EXE-D-02 | 製品用の画面・API接続とWindowsプロセス管理を分離する | AI判断（推奨方法の設計をユーザーが委任）／[ADR-003](./adr/ADR-003-desktop-runtime.md) |
-| EXE-D-03 | フォント取得は維持。作品文字の送信をなくし、必要ならPC内でサブセット化する | 取得維持はユーザー指定、方式は安全性のためのAI判断／[ADR-004](./adr/ADR-004-font-acquisition.md) |
+| EXE-D-02 | 製品用の画面・API接続とWindowsプロセス管理を分離する。段階1〜3は`utilityProcess`、supervisorは段階4（EXE-D-08で改訂、2026-10-26） | AI判断（推奨方法の設計をユーザーが委任）／[ADR-003](./adr/ADR-003-desktop-runtime.md) |
+| EXE-D-03 | フォント取得は維持。作品文字の送信をなくす。端末内サブセット化は段階2では行わず全文字を埋め込む（EXE-D-09、2026-10-26で改訂） | 取得維持はユーザー指定、方式は安全性のためのAI判断／[ADR-004](./adr/ADR-004-font-acquisition.md) |
 | EXE-D-04 | クリーンCI・許可リスト・最終配布物の検査を公開必須条件にする | 安全性のためのAI判断／[ADR-005](./adr/ADR-005-release-artifact-boundary.md) |
 | EXE-D-05 | インストール版・通常ユーザー権限・任意連携は基本起動から分離。製品識別子と保存先を固定する | 既存範囲＋推奨構成のAI判断。OS・CPU・署名方式は未承認のまま明示 |
 | EXE-D-06 | 新規IDにEXE-を付け、既存更新のREQ-001〜005等を改番しない。実装・公開は行わない | 定石／ユーザー依頼の範囲 |
+| EXE-D-07 | 対応プラットフォームはWindowsのみ。macOS・Linux版はWon't。版・CPUはWindows 10 / 11のx64をAI推奨とし、実機確認した版だけ対応と表示（2026-10-26）。EXE-Q-03は一部決定 | ユーザー回答（Windowsのみ）／AI推奨（版・CPU） |
+| EXE-D-08 | [段階分け](#phases)（段階1〜4）を採用。API実行は`utilityProcess`、保存先の排他は名前付きパイプlease、Codex・ComfyUI連携は段階1〜3で製品版無効、native supervisor＋Job Objectは段階4（2026-10-26）。iframeサムネイルの置き換えを段階1の必須タスクにする | ユーザー（改善案の適用を承認）／AI設計判断／[ADR-003](./adr/ADR-003-desktop-runtime.md) |
+| EXE-D-09 | AI送信の確認は、mainが生成する専用の確認窓（別webContents・別preload）での1回に簡素化し、ネイティブ確認ダイアログとの二重確認をやめる。フォント埋め込みは段階2で端末内サブセット化せず全文字のまま。`text=`廃止は維持（2026-10-26） | ユーザー（改善案の適用を承認）／[ADR-002](./adr/ADR-002-private-data-and-consent.md)、[ADR-004](./adr/ADR-004-font-acquisition.md) |
 
 ## このドキュメントで決まったこと
 
