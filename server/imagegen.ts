@@ -1,4 +1,3 @@
-import OpenAI from "openai";
 import { createHash } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -72,7 +71,9 @@ function provider(requested?: string): ImageProvider {
   return avail.find((a) => a !== "comfyui" || process.env.COMFYUI_URL)!;
 }
 
+// openai SDK は読み込みに時間がかかる（/mnt/c 上だと 10 秒以上）ので、起動を遅くしないよう使うときに読み込む
 async function generateOpenAI(prompt: string, asset: AssetRequest, signal?: AbortSignal): Promise<Buffer> {
+  const { default: OpenAI } = await import("openai");
   const openai = new OpenAI();
   const res = await openai.images.generate({
     model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-2.5-flare",

@@ -6,7 +6,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import OpenAI from "openai";
 import { authStatus, getAccessToken, USAGE_URL } from "./chatgpt-auth";
 
 /** detail: 画像の読み取りの細かさ（再現のように細部の位置・文字を読ませるときは "high"） */
@@ -111,6 +110,7 @@ const toInput = (turns: Turn[]) =>
 /** 応答ストリームが response.completed の前に切れたとき、最初から送り直す回数（長い再現などで接続が途中で閉じられることがある） */
 const STREAM_RETRIES = 2;
 
+// openai SDK は読み込みに時間がかかる（/mnt/c 上だと 10 秒以上）ので、起動を遅くしないよう使うときに読み込む
 /** 会話を送り、ストリームで返ってきたテキスト全体を返す。onText には受け取り途中のテキスト全体を渡す（進み具合の表示用） */
 export async function askChatGPT(instructions: string, turns: Turn[], onText?: (text: string) => void, signal?: AbortSignal): Promise<string> {
   for (let attempt = 0; ; attempt++) {
@@ -119,6 +119,7 @@ export async function askChatGPT(instructions: string, turns: Turn[], onText?: (
     let text = "";
     let completed = false;
     let lastEvent = "(なし)";
+    const { default: OpenAI } = await import("openai");
     const client = new OpenAI({ apiKey: await getAccessToken(), baseURL: API_BASE, maxRetries: 0 });
     try {
       const stream = await client.responses.create({ model: await chatGPTModel(), instructions, input: toInput(turns), store: false, stream: true }, { signal });
