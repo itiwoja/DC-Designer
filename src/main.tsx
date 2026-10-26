@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./editor/App";
+import { DesktopRuntime } from "./editor/DesktopRuntime";
 import { Home } from "./editor/Home";
 import { Library } from "./editor/Library";
 import { readModeParam } from "./editor/mode";
@@ -38,8 +39,8 @@ const view = params.get("view");
 const authReturn = params.has("chatgpt") || params.has("chatgpt_error");
 // useHistory は state 更新関数内で履歴を積むため StrictMode（二重実行）は使わない
 createRoot(document.getElementById("root")!).render(
-  view === "render" ? <RenderOnly /> : <>
+  view === "render" ? <RenderOnly /> : <DesktopRuntime>
     {view === "library" ? <Library /> : view === "editor" || authReturn ? <App /> : <Home mode={readModeParam() ?? undefined} />}
     <ConfirmHost />
-  </>,
+  </DesktopRuntime>,
 );

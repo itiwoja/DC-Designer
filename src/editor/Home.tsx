@@ -5,6 +5,7 @@ import { PDF_FILE_ACCEPT } from "../import/pdfDocument";
 import { findPendingAssets } from "../schema";
 import { blankInstagramSpec, IG_RATIO_KEYS, IG_RATIOS, type IgRatio } from "../instagram";
 import { api, AUTH_CHANNEL, deckBySlide, type Deck, type SavedPoster, type Status } from "./api";
+import { desktopBridge } from "./desktop";
 import { BLANK_SLIDE_SPEC, BLANK_SPEC, IMPORT_NOTICE_KEY, HOME_URL, openDeckInEditor, openInEditor } from "./nav";
 import { MODE_KEYS, MODES, modeHomeUrl, modeLibraryUrl, modeOfDeck, readLastId, type AppMode } from "./mode";
 import { PosterFrame, ThemeMenu, useLoadWithRetry } from "./ui";
@@ -200,8 +201,9 @@ export function Home({ mode }: { mode?: AppMode }) {
   }
 
   // サインインしていなければ、ログインの誘導だけを出す（サインインの結果は別タブから届き、load で取り直す）。
-  // OpenRouter を使う状態（キーがあり、ChatGPT を選んでもいない）ならサインインなしで使えるので、ホームを出す
-  if (!gpt?.signedIn && status.ai?.provider !== "openrouter") {
+  // OpenRouter を使う状態（キーがあり、ChatGPT を選んでもいない）ならサインインなしで使えるので、ホームを出す。
+  // Windows 版の段階1は AI・サインインを使わないローカル編集だけなので、誘導を出さない
+  if (!desktopBridge() && !gpt?.signedIn && status.ai?.provider !== "openrouter") {
     const previousEmail = gpt && !gpt.signedIn ? gpt.previousEmail : undefined;
     return (
       <div className="home login-screen">
