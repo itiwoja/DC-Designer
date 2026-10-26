@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCloseCoordinator } from "../desktop/close";
+import { DESKTOP_OPERATIONS, type DesktopOperation } from "../desktop/operations";
 import { API_PROTOCOL_VERSION, DESKTOP_TOKEN_HEADER } from "../desktop/protocol";
 import type { MainToWorker } from "../desktop/protocol";
 import { createSecretStore } from "../desktop/secrets";
@@ -182,6 +183,30 @@ describe("createRuntime", () => {
     expect(rt.beginClosing()).toBe(true);
     expect(await rt.request(op, "/api/x", { a: 1 })).toMatchObject({ ok: false, code: "INVALID_STATE" });
     expect(await rt.request(save, "/api/posters/abcdefabcdef", { a: 1 })).toEqual({ ok: true, data: { ok: 1 } });
+  });
+});
+
+describe("終了前の確定保存", () => {
+  it("実際の操作一覧のうち作品の新規保存・更新だけを closing 中に中継する", async () => {
+    const { rt, children, fetchImpl, readyMsg } = setup();
+    rt.start();
+    for (const name of ["posters.create", "posters.update"] as const) {
+      expect(await rt.request(DESKTOP_OPERATIONS[name], "/api/posters/abcdefabcdef", {})).toMatchObject({ ok: false, code: "INVALID_STATE" });
+    }
+    children[0].emit(readyMsg(children[0])); await tick();
+    expect(rt.beginClosing()).toBe(true);
+    for (const [name, op] of Object.entries(DESKTOP_OPERATIONS) as [string, DesktopOperation][]) {
+      const path = op.route.replace(/:[a-zA-Z]+/g, "abcdefabcdef");
+      const result = await rt.request(op, path, op.maxBody ? {} : undefined);
+      if (name === "posters.create" || name === "posters.update") {
+        expect(result).toEqual({ ok: true, data: { ok: 1 } });
+      } else {
+        expect(result).toMatchObject({ ok: false, code: "INVALID_STATE" });
+      }
+    }
+    expect(fetchImpl).toHaveBeenCalledTimes(3); // health と保存2回だけ
+    children[0].exit();
+    expect(await rt.request(DESKTOP_OPERATIONS["posters.update"], "/api/posters/abcdefabcdef", {})).toMatchObject({ ok: false, code: "INVALID_STATE" });
   });
 });
 
