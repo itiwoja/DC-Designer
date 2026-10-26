@@ -56,6 +56,7 @@ import { useZoom } from "./useZoom";
 import { MAX_REFERENCES, MAX_REFERENCE_DATA_BYTES } from "../referenceLimits";
 import { REFERENCE_FILE_ACCEPT, readReferenceFile, type ReferencePage } from "./referenceFiles";
 import { ImageAttach } from "./ImageAttach";
+import { ReferenceAttachments } from "./ReferenceAttachments";
 
 const IMAGE_PROVIDER_KEY = "dc-designer:image-provider";
 const AUTO_IMAGES_KEY = "dc-designer:auto-images";
@@ -531,17 +532,6 @@ export function App() {
     next.splice(to, 0, ...next.splice(i, 1));
     return next;
   });
-
-  const referencePreviews = refs.length > 0 && (
-    <div className="refs" aria-label="添付した参考資料">
-      {refs.map((r, i) => (
-        <div key={i} className="ref" title={r.name}>
-          <img src={r.url} alt={r.name} />
-          <button className="ref-x" aria-label={`${r.name} を外す`} disabled={readingRefs || !!busy} onClick={() => setRefs((x) => x.filter((_, j) => j !== i))}>×</button>
-        </div>
-      ))}
-    </div>
-  );
 
   // ---------- AI: チャット ----------
   /**
@@ -1555,16 +1545,23 @@ export function App() {
                     onChange={(e) => setImgPrompt(e.target.value)}
                     onKeyDown={submitOnEnter(generateImageFromInput, canGenImage)}
                   />}
-              {chatMode === "chat" && referencePreviews}
+              {chatMode === "chat" && <ReferenceAttachments files={refs} disabled={readingRefs || !!busy} onRemove={(i) => setRefs((x) => x.filter((_, j) => j !== i))} />}
               {chatMode === "chat" && readingRefs && <p className="hint small" role="status">参考資料を読み込み中…</p>}
               <div className="composer-bar">
-                {chatMode === "chat" && <label className="as-button small" title="参考資料として画像・PDFを添付（合計20ページまで、1ファイル20MB）">
-                  <Ico name="file" /> 画像・PDF
-                  <input type="file" accept={REFERENCE_FILE_ACCEPT} multiple hidden disabled={readingRefs || !!busy} onChange={(e) => { onRefFiles(e.target.files); e.target.value = ""; }} />
-                </label>}
-                <label className={"as-button small icon" + (busy ? " disabled" : "")} title={canReplaceImage ? "画像ファイルで差し替え" : "画像ファイルから挿入（キャンバスへのドロップ・貼り付けでも可）"} aria-label="画像ファイルを入れる">
+                <label
+                  className={"as-button small icon" + (busy || (chatMode === "chat" && readingRefs) ? " disabled" : "")}
+                  title={chatMode === "chat" ? "参考資料として画像・PDFを添付（合計20ページまで、1ファイル20MB）" : canReplaceImage ? "画像ファイルで差し替え" : "画像ファイルから挿入（キャンバスへのドロップ・貼り付けでも可）"}
+                  aria-label={chatMode === "chat" ? "参考資料を添付" : "画像ファイルを入れる"}
+                >
                   <Ico name="paperclip" />
-                  <input type="file" accept={IMAGE_FILE_ACCEPT} multiple={!canReplaceImage} hidden disabled={!!busy} onChange={(e) => { insertImageFilesHere(e.target.files); e.target.value = ""; }} />
+                  <input
+                    type="file"
+                    accept={chatMode === "chat" ? REFERENCE_FILE_ACCEPT : IMAGE_FILE_ACCEPT}
+                    multiple={chatMode === "chat" || !canReplaceImage}
+                    hidden
+                    disabled={!!busy || (chatMode === "chat" && readingRefs)}
+                    onChange={(e) => { if (chatMode === "chat") onRefFiles(e.target.files); else insertImageFilesHere(e.target.files); e.target.value = ""; }}
+                  />
                 </label>
                 {chatMode === "image" && <label className="check"><input type="checkbox" checked={imgTransparent} onChange={(e) => setImgTransparent(e.target.checked)} /> 透過</label>}
                 {chatMode === "chat" && aiProvider === "chatgpt" && gpt?.signedIn && gpt.models?.length ? (

@@ -711,6 +711,12 @@ button.primary.danger, button.primary.danger:hover:not(:disabled) { background: 
 .composer .seg { gap: 0; }
 .composer .seg button { flex: none; font-size: 12px; padding: 3px 8px; }
 .composer textarea { border: none; padding: 2px; resize: none; background: transparent; }
+/* 添付画像・PDF はファイル表示にして、長い名前や複数の添付も入力欄からはみ出させない */
+.reference-files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; max-height: 160px; overflow-y: auto; }
+.reference-file { display: flex; align-items: center; gap: 8px; flex: none; min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-size: 12px; }
+.reference-file > .ico { flex: none; color: var(--muted); }
+.reference-file-name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.reference-file .icon-btn { flex: none; width: 24px; height: 24px; }
 .composer-bar { display: flex; align-items: center; gap: 8px; }
 .composer-bar .send { margin-left: auto; padding: 6px 16px; border-radius: 999px; }
 /* 送信ボタンの左のモデル選択。これがあるときは選択欄ごと右に寄せる */
