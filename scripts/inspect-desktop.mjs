@@ -1,7 +1,7 @@
 // 配布物の検査：許可リスト・禁止物・秘密値・開発者の絶対 path。
 // 使い方: node scripts/inspect-desktop.mjs <ステージ dir | release/win-unpacked>
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, lstatSync, writeFileSync, mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -77,11 +77,14 @@ export function inspectEntries(entries) {
 }
 
 function walk(dir, base = dir, out = []) {
+  if (lstatSync(dir).isSymbolicLink()) throw new Error("inspect: symbolic links are not allowed");
   for (const name of readdirSync(dir).sort()) {
     const full = path.join(dir, name);
-    const st = statSync(full);
+    const st = lstatSync(full);
+    if (st.isSymbolicLink()) throw new Error("inspect: symbolic links are not allowed");
     if (st.isDirectory()) walk(full, base, out);
-    else out.push({ rel: path.relative(base, full).split(path.sep).join("/"), read: () => readFileSync(full) });
+    else if (st.isFile()) out.push({ rel: path.relative(base, full).split(path.sep).join("/"), read: () => readFileSync(full) });
+    else throw new Error("inspect: unsupported filesystem entry");
   }
   return out;
 }
@@ -91,6 +94,7 @@ export function dirEntries(dir) {
 }
 
 export async function asarEntries(asarPath) {
+  if (!lstatSync(asarPath).isFile()) throw new Error("inspect: app.asar must be a regular file");
   const require = createRequire(import.meta.url);
   const asar = require("@electron/asar");
   const list = asar.listPackage(asarPath, { isPack: false });
@@ -99,9 +103,13 @@ export async function asarEntries(asarPath) {
     const rel = item.replace(/\\/g, "/").replace(/^\//, "");
     let buf;
     try {
+      const stat = asar.statFile(asarPath, rel, false);
+      if ("link" in stat) throw new Error("symbolic link");
+      if ("files" in stat) continue;
       buf = asar.extractFile(asarPath, rel);
     } catch {
-      continue; // ディレクトリ
+      // 元の例外には開発者の絶対 path などが含まれ得るため出力しない。
+      throw new Error("inspect: ASAR entry could not be inspected");
     }
     entries.push({ rel, read: () => buf });
   }
@@ -117,17 +125,34 @@ export function writeManifest(file, files) {
 
 /** ステージ dir または win-unpacked を検査して結果を表示。問題があれば false */
 export async function inspectTarget(target) {
+  if (lstatSync(path.resolve(target)).isSymbolicLink()) throw new Error("inspect: symbolic links are not allowed");
   const asarPath = path.join(target, "resources", "app.asar");
   const isPacked = existsSync(asarPath);
-  const entries = isPacked ? await asarEntries(asarPath) : dirEntries(target);
-  const { problems, files } = inspectEntries(entries);
+  const resourceProblems = [];
+  if (isPacked) {
+    const resources = path.dirname(asarPath);
+    if (lstatSync(resources).isSymbolicLink()) throw new Error("inspect: symbolic links are not allowed");
+    for (const name of readdirSync(resources).sort()) {
+      const stat = lstatSync(path.join(resources, name));
+      if (stat.isSymbolicLink()) throw new Error("inspect: symbolic links are not allowed");
+      if (name !== "app.asar" && name !== "app.asar.unpacked") {
+        resourceProblems.push({ file: `resources/${name}`, kind: "not in allowlist" });
+      } else if (name === "app.asar.unpacked" && !stat.isDirectory()) {
+        throw new Error("inspect: app.asar.unpacked must be a directory");
+      }
+    }
+  }
+  // ASAR の抽出がリンク先を読むより前に unpacked 全体の種類を検査する。
   // asarUnpack で外に出したファイルは worker.mjs だけ許す
   const unpackedDir = path.join(target, "resources", "app.asar.unpacked");
   if (isPacked && existsSync(unpackedDir)) {
     for (const { rel } of dirEntries(unpackedDir)) {
-      if (rel !== "build/desktop/worker.mjs") problems.push({ file: `app.asar.unpacked/${rel}`, kind: "not in allowlist" });
+      if (rel !== "build/desktop/worker.mjs") resourceProblems.push({ file: `app.asar.unpacked/${rel}`, kind: "not in allowlist" });
     }
   }
+  const entries = isPacked ? await asarEntries(asarPath) : dirEntries(target);
+  const { problems, files } = inspectEntries(entries);
+  problems.push(...resourceProblems);
   const manifest = isPacked ? path.resolve(target, "..", "desktop-manifest.json") : path.resolve(target, "..", "manifest.json");
   const total = writeManifest(manifest, files);
   console.log(`inspect: ${files.length} files, ${total} bytes -> ${path.relative(process.cwd(), manifest)}`);
