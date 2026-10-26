@@ -3,7 +3,7 @@
  * 生の ipcRenderer・任意 channel は出さない
  */
 import { contextBridge, ipcRenderer } from "electron";
-import { IPC, type DesktopBridge, type PrepareCloseRequest, type RuntimeSnapshot } from "./bridge";
+import { IPC, type DesktopBridge, type DesktopProgress, type PrepareCloseRequest, type RuntimeSnapshot } from "./bridge";
 
 /** 購読して解除関数を返す（IpcRendererEvent は画面へ渡さない） */
 function subscribe<T>(channel: string, cb: (v: T) => void): () => void {
@@ -13,7 +13,22 @@ function subscribe<T>(channel: string, cb: (v: T) => void): () => void {
 }
 
 const bridge: DesktopBridge = {
-  request: (req) => ipcRenderer.invoke(IPC.request, req),
+  request: async (req, opts) => {
+    const callId = opts?.callId;
+    const onProgress = opts?.onProgress;
+    // 関数は IPC へ送れないので callId だけ渡す。結果が返ったら（成功・失敗とも）購読を解除する
+    const off = callId && onProgress
+      ? subscribe<{ callId?: unknown; progress?: DesktopProgress }>(IPC.progress, (m) => {
+          if (m && m.callId === callId && m.progress) onProgress(m.progress);
+        })
+      : null;
+    try {
+      return await ipcRenderer.invoke(IPC.request, req, callId ? { callId } : undefined);
+    } finally {
+      off?.();
+    }
+  },
+  cancel: (callId) => { void ipcRenderer.invoke(IPC.cancel, callId).catch(() => {}); },
   runtime: {
     getState: () => ipcRenderer.invoke(IPC.getState),
     retryStart: () => ipcRenderer.invoke(IPC.retryStart),

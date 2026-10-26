@@ -202,7 +202,7 @@ export function Home({ mode }: { mode?: AppMode }) {
 
   // サインインしていなければ、ログインの誘導だけを出す（サインインの結果は別タブから届き、load で取り直す）。
   // OpenRouter を使う状態（キーがあり、ChatGPT を選んでもいない）ならサインインなしで使えるので、ホームを出す。
-  // Windows 版の段階1は AI・サインインを使わないローカル編集だけなので、誘導を出さない
+  // 製品版は未サインインでもローカル編集ができるのでホームを出す（サインインはアカウント表示から）
   if (!desktopBridge() && !gpt?.signedIn && status.ai?.provider !== "openrouter") {
     const previousEmail = gpt && !gpt.signedIn ? gpt.previousEmail : undefined;
     return (

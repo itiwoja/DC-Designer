@@ -19,6 +19,7 @@ import {
 import { createAiConsentBroker } from "./aiConsent";
 import { createAuthGate } from "./authGate";
 import { IPC, type DesktopResult, type PrepareCloseResult } from "./bridge";
+import { createCallRegistry, parseCallOptions } from "./callRegistry";
 import { createCloseCoordinator } from "./close";
 import { CONSENT_PARTITION, createConsentWindowHost, lockdownConsentSession } from "./consentWindow";
 import { consentDialogOptions, createFontGate, installDialogOptions } from "./fontGate";
@@ -168,13 +169,33 @@ function secretResult(r: SecretResult): DesktopResult {
   return { ok: true, data: { secretRef: r.secretRef, state: r.state } };
 }
 
+const calls = createCallRegistry();
+
 function registerIpc(): void {
-  ipcMain.handle(IPC.request, async (e, req: unknown): Promise<DesktopResult> => {
+  ipcMain.handle(IPC.request, async (e, req: unknown, callOpts?: unknown): Promise<DesktopResult> => {
     if (!isTrusted(e)) return failResult("UNAUTHORIZED_CONTEXT", "この画面からは実行できません");
     const r = resolveDesktopRequest(req);
-    if (!r) return failResult("INVALID_ARGUMENT", "要求の形式が正しくありません");
+    const call = parseCallOptions(callOpts);
+    if (!r || !call) return failResult("INVALID_ARGUMENT", "要求の形式が正しくありません");
     if (fontGate.handles(r.name)) return fontGate.handle(r.name, r);
-    return runtime.request(r.op, r.path, r.body);
+    const { callId } = call;
+    if (!callId) return runtime.request(r.op, r.path, r.body);
+    const sender = e.sender;
+    const ac = calls.begin(sender.id, callId);
+    if (!ac) return failResult("INVALID_ARGUMENT", "要求の形式が正しくありません");
+    try {
+      return await runtime.request(r.op, r.path, r.body, {
+        signal: ac.signal,
+        ...(r.op.stream ? { onProgress: (progress) => { if (!sender.isDestroyed()) sender.send(IPC.progress, { callId, progress }); } } : {}),
+      });
+    } finally {
+      calls.end(sender.id, callId, ac);
+    }
+  });
+  // 取り消し：その sender が登録した callId だけ中断する
+  ipcMain.handle(IPC.cancel, (e, callId: unknown): void => {
+    if (!isTrusted(e)) return;
+    calls.cancel(e.sender.id, callId);
   });
   ipcMain.handle(IPC.getState, (e) => {
     if (!isTrusted(e)) throw new Error("UNAUTHORIZED_CONTEXT");

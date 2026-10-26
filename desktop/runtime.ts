@@ -4,7 +4,7 @@
  */
 import { randomBytes, randomUUID } from "node:crypto";
 import path from "node:path";
-import type { DesktopResult, RuntimeError, RuntimeSnapshot, RuntimeState } from "./bridge";
+import type { DesktopProgress, DesktopResult, RuntimeError, RuntimeSnapshot, RuntimeState } from "./bridge";
 import type { DesktopOperation } from "./operations";
 import type { AiConsentDecision, AiOutcome } from "./aiConsent";
 import { secretRefOf, type SecretStore } from "./secrets";
@@ -55,6 +55,86 @@ export function buildWorkerEnv(userRoot: string, env: NodeJS.ProcessEnv): Record
   out.DC_DESIGNER_DESKTOP = "1";
   out.DC_DESIGNER_USER_ROOT = userRoot;
   return out;
+}
+
+// ---- NDJSON（stream の操作） ----
+
+/** progress・error 行の上限。result 行は op.maxBody の2倍まで（要求と同程度の画像・JSON を返しうるため。base64 化の余裕を見る） */
+const STREAM_SMALL_LINE_MAX = 64 * 1024;
+/** 全体の上限＝result 行の上限＋progress 行の余裕（進み具合は小さい行が数百本程度） */
+const STREAM_EXTRA_MAX = 4 * 1024 * 1024;
+
+const ABORTED: DesktopResult = { ok: false, error: "中断しました", code: "ABORTED" };
+const CUT_OFF: DesktopResult = { ok: false, error: "応答が途中で切れました", code: "WORKER_LOST" };
+const BAD_STREAM: DesktopResult = { ok: false, error: "応答の形式が正しくありません", code: "WORKER_LOST" };
+
+/** worker の Progress を検証して、決まった項目だけ残す。形が違えば null */
+function sanitizeProgress(v: unknown): DesktopProgress | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  if (o.phase !== "thinking" && o.phase !== "writing") return null;
+  if (typeof o.attempt !== "number" || !Number.isInteger(o.attempt)) return null;
+  return {
+    phase: o.phase,
+    attempt: o.attempt,
+    ...(typeof o.chars === "number" && Number.isFinite(o.chars) ? { chars: o.chars } : {}),
+    ...(typeof o.items === "number" && Number.isFinite(o.items) ? { items: o.items } : {}),
+  };
+}
+
+/** NDJSON の本文を逐次読み、result / error で終わる。途中の progress は onProgress へ */
+async function readNdjson(
+  body: ReadableStream<Uint8Array>, resultMax: number, signal: AbortSignal | undefined, onProgress: ((p: DesktopProgress) => void) | undefined,
+): Promise<DesktopResult> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let total = 0;
+  const finish = async (r: DesktopResult): Promise<DesktopResult> => { await reader.cancel().catch(() => {}); return r; };
+  const handle = (text: string): DesktopResult | null => {
+    let msg: unknown;
+    try { msg = JSON.parse(text); } catch { return BAD_STREAM; }
+    if (!msg || typeof msg !== "object") return BAD_STREAM;
+    const o = msg as Record<string, unknown>;
+    if ("result" in o) return { ok: true, data: o.result };
+    if (text.length > STREAM_SMALL_LINE_MAX) return BAD_STREAM;
+    if (o.progress !== undefined) {
+      const p = sanitizeProgress(o.progress);
+      if (p) onProgress?.(p);
+      return null;
+    }
+    if (o.error !== undefined) {
+      return {
+        ok: false,
+        error: typeof o.error === "string" ? o.error.slice(0, 500) : "要求に失敗しました",
+        ...(typeof o.code === "string" ? { code: o.code } : {}),
+        ...(typeof o.status === "number" ? { status: o.status } : {}),
+      };
+    }
+    return null;
+  };
+  for (;;) {
+    if (signal?.aborted) return finish(ABORTED);
+    const { value, done } = await reader.read();
+    if (signal?.aborted) return finish(ABORTED);
+    if (value) {
+      total += value.byteLength;
+      if (total > resultMax + STREAM_EXTRA_MAX) return finish(BAD_STREAM);
+      buf += decoder.decode(value, { stream: true });
+    }
+    if (done) buf += decoder.decode();
+    let nl: number;
+    while ((nl = buf.indexOf("\n")) >= 0 || (done && buf.length > 0)) {
+      const end = nl >= 0 ? nl : buf.length;
+      const text = buf.slice(0, end).trim();
+      buf = buf.slice(end + 1);
+      if (!text) continue;
+      const r = handle(text);
+      if (r) return finish(r);
+    }
+    if (buf.length > resultMax) return finish(BAD_STREAM);
+    if (done) return CUT_OFF;
+  }
 }
 
 // ---- 実行 ----
@@ -300,7 +380,12 @@ export function createRuntime(deps: RuntimeDeps) {
     return snapshot();
   }
 
-  async function request(op: DesktopOperation, p: string, body: unknown): Promise<DesktopResult> {
+  async function request(
+    op: DesktopOperation, p: string, body: unknown,
+    opts: { signal?: AbortSignal; onProgress?: (p: DesktopProgress) => void } = {},
+  ): Promise<DesktopResult> {
+    const { signal, onProgress } = opts;
+    if (signal?.aborted) return ABORTED;
     const inst = cur;
     if (model.state !== "ready" || !alive(inst) || !inst.port) return { ok: false, error: "APIの準備ができていません", code: "INVALID_STATE" };
     const payload = body === undefined ? undefined : JSON.stringify(body);
@@ -313,7 +398,9 @@ export function createRuntime(deps: RuntimeDeps) {
         headers: { "content-type": "application/json", [DESKTOP_TOKEN_HEADER]: inst.token, origin: DESKTOP_ORIGIN },
         body: payload,
         redirect: "error",
+        signal,
       });
+      if (op.stream && res.ok && res.body) return await readNdjson(res.body, (op.maxBody ?? 0) * 2, signal, onProgress);
       const text = await res.text();
       let json: unknown = null;
       if (text) { try { json = JSON.parse(text); } catch { json = text; } }
@@ -326,6 +413,7 @@ export function createRuntime(deps: RuntimeDeps) {
         status: res.status,
       };
     } catch {
+      if (signal?.aborted) return ABORTED;
       return { ok: false, error: "APIへ接続できませんでした", code: "WORKER_LOST" };
     }
   }
