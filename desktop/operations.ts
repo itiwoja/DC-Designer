@@ -21,6 +21,8 @@ export type DesktopOperation = {
    * route が authStatus / getAccessToken / listModels / askChatGPT / logout / startLogin / completeLogin のどれかを呼ぶものに付ける
    */
   chatgpt?: true;
+  /** 閉じる途中（closing）でも通す、閉じる前の確定保存（新しい処理の受付は止めるが、保存だけは通す） */
+  closeSave?: true;
 };
 
 const MB = 1024 * 1024;
@@ -29,9 +31,9 @@ export const DESKTOP_OPERATIONS = {
   "status.get": { method: "GET", route: "/api/status", chatgpt: true },
 
   "posters.list": { method: "GET", route: "/api/posters" },
-  "posters.create": { method: "POST", route: "/api/posters", maxBody: 40 * MB },
+  "posters.create": { method: "POST", route: "/api/posters", maxBody: 40 * MB, closeSave: true },
   "posters.get": { method: "GET", route: "/api/posters/:id" },
-  "posters.update": { method: "PUT", route: "/api/posters/:id", maxBody: 40 * MB },
+  "posters.update": { method: "PUT", route: "/api/posters/:id", maxBody: 40 * MB, closeSave: true },
   "posters.duplicate": { method: "POST", route: "/api/posters/:id/duplicate", maxBody: 1024 },
   "posters.delete": { method: "DELETE", route: "/api/posters/:id" },
   "posters.deck": { method: "GET", route: "/api/posters/:id/deck", query: { specs: ["1"] } },

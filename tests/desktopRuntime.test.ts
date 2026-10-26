@@ -172,6 +172,17 @@ describe("createRuntime", () => {
     expect(init.headers.origin).toBe("app://dc-designer");
     expect(await rt.request(op, "/api/x", { a: "x".repeat(20) })).toMatchObject({ ok: false, code: "INVALID_ARGUMENT" });
   });
+
+  it("閉じる途中（closing）は新しい要求を断るが、閉じる前の確定保存（closeSave）だけは通す", async () => {
+    const { rt, children, readyMsg } = setup();
+    const op = { method: "POST", route: "/api/x", maxBody: 100 } as const;
+    const save = { method: "PUT", route: "/api/posters/:id", maxBody: 100, closeSave: true } as const;
+    rt.start();
+    children[0].emit(readyMsg(children[0])); await tick();
+    expect(rt.beginClosing()).toBe(true);
+    expect(await rt.request(op, "/api/x", { a: 1 })).toMatchObject({ ok: false, code: "INVALID_STATE" });
+    expect(await rt.request(save, "/api/posters/abcdefabcdef", { a: 1 })).toEqual({ ok: true, data: { ok: 1 } });
+  });
 });
 
 describe("createCloseCoordinator", () => {

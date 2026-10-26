@@ -406,7 +406,9 @@ export function createRuntime(deps: RuntimeDeps) {
     const { signal } = opts;
     if (signal?.aborted) return ABORTED;
     const inst = cur;
-    if (model.state !== "ready" || !alive(inst) || !inst.port) return { ok: false, error: "APIの準備ができていません", code: "INVALID_STATE" };
+    // 閉じる途中は新しい処理を受け付けないが、閉じる前の確定保存だけは通す（drain はその後に送る）
+    const accepting = model.state === "ready" || (model.state === "closing" && op.closeSave === true);
+    if (!accepting || !alive(inst) || !inst.port) return { ok: false, error: "APIの準備ができていません", code: "INVALID_STATE" };
     // ChatGPT を使う操作の間だけ worker に資格情報を渡す。中断では worker の後始末の分だけ少し遅らせて閉じる
     if (!op.chatgpt) return send(inst, op, p, body, opts);
     chatgptActive++;
