@@ -1,6 +1,6 @@
 # Windows exe版 release設計：読む入口
 
-- プロジェクト：DC-Designer ／ 版数：v0.1（2026-10-25）／ 状態：設計のみ・未実装
+- プロジェクト：DC-Designer ／ 版数：v0.2（2026-10-26）／ 状態：設計のみ・未実装
 - 配布運用の正本：[配布・更新ポリシー](./release-policy.md)。本書はexe化の追加設計の入口。
 
 > **3行で**
@@ -12,10 +12,10 @@
 
 | ID | 種類 | 論点・おすすめ | 決まらないと止まるもの |
 | --- | --- | --- | --- |
-| EXE-Q-01 | 未決 | 配信先と公開範囲。第一候補は公開GitHub Releases。非公開なら開発者PATを配らない取得方式が必要 | 正式公開・更新配信 |
-| EXE-Q-02 | 未決 | コード署名サービス・期待する発行者・費用。署名と検証を省略しない | 正式公開・安全な更新 |
-| EXE-Q-03 | 未決 | サポートするWindows版とCPU。初版はWindows 11 / x64に絞ることを推奨するが、未承認 | 配布対象・実機試験の確定 |
-| EXE-R-01 | リスク | 通信制御・Windowsの子孫プロセス回収・最終配布物の検査は未実装。試験に失敗・検査不能なら配信しない | releaseの合格判定 |
+| EXE-Q-01 | 決定 | 公開GitHub Releases（ユーザー回答 2026-10-26）。リポジトリは公開・MITのため、利用者側にトークンは不要。[EXE-D-10](./desktop-release-spec.md#決定事項ログ) | — |
+| EXE-Q-02 | 決定（審査待ち） | [SignPath Foundation](https://signpath.org/)による無料のOSS向け署名（ユーザー回答 2026-10-26）。期待する発行者は「SignPath Foundation」。申請・審査が通るまで正式配信しない。[EXE-D-11](./desktop-release-spec.md#決定事項ログ) | 審査の合否 |
+| EXE-Q-03 | 一部決定 | Windowsのみ（ユーザー回答 2026-10-26）。macOS・Linuxは対象外。版・CPUはWindows 10 / 11のx64を推奨するが実機確認待ちで、確認した版だけ対応と表示する | 配布対象・実機試験の確定 |
+| EXE-R-01 | リスク | 通信制御・最終配布物の検査は未実装（Windowsの子孫プロセス回収は段階4。段階1〜3はCodex無効で孫プロセスを常駐させない）。試験に失敗・検査不能なら配信しない | releaseの合格判定 |
 
 ## 全体図
 
@@ -33,6 +33,7 @@ flowchart LR
 
 ## 要点
 
+- [段階分け](./desktop-release-spec.md#phases)：実装順は段階1〜4（社内確認用→正式配信候補→任意のCodex連携）。正本はspec。
 - [要件・技術仕様](./desktop-release-spec.md)：範囲、利用者操作、IDの対応、配布物の合格基準。
 - [画像保護・フォント取得](./desktop-release-privacy.md)：送信確認、保存先、資格情報、通信の制約。
 - [製品用の実行構成](./desktop-release-runtime.md)：画面・API接続、OAuth、Windowsプロセス、通常終了・障害復旧。
@@ -45,4 +46,6 @@ flowchart LR
 - 製品用接続とWindows終了処理は推奨構成を採用（ユーザー委任・AI設計判断）。[ADR-003](./adr/ADR-003-desktop-runtime.md)
 - フォント取得を維持し、作品文字を含む取得を廃止（取得維持はユーザー指定、取得方式は安全性のための設計判断）。[ADR-004](./adr/ADR-004-font-acquisition.md)
 - 許可リストによる隔離ビルドと最終配布物検査を必須化（安全性のための設計判断）。[ADR-005](./adr/ADR-005-release-artifact-boundary.md)
+- 対応OSはWindowsのみ。API実行は`utilityProcess`、Codex・ComfyUIは段階1〜3で無効、native supervisorは段階4。AI送信の確認は専用の確認窓1回、フォントは段階2で全文字埋め込み（ユーザーが改善案の適用を承認、2026-10-26）。[段階分け](./desktop-release-spec.md#phases)、[改訂レポート](./changes/2026-10-26-desktop-phased-plan.md)
+- 配信先は公開GitHub Releases、コード署名はSignPath Foundation（ユーザー回答、2026-10-26）。[EXE-D-10・11](./desktop-release-spec.md#決定事項ログ)
 - 変更の範囲・既存設計への影響：[今回の変更レポート](./changes/2026-10-25-desktop-release-design.md)。実装・依存追加・CI設定・権限変更・公開は行っていない。
