@@ -167,6 +167,10 @@ input[type="range"] { padding: 0; border: none; }
 .panel-head { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 10px 10px 10px; border-bottom: 1px solid var(--line); }
 .panel-head-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .panel-head.panel-head-row { flex-direction: row; }
+/* 右パネルが狭い（既定の幅）ときは、書き出しを文字なしのアイコンにしてパネルからはみ出さないようにする */
+.right-edit > .panel-head-row { container-type: inline-size; }
+.panel-head-row .export-btn { flex: none; }
+@container (max-width: 380px) { .export-btn .export-label { display: none; } }
 .left-body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
 /* キャンバスの上に浮かぶ小さなツールバー（画像を生成・ズーム） */
 .float-bar {
