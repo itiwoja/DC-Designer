@@ -26,6 +26,7 @@ nsis:
   oneClick: false
   perMachine: false
   allowElevation: false
+  packElevateHelper: false
   allowToChangeInstallationDirectory: false
   deleteAppDataOnUninstall: false
 publish: null
