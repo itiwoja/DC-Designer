@@ -1,4 +1,6 @@
 import { api, type AIProvider, type Status } from "./api";
+import { DesktopAccountBar } from "./DesktopAccount";
+import { desktopBridge } from "./desktop";
 import { Menu } from "./ui";
 import { Ico } from "./uiIcons";
 
@@ -38,6 +40,9 @@ export function AccountBar({ status, imageChoices, imageProvider, onImageProvide
   onAIProvider: (provider: AIProvider | "") => void;
   onSignOut: () => void;
 }) {
+  // 製品版はサインイン状態だけを扱う別の表示（開発版の表示は下のまま）
+  const bridge = desktopBridge();
+  if (bridge) return <DesktopAccountBar bridge={bridge} status={status} onSignOut={onSignOut} />;
   const gpt = status?.chatgpt;
   const ready = !!(gpt?.signedIn && gpt.planEnabled);
   const ai = status?.ai;
