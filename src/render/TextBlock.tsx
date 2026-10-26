@@ -37,7 +37,7 @@ export function TextBlock(p: TextBlockProps) {
   // 揃えの基準になる x（縮小もここを中心に行う）
   const ax = align === "center" ? p.w / 2 : align === "right" ? p.w : 0;
   const { fill, def } = paintToSvg(p.fill ?? "$ink", p.theme, `${p.id}-fill`);
-  const fontFamily = resolveFont(p.font, p.theme);
+  const fontFamily = resolveFont(p.font, p.theme, p.weight ?? 700);
 
   const ref = useRef<SVGGElement>(null);
   const [scale, setScale] = useState(1);

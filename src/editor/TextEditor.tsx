@@ -66,7 +66,7 @@ export function TextEditor({ layer, theme, svg, at, px, onChange, onDone }: {
 
   const size = layer.size ?? 32;
   const lh = layer.lineHeight ?? 1.25;
-  const fontFamily = resolveFont(layer.font, theme);
+  const fontFamily = resolveFont(layer.font, theme, cssWeight(layer.weight));
   const fontWeight = cssWeight(layer.weight);
   // SVG は 1 行目のベースラインを size*0.88 に置く。CSS の行ボックスでのベースライン位置との差だけずらす
   const offset = (() => {

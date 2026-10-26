@@ -205,17 +205,65 @@ export function installWeights(f: FontEntry): number[] {
   return [...new Set([near(400), f.weights.includes(700) ? 700 : near(400)])];
 }
 
-export function googleCssUrl(family: string, weights?: number[], text?: string) {
+export function googleCssUrl(family: string, weights?: number[]) {
   const f = FONT_BY_FAMILY.get(family);
   const ws = weights ?? f?.weights ?? [400];
   const fam = family.replace(/ /g, "+") + (ws.length > 1 || ws[0] !== 400 ? `:wght@${[...ws].sort((a, b) => a - b).join(";")}` : "");
-  return `https://fonts.googleapis.com/css2?family=${fam}${text ? `&text=${encodeURIComponent(text)}` : ""}&display=swap`;
+  return `https://fonts.googleapis.com/css2?family=${fam}&display=swap`;
 }
 
-/** ブラウザにカタログのフォントを読み込む（プレビュー・キャンバス表示用）。同じフォントは 1 度だけ */
+/** カタログにあるウェイトのうち、指定に最も近いもの */
+export function nearestWeight(family: string, weight = 400): number {
+  const ws = FONT_BY_FAMILY.get(family)?.weights ?? [400];
+  return ws.reduce((a, b) => (Math.abs(b - weight) < Math.abs(a - weight) ? b : a));
+}
+
+/** 製品版（Electron）か。画面からは外部の CSS を読めないので、API のフォントキャッシュから読み込む */
+const isDesktop = () => typeof window !== "undefined" && !!window.dcDesktop;
+
+/** 取得に失敗した face を、この時間は再試行しない（描画のたびに要求が飛ぶのを防ぐ） */
+const RETRY_MS = 30_000;
+const failedAt = new Map<string, number>();
+
+function base64ToBuffer(b64: string): ArrayBuffer {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
+}
+
+/** 製品版：/api/fonts/files で TTF を取り、FontFace として登録する。失敗しても投げない */
+async function loadDesktopFace(family: string, weight: number, key: string) {
+  try {
+    // server/fonts.ts がこのファイルを読むので、画面側の api は使うときだけ読み込む
+    const { api } = await import("./editor/api");
+    const file = (await api.fontFiles([{ family, weight }])).files.find((f) => f.family === family && f.weight === weight);
+    if (!file) throw new Error("フォントを取得できませんでした");
+    const face = new FontFace(family, base64ToBuffer(file.data), { weight: String(weight) });
+    await face.load();
+    document.fonts.add(face);
+  } catch {
+    loaded.delete(key);
+    failedAt.set(key, Date.now());
+  }
+}
+
+/**
+ * ブラウザにカタログのフォントを読み込む（プレビュー・キャンバス表示用）。同じフォントは 1 度だけ。
+ * 製品版は weight に最も近い face だけを取る（日本語フォントは全ウェイトだと数十MBになる）。未指定は 400
+ */
 const loaded = new Set<string>();
-export function ensureWebFont(family: string | undefined) {
-  if (!family || typeof document === "undefined" || loaded.has(family) || !FONT_BY_FAMILY.has(family)) return;
+export function ensureWebFont(family: string | undefined, weight?: number) {
+  if (!family || typeof document === "undefined" || !FONT_BY_FAMILY.has(family)) return;
+  if (isDesktop()) {
+    const w = nearestWeight(family, weight);
+    const key = `${family}|${w}`;
+    if (loaded.has(key) || Date.now() - (failedAt.get(key) ?? -RETRY_MS) < RETRY_MS) return;
+    loaded.add(key);
+    void loadDesktopFace(family, w, key);
+    return;
+  }
+  if (loaded.has(family)) return;
   loaded.add(family);
   const link = document.createElement("link");
   link.rel = "stylesheet";
