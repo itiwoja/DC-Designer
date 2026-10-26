@@ -9,7 +9,7 @@
  */
 import { createHash, createPublicKey, randomBytes, randomUUID, verify, type JsonWebKeyInput } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { getSecret, setSecret } from "./secrets";
+import { getSecret, removeSecret, SecretError, setSecret } from "./secrets";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -84,9 +84,15 @@ function hostId(): string {
   return id;
 }
 
-/** 読めない・壊れているときは null（製品版で復号できないときは getSecret が例外を投げ、再サインインへ誘導する） */
+/** 復号不能・壊れたレコードは未認証として再登録を許す。通信障害などは呼び出し元へ返す */
 async function loadCred(): Promise<Credential | null> {
-  const raw = await getSecret("chatgpt", "oauth");
+  let raw: string | undefined;
+  try {
+    raw = await getSecret("chatgpt", "oauth");
+  } catch (e) {
+    if (e instanceof SecretError && e.state === "reauthRequired") return null;
+    throw e;
+  }
   if (!raw) return null;
   try { return JSON.parse(raw) as Credential; } catch { return null; }
 }
@@ -161,7 +167,7 @@ async function tokenRequest(body: Record<string, string>) {
 /** ブラウザで開く認可 URL を作る。newAccount は保存済みの資格情報を使わず新規登録、registeredClientId は登録済みの client_id でやり直す（内部用） */
 export async function startLogin(opts: { port: number; returnTo: string; popup?: boolean; newAccount?: boolean; registeredClientId?: string }): Promise<string> {
   for (const [k, v] of pending) if (Date.now() - v.createdAt > PENDING_TTL) pending.delete(k);
-  const cred = await loadCred();
+  const cred = opts.newAccount || opts.registeredClientId ? null : await loadCred();
   const state = random();
   const nonce = random();
   const verifier = random();
@@ -351,7 +357,11 @@ async function revokeRefreshToken(c: Credential) {
 /** トークンを失効させてローカルから削除。登録済み client_id とメールは次回の再認可用に残す（別のアカウントでのサインインは startLogin の newAccount で行う） */
 export async function logout() {
   const c = await loadCred();
-  if (!c) return;
+  if (!c) {
+    // 復号できず失効要求を送れない場合も、ローカルの壊れたレコードは削除できる
+    await removeSecret("chatgpt", "oauth");
+    return;
+  }
   await revokeRefreshToken(c);
   await saveCred({ ...c, id_token: undefined, access_token: undefined, refresh_token: undefined, scopes: [] });
 }
@@ -366,4 +376,3 @@ export function safeReturnTo(v: unknown): string {
   }
   return "http://localhost:5173";
 }
-

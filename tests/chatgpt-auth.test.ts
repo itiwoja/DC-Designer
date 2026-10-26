@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { MainToWorker, WorkerToMain } from "../desktop/protocol";
 
 const ISSUER = "https://auth.openai.com";
 const TOKEN_URL = `${ISSUER}/api/accounts/oauth/token`;
@@ -169,5 +170,132 @@ describe("別のアカウントへの切り替え（AUTH-003）", () => {
     expect(url.searchParams.get("client_id")).toBe("oaiapp_NEW");
     expect(url.searchParams.has("agent_name_hint")).toBe(false);
     expect(readFileSync(credPath(), "utf8")).toBe(before);
+  });
+});
+
+describe("製品版の復号不能な資格情報からの復旧", () => {
+  async function brokenStore() {
+    const auth = await load();
+    const { createSecretStore } = await import("../desktop/secrets");
+    const { createMainBackend, setSecretBackend } = await import("../server/secrets");
+    const crypto = {
+      isEncryptionAvailable: () => true,
+      encryptString: vi.fn((value: string) => Buffer.from(`enc:${value}`)),
+      decryptString: (cipher: Buffer) => {
+        if (!cipher.toString().startsWith("enc:")) throw new Error("decrypt failed");
+        return cipher.toString().slice(4);
+      },
+    };
+    const store = createSecretStore({ dir, crypto });
+    store.set("chatgpt", "oauth", "{}");
+    const file = join(dir, "chatgpt.oauth.bin");
+    writeFileSync(file, "damaged ciphertext");
+    let listener: (e: { data: MainToWorker }) => void = () => {};
+    let respond = true;
+    const sent: WorkerToMain[] = [];
+    setSecretBackend(createMainBackend({
+      on: (_, cb) => { listener = cb; },
+      postMessage: (m) => {
+        sent.push(m);
+        if (!respond) return;
+        if (m.type !== "secret-get" && m.type !== "secret-set" && m.type !== "secret-remove") throw new Error("unexpected message");
+        const r = m.type === "secret-get" ? store.get(m.providerId, m.kind)
+          : m.type === "secret-set" ? store.set(m.providerId, m.kind, m.value)
+          : store.remove(`${m.providerId}/${m.kind}`);
+        queueMicrotask(() => listener({ data: { type: "secret-result", requestId: m.requestId, ...r } }));
+      },
+    }, { "chatgpt/oauth": "reauthRequired" }, 20));
+    return { auth, store, crypto, file, sent, silence: () => { respond = false; } };
+  }
+
+  it("状態取得は未認証を返し、AI操作はサインイン要求になる", async () => {
+    const { auth, store } = await brokenStore();
+    expect(await auth.authStatus()).toEqual({ signedIn: false });
+    await expect(auth.getAccessToken()).rejects.toBeInstanceOf(auth.ChatGPTAuthError);
+    expect(store.get("chatgpt", "oauth").state).toBe("reauthRequired");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("newAccount=%s で開始・本人確認・暗号化保存を完了できる", async (newAccount) => {
+    const { auth, store, file, sent } = await brokenStore();
+    const url = await auth.startLogin({ port: 8787, returnTo: "http://localhost:5173", newAccount });
+    const params = new URL(url).searchParams;
+    expect(params.get("client_id")).toBe("dynamic_agent_client");
+    expect(params.has("login_hint")).toBe(false);
+    expect(params.has("id_token_hint")).toBe(false);
+    if (newAccount) expect(sent).toEqual([]); // 明示的な新規登録は旧レコードを読まない
+    const { state, nonce } = stateAndNonce(url);
+    route = (url) => {
+      if (url === TOKEN_URL) return tokenOk(idToken("B", "oaiapp_B", nonce));
+      if (url === JWKS_URL) return json({ keys: [jwk] });
+      throw new Error(`unexpected ${url}`);
+    };
+    expect(new URL(await auth.handleCallback({ state, code: "CODE", client_id: "oaiapp_B" })).searchParams.get("chatgpt")).toBe("signed-in");
+    expect(store.get("chatgpt", "oauth").state).toBe("configured");
+    expect(readFileSync(file, "utf8").startsWith("enc:")).toBe(true);
+    expect(await auth.authStatus()).toMatchObject({ signedIn: true, subject: "B", planEnabled: true });
+    expect(await auth.getAccessToken()).toBe("AT_NEW");
+    expect(bodiesTo(REVOKE_URL)).toEqual([]);
+    expect(existsCred()).toBe(false); // 平文の開発版ストアへ逃がさない
+  });
+
+  it("新規登録の invalid_grant でも旧レコードに依存せず再試行できる", async () => {
+    const { auth, store } = await brokenStore();
+    const { state } = stateAndNonce(await auth.startLogin({ port: 8787, returnTo: "http://localhost:5173" }));
+    route = (url) => { if (url === TOKEN_URL) return invalidGrant(); throw new Error(`unexpected ${url}`); };
+    const retry = new URL(await auth.handleCallback({ state, code: "CODE", client_id: "oaiapp_B" }));
+    expect(retry.searchParams.get("client_id")).toBe("oaiapp_B");
+    const next = stateAndNonce(retry.toString());
+    route = (url) => {
+      if (url === TOKEN_URL) return tokenOk(idToken("B", "oaiapp_B", next.nonce));
+      if (url === JWKS_URL) return json({ keys: [jwk] });
+      throw new Error(`unexpected ${url}`);
+    };
+    expect(new URL(await auth.handleCallback({ state: next.state, code: "CODE2" })).searchParams.get("chatgpt")).toBe("signed-in");
+    expect(store.get("chatgpt", "oauth").state).toBe("configured");
+  });
+
+  it("ログアウトで復号不能なレコードを削除できる", async () => {
+    const { auth, store } = await brokenStore();
+    await auth.logout();
+    expect(store.get("chatgpt", "oauth").state).toBe("unset");
+    expect(await auth.authStatus()).toEqual({ signedIn: false });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("本人確認または新しい暗号化保存が失敗したときは旧レコードを残す", async () => {
+    const { auth, crypto, file } = await brokenStore();
+    const before = readFileSync(file);
+    for (const fail of ["nonce", "encrypt"] as const) {
+      const { state, nonce } = stateAndNonce(await auth.startLogin({ port: 8787, returnTo: "http://localhost:5173" }));
+      route = (url) => {
+        if (url === TOKEN_URL) return tokenOk(idToken("B", "oaiapp_B", fail === "nonce" ? "wrong" : nonce));
+        if (url === JWKS_URL) return json({ keys: [jwk] });
+        throw new Error(`unexpected ${url}`);
+      };
+      if (fail === "encrypt") crypto.encryptString.mockImplementationOnce(() => { throw new Error("encrypt failed"); });
+      const result = new URL(await auth.handleCallback({ state, code: "CODE", client_id: "oaiapp_B" }));
+      expect(result.searchParams.get("chatgpt_error")).toContain(fail === "nonce" ? "nonce" : "保存できませんでした");
+      expect(readFileSync(file)).toEqual(before);
+    }
+  });
+
+  it("mainへの問い合わせの時間切れを未認証として握りつぶさない", async () => {
+    const { auth, silence, file } = await brokenStore();
+    const before = readFileSync(file);
+    silence();
+    await expect(auth.authStatus()).rejects.toMatchObject({ state: "failed" });
+    await expect(auth.startLogin({ port: 8787, returnTo: "http://localhost:5173" })).rejects.toMatchObject({ state: "failed" });
+    await expect(auth.logout()).rejects.toMatchObject({ state: "failed" });
+    // 新規登録開始は読み取り不要だが、コールバック時の通信障害はエラーにする
+    const { state, nonce } = stateAndNonce(await auth.startLogin({ port: 8787, returnTo: "http://localhost:5173", newAccount: true }));
+    route = (url) => {
+      if (url === TOKEN_URL) return tokenOk(idToken("B", "oaiapp_B", nonce));
+      if (url === JWKS_URL) return json({ keys: [jwk] });
+      throw new Error(`unexpected ${url}`);
+    };
+    const result = new URL(await auth.handleCallback({ state, code: "CODE", client_id: "oaiapp_B" }));
+    expect(result.searchParams.get("chatgpt_error")).toContain("タイムアウト");
+    expect(readFileSync(file)).toEqual(before);
   });
 });

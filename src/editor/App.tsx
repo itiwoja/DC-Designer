@@ -1745,7 +1745,7 @@ export function App() {
               </div>
             )}
           </Menu>
-          <button className="primary" onClick={confirmExport} title={instagram ? "全画像を PNG（幅 1080px）で書き出し" : deck ? "全スライドを PowerPoint で書き出し" : "PNG で書き出し（A4 300dpi・2480×3508px）"}><Ico name="download" /> 書き出し</button>
+          <button className="primary export-btn" onClick={confirmExport} aria-label="書き出し" title={instagram ? "全画像を PNG（幅 1080px）で書き出し" : deck ? "全スライドを PowerPoint で書き出し" : "PNG で書き出し（A4 300dpi・2480×3508px）"}><Ico name="download" /><span className="export-label">書き出し</span></button>
         </div>
         {(selectedLayer || multi) && <div className="inspector-wrap">
           <Inspector
