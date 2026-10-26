@@ -1,5 +1,5 @@
 /**
- * AI 送信ゲート（EXE-FR-004）。製品版は ChatGPT へ送る直前に main へ確認を依頼し、
+ * AI 送信ゲート。製品版は ChatGPT へ送る直前に main へ送信内容の検証を依頼し、
  * approve かつ main の payloadHash が自分の snapshot と一致したときだけ送る。許可は1回で消費する。
  * 開発版（backend 未設定）はゲートなし
  */
@@ -28,7 +28,7 @@ type ConsentPort = {
   postMessage(msg: WorkerToMain): void;
 };
 
-/** 確認待ちは人の操作なので、期限は AI_CONSENT_TTL_MS に余裕を足す */
+/** main からの検証応答が返らない場合の待ち時間の上限 */
 const DEFAULT_TIMEOUT_MS = AI_CONSENT_TTL_MS + 30_000;
 
 export function createMainConsentBackend(port: ConsentPort, timeoutMs = DEFAULT_TIMEOUT_MS): ConsentBackend {

@@ -1,7 +1,7 @@
 /**
  * Windows 版 Electron の main（段階1）。
  * 固定 origin の app://dc-designer で同梱の画面を出し、API は utilityProcess の worker に任せる。
- * 外部通信はこのセッションで止める。AI への送信は worker の依頼ごとに専用の確認窓で本人に確かめる（段階2）
+ * 外部通信はこのセッションで止める。AI 操作は main で送信内容を検証したら追加の確認窓なしで進める。
  */
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
@@ -21,7 +21,6 @@ import { createAuthGate } from "./authGate";
 import { IPC, type DesktopResult, type PrepareCloseResult } from "./bridge";
 import { createCallRegistry, parseCallOptions } from "./callRegistry";
 import { createCloseCoordinator } from "./close";
-import { CONSENT_PARTITION, createConsentWindowHost, lockdownConsentSession } from "./consentWindow";
 import { consentDialogOptions, createFontGate, installDialogOptions } from "./fontGate";
 import { resolveDesktopRequest } from "./operations";
 import { USER_ROOT_DIRS } from "./protocol";
@@ -63,19 +62,13 @@ const sendToEditor = (channel: string, payload: unknown): boolean => {
 // 資格情報は main だけが持つ（safeStorage の呼び出しは app ready 後に初めて行われる）
 const secrets = createSecretStore({ dir: path.join(userRoot, "secrets"), crypto: safeStorage });
 
-// AI 送信確認：worker の依頼を検証し、確認窓（別 partition・別 preload）で本人が承認したものだけ通す
-const consentHost = createConsentWindowHost({
-  appRoot,
-  getParent: () => (editorWindow && !editorWindow.isDestroyed() ? editorWindow : null),
-  broker: () => aiConsent,
-});
-const aiConsent = createAiConsentBroker({ now: Date.now, openWindow: consentHost.openWindow });
+// AI 操作：worker の送信先・本文・画像を検証し、確認窓を挟まず1回分の送信を許可する
+const aiConsent = createAiConsentBroker();
 
 const runtime = createRuntime({
   secrets,
   onAiConsent: (requestId, payload) => aiConsent.request(requestId, payload),
   onAiOutcome: (requestId, outcome) => aiConsent.outcome(requestId, outcome),
-  onAiConsentCancel: (requestId) => aiConsent.cancel(requestId),
   onAiWorkerLost: () => aiConsent.reset(),
   appVersion: app.getVersion(),
   onState: (s) => { sendToEditor(IPC.stateChanged, s); },
@@ -224,7 +217,6 @@ function registerIpc(): void {
     const newAccount = !!opts && typeof opts === "object" && (opts as { newAccount?: unknown }).newAccount === true;
     return authGate.signIn({ newAccount });
   });
-  consentHost.registerIpc();
   ipcMain.handle(IPC.completeClose, (e, r: unknown) => {
     if (!isTrusted(e) || !r || typeof r !== "object") return;
     const { requestId, allSaved, busy } = r as Partial<PrepareCloseResult>;
@@ -342,7 +334,6 @@ if (!app.requestSingleInstanceLock()) {
 
   void app.whenReady().then(() => {
     lockdownSession();
-    lockdownConsentSession(session.fromPartition(CONSENT_PARTITION));
     registerIpc();
     buildMenu();
     runtime.start();
@@ -350,4 +341,3 @@ if (!app.requestSingleInstanceLock()) {
     void editorWindow.loadURL(APP_ORIGIN_URL).catch(() => {});
   });
 }
-

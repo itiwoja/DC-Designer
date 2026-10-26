@@ -1,6 +1,6 @@
 /**
- * AI 送信確認（EXE-FR-004）で worker と main が共有する送信内容の形とハッシュ。
- * worker は実際に送る bytes からこれを作り、main は画像の bytes を自分でハッシュし直してから確認窓に出す。
+ * AI 送信時に worker と main が共有する送信内容の形とハッシュ。
+ * worker は実際に送る bytes からこれを作り、main は画像の bytes を自分でハッシュし直して検証する。
  * payloadHash は画像の data を含めず、sha256・byteLength・mediaType で画像を表した canonical JSON の SHA-256
  */
 import { createHash } from "node:crypto";
@@ -40,7 +40,7 @@ export type AiConsentPayload = {
   subject?: AiSubject;
 };
 
-/** 確認の上限（AI 設計値）：準備から5分 */
+/** main による送信内容の検証応答を待つ期限の基準 */
 export const AI_CONSENT_TTL_MS = 5 * 60 * 1000;
 /** 1回の送信に含めてよい画像の合計（IPC で main へ渡すため） */
 export const AI_MAX_IMAGE_BYTES = 64 * 1024 * 1024;

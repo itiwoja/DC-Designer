@@ -22,7 +22,7 @@ rmSync(stage, { recursive: true, force: true });
 mkdirSync(app, { recursive: true });
 
 // 入口が無ければ分かりやすく止める
-for (const f of ["desktop/main.ts", "desktop/preload.ts", "desktop/consentPreload.ts", "server/desktop-worker.ts"]) {
+for (const f of ["desktop/main.ts", "desktop/preload.ts", "server/desktop-worker.ts"]) {
   if (!existsSync(path.join(root, f))) fail(`入口がありません: ${f}`);
 }
 
@@ -60,16 +60,6 @@ await esbuild({
 await esbuild({
   ...common,
   entryPoints: { preload: "desktop/preload.ts" },
-  outdir: out,
-  outExtension: { ".js": ".cjs" },
-  platform: "node",
-  format: "cjs",
-  target: "node22",
-  external: ["electron"],
-});
-await esbuild({
-  ...common,
-  entryPoints: { consentPreload: "desktop/consentPreload.ts" },
   outdir: out,
   outExtension: { ".js": ".cjs" },
   platform: "node",

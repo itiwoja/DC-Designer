@@ -1,5 +1,7 @@
 # Windows版：私有データ・AI送信確認・フォント取得設計
 
+> **2026-10-26の変更：** 以下の専用確認窓・本人承認に関する条件は[確認窓撤去の変更](./changes/2026-10-26-desktop-ai-direct-send.md)で置き換えた。現在はmainで送信内容を検証後、追加確認なしで送信する。
+
 - プロジェクト：DC-Designer ／ 版数：v0.2（2026-10-26） ／ 状態：設計のみ・未実装
 - 上位設計：[Windows exe release設計](./README.md) ／ 既存方針：[配布・更新](./release-policy.md)
 

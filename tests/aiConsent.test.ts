@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { payloadHash, toAiImage, type AiConsentPayload } from "../desktop/aiPayload";
+import { createAiConsentBroker } from "../desktop/aiConsent";
 
 const create = vi.fn();
 let lastOptions: any;
@@ -49,6 +50,30 @@ afterEach(() => { setConsentBackend(null); delete process.env.DC_DESIGNER_DESKTO
 
 describe("AI 送信ゲート（製品版）", () => {
   beforeEach(() => { process.env.DC_DESIGNER_DESKTOP = "1"; });
+
+  it.each([false, true])("確認窓なしで検証から送信まで進み、取り消し=%s を反映する", async (cancel) => {
+    const broker = createAiConsentBroker();
+    const ac = new AbortController();
+    setConsentBackend({
+      ask: async (payload) => {
+        const decision = await broker.request("r1", payload);
+        if (cancel) ac.abort();
+        return { type: "ai-consent-result", requestId: "r1", ...decision };
+      },
+      outcome: broker.outcome,
+    });
+    create.mockResolvedValue(done());
+    const result = askChatGPT("sys", turns, undefined, ac.signal);
+    if (cancel) {
+      await expect(result).rejects.toMatchObject({ status: 499 });
+      expect(create).not.toHaveBeenCalled();
+      expect(broker.stateOf("r1")).toBe("failed");
+    } else {
+      expect(await result).toBe("ok");
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(broker.stateOf("r1")).toBe("completed");
+    }
+  });
 
   it("approve かつハッシュ一致なら、確認した内容を1回だけ送る", async () => {
     const port = fakePort(approve);
