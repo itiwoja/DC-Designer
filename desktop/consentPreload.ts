@@ -57,7 +57,7 @@ function render(v: View): void {
   const dl = el("dl");
   const rows: [string, string][] = [
     ["送信先", p.endpoint], ["モデル", p.model], ["接続", p.providerRouting === "direct" ? "直接接続" : p.providerRouting],
-    ["用途", p.purpose], ["画像", `${images.length} 枚（合計 ${kb(totalBytes)}）`],
+    ["用途", p.purpose], ["画像", images.length ? `${images.length} 枚（合計 ${kb(totalBytes)}）` : "なし"],
   ];
   for (const [k, val] of rows) dl.append(el("dt", k), el("dd", val));
   dest.append(dl);
