@@ -1,0 +1,31 @@
+appId: io.github.itiwoja.dcdesigner
+productName: DC-Designer
+electronVersion: 44.7.0
+directories:
+  app: .desktop-stage/app
+  output: release
+asar: true
+files:
+  - dist/**
+  - build/**
+  - package.json
+  - LICENSE
+  # 依存はすべて束ねてある。ステージに node_modules が無いと builder が上のディレクトリの node_modules を拾うので明示的に外す
+  - "!**/node_modules/**"
+asarUnpack:
+  - build/desktop/worker.mjs
+npmRebuild: false
+nodeGypRebuild: false
+buildDependenciesFromSource: false
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: false
+  deleteAppDataOnUninstall: false
+publish: null
