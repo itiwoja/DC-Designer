@@ -4,8 +4,9 @@
  * library 等は import 時に環境変数を読むだけで書き込みは始めないが、念のため lease を取ってから動的 import する
  */
 import { createServer, type Server } from "node:http";
-import { API_PROTOCOL_VERSION, LEASE_TIMEOUT_MS, type MainToWorker, type WorkerToMain } from "../desktop/protocol";
+import { API_PROTOCOL_VERSION, LEASE_TIMEOUT_MS, type MainToWorker, type SecretState, type WorkerToMain } from "../desktop/protocol";
 import { acquireLease, leasePipePath } from "./lease";
+import { createMainBackend, setSecretBackend } from "./secrets";
 
 // Electron の型が無くても通るよう、使う分だけ宣言する
 type ParentPort = {
@@ -28,7 +29,15 @@ function parseInit(data: unknown): Extract<MainToWorker, { type: "init" }> | nul
   const { token, instanceId, appVersion } = d;
   if (typeof token !== "string" || !/^[0-9a-fA-F]{64,}$/.test(token)) return null;
   if (typeof instanceId !== "string" || !instanceId || typeof appVersion !== "string" || !appVersion) return null;
-  return { type: "init", token, instanceId, appVersion };
+  return { type: "init", token, instanceId, appVersion, secretStates: parseSecretStates(d.secretStates) };
+}
+
+const SECRET_STATES = new Set<string>(["configured", "unset", "reauthRequired"]);
+function parseSecretStates(v: unknown): Record<string, SecretState> {
+  const out: Record<string, SecretState> = {};
+  if (!v || typeof v !== "object") return out;
+  for (const [k, s] of Object.entries(v)) if (typeof s === "string" && SECRET_STATES.has(s)) out[k] = s as SecretState;
+  return out;
 }
 
 async function start(init: Extract<MainToWorker, { type: "init" }>) {
@@ -37,6 +46,9 @@ async function start(init: Extract<MainToWorker, { type: "init" }>) {
 
   const lease = await acquireLease(leasePipePath(userRoot), { timeoutMs: LEASE_TIMEOUT_MS, onWaiting: () => send({ type: "lease-waiting" }) });
   if (!lease.ok) return die(1, { type: "lease-failed", reason: lease.reason });
+
+  // 資格情報は main に問い合わせる（環境変数には載せない）
+  setSecretBackend(createMainBackend(parentPort!, init.secretStates));
 
   let server: Server;
   try {

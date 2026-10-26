@@ -56,7 +56,7 @@ describe("製品版の入口", () => {
   it("health は DesktopHealth を返す", async () => {
     const res = await call("/api/desktop/health", { headers: good });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ instanceId: "inst1", apiProtocolVersion: 1, appVersion: "9.9.9", ready: true });
+    expect(await res.json()).toEqual({ instanceId: "inst1", apiProtocolVersion: 2, appVersion: "9.9.9", ready: true });
   });
 
   it("許可リスト外は 404 DESKTOP_UNAVAILABLE", async () => {
@@ -71,6 +71,21 @@ describe("製品版の入口", () => {
     const res = await call("/api/posters", { headers: good });
     expect(res.status).toBe(200);
     expect(await res.json()).toHaveProperty("posters");
+  });
+
+  it("資格情報が復号不能でもホームの状態取得とローカル作品一覧は開ける", async () => {
+    const { SecretError, setSecretBackend } = await import("../server/secrets");
+    setSecretBackend({
+      get: async () => { throw new SecretError("reauthRequired", "復号できません"); },
+      set: async () => {}, remove: async () => {}, has: () => false,
+    });
+    try {
+      const responses = await Promise.all(["/api/status", "/api/posters", "/api/decks"].map((path) => call(path, { headers: good })));
+      expect(responses.map((r) => r.status)).toEqual([200, 200, 200]);
+      expect((await responses[0].json()).chatgpt).toMatchObject({ signedIn: false });
+    } finally {
+      setSecretBackend(null);
+    }
   });
 
   it("drain 中は GET 以外が 503 BUSY、進行中が無ければ即 drained、resume で戻る", async () => {

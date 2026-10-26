@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import type { AssetContext, AssetRequest } from "../src/schema";
 import { httpError } from "./http-error";
+import { getSecret, hasSecret } from "./secrets";
 
 /** 生成・取り込んだ画像の置き場所（/generated/<ファイル名> で配信。テストでは GENERATED_DIR で差し替える） */
 export const GENERATED_DIR = process.env.GENERATED_DIR || fileURLToPath(new URL("../public/generated/", import.meta.url));
@@ -54,8 +55,8 @@ const NO_TRANSPARENCY: ImageProvider[] = ["gemini", "comfyui"];
  *  ComfyUI はキー不要なので常に選択肢に出す（起動していなければ生成時に接続エラーを返す） */
 export function availableProviders(): ImageProvider[] {
   const list: ImageProvider[] = [];
-  if (process.env.OPENAI_API_KEY) list.push("openai");
-  if (process.env.GEMINI_API_KEY) list.push("gemini");
+  if (hasSecret("openai", "apiKey")) list.push("openai");
+  if (hasSecret("gemini", "apiKey")) list.push("gemini");
   const desktop = process.env.DC_DESIGNER_DESKTOP === "1"; // 製品版は Codex・ComfyUI を使わない
   if (!desktop) list.push("comfyui");
   if (!desktop && (process.env.IMAGE_PROVIDER || "").toLowerCase() === "codex") list.push("codex");
@@ -75,7 +76,7 @@ function provider(requested?: string): ImageProvider {
 // openai SDK は読み込みに時間がかかる（/mnt/c 上だと 10 秒以上）ので、起動を遅くしないよう使うときに読み込む
 async function generateOpenAI(prompt: string, asset: AssetRequest, signal?: AbortSignal): Promise<Buffer> {
   const { default: OpenAI } = await import("openai");
-  const openai = new OpenAI();
+  const openai = new OpenAI({ apiKey: await getSecret("openai", "apiKey") });
   const res = await openai.images.generate({
     model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-2.5-flare",
     prompt,
@@ -109,7 +110,7 @@ function findImageData(node: unknown): string | undefined {
 async function generateGemini(prompt: string, asset: AssetRequest, signal?: AbortSignal): Promise<Buffer> {
   const res = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
     method: "POST",
-    headers: { "x-goog-api-key": process.env.GEMINI_API_KEY!, "Content-Type": "application/json" },
+    headers: { "x-goog-api-key": (await getSecret("gemini", "apiKey")) ?? "", "Content-Type": "application/json" },
     body: JSON.stringify({
       model: process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image",
       input: [{ type: "text", text: prompt }],

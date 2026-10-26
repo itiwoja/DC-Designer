@@ -156,7 +156,7 @@ export function createApp(opts: AppOptions): AppHandle {
   const param = (req: express.Request) => String(req.params.id);
 
   app.get("/api/status", route(async () => {
-    const chatgpt = authStatus();
+    const chatgpt = await authStatus();
     const ready = chatgpt.signedIn && chatgpt.planEnabled;
     const model = ready ? await chatGPTModel().catch(() => undefined) : undefined;
     const settings = ready ? await modelSettings().catch(() => undefined) : undefined;
@@ -180,8 +180,13 @@ export function createApp(opts: AppOptions): AppHandle {
 
   // ---------- Sign in with ChatGPT ----------
   /** ブラウザをここへ遷移させる → OpenAI の認可画面へリダイレクト（?account=new は別のアカウントで新規登録） */
-  app.get("/api/auth/chatgpt/login", (req, res) => {
-    res.redirect(startLogin({ port: opts.mode === "desktop" ? opts.getPort() : opts.port, returnTo: safeReturnTo(req.query.returnTo), popup: req.query.popup === "1", newAccount: req.query.account === "new" }));
+  app.get("/api/auth/chatgpt/login", async (req, res) => {
+    const returnTo = safeReturnTo(req.query.returnTo);
+    try {
+      res.redirect(await startLogin({ port: opts.mode === "desktop" ? opts.getPort() : opts.port, returnTo, popup: req.query.popup === "1", newAccount: req.query.account === "new" }));
+    } catch (e) {
+      res.redirect(`${returnTo}/?${new URLSearchParams({ chatgpt_error: e instanceof Error ? e.message : String(e) })}`);
+    }
   });
 
   /** OpenAI からのループバックコールバック（http://127.0.0.1:<port>/auth/callback） */

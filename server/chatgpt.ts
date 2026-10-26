@@ -41,7 +41,7 @@ export type ChatGPTModel = { slug: string; display_name: string };
 
 /** サインイン中のアカウントで使えるモデル一覧（表示対象のみ・サーバーの並び順）。アカウントごとにキャッシュ */
 export async function listModels(): Promise<ChatGPTModel[]> {
-  const status = authStatus();
+  const status = await authStatus();
   const subject = status.signedIn ? status.subject : undefined;
   if (modelCache && modelCache.subject === subject) return modelCache.models;
   const res = await fetch(`${API_BASE}/models`, { headers: { Authorization: `Bearer ${await getAccessToken()}` } });

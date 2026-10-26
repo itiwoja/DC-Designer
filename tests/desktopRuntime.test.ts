@@ -1,8 +1,12 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCloseCoordinator } from "../desktop/close";
 import { DESKTOP_OPERATIONS, type DesktopOperation } from "../desktop/operations";
 import { API_PROTOCOL_VERSION, DESKTOP_TOKEN_HEADER } from "../desktop/protocol";
 import type { MainToWorker } from "../desktop/protocol";
+import { createSecretStore } from "../desktop/secrets";
 import { buildWorkerEnv, createRuntime, initialRuntimeModel, reduceRuntime, type RuntimeEvent, type RuntimeModel, type WorkerChild } from "../desktop/runtime";
 
 const run = (events: RuntimeEvent[], from: RuntimeModel = initialRuntimeModel) => events.reduce(reduceRuntime, from);
@@ -37,6 +41,7 @@ describe("buildWorkerEnv", () => {
     expect(env.DATA_DIR).toMatch(/workspace$/);
     expect(env.GENERATED_DIR).toMatch(/generated$/);
     expect(env.DC_DESIGNER_CONFIG_DIR).toMatch(/secrets$/);
+    expect(env.FONT_CACHE_DIR).toMatch(/fonts[\\/]cache$/);
     expect(Object.keys(env)).not.toContain("OPENAI_API_KEY");
     expect(Object.keys(env)).not.toContain("NODE_OPTIONS");
     expect(Object.keys(env)).not.toContain("HTTPS_PROXY");
@@ -57,7 +62,7 @@ class FakeChild implements WorkerChild {
   get init() { return this.sent.find((m) => m.type === "init") as Extract<MainToWorker, { type: "init" }>; }
 }
 
-function setup(health?: (init: { token: string; instanceId: string }) => unknown) {
+function setup(health?: (init: { token: string; instanceId: string }) => unknown, secrets?: ReturnType<typeof createSecretStore>) {
   const children: FakeChild[] = [];
   const states: string[] = [];
   let last = { token: "", instanceId: "" };
@@ -72,6 +77,7 @@ function setup(health?: (init: { token: string; instanceId: string }) => unknown
   }) as unknown as typeof fetch;
   const rt = createRuntime({
     appVersion: "1.0.0",
+    secrets,
     fetchImpl,
     onState: (s) => states.push(s.state + (s.error ? `:${s.error}` : "")),
     fork: () => { const c = new FakeChild(); children.push(c); return c; },
@@ -113,7 +119,7 @@ describe("createRuntime", () => {
     s.rt.start(); s.children[0].emit(s.readyMsg(s.children[0])); await tick();
     expect(s.rt.snapshot().error).toBe("STARTUP_FAILED");
 
-    s = setup((l) => ({ instanceId: l.instanceId, apiProtocolVersion: 2, appVersion: "1.0.0", ready: true }));
+    s = setup((l) => ({ instanceId: l.instanceId, apiProtocolVersion: API_PROTOCOL_VERSION + 1, appVersion: "1.0.0", ready: true }));
     s.rt.start(); s.children[0].emit(s.readyMsg(s.children[0])); await tick();
     expect(s.rt.snapshot().error).toBe("VERSION_MISMATCH");
   });
@@ -273,5 +279,66 @@ describe("createCloseCoordinator", () => {
     u.c.exit();
     await u.coord.requestClose();
     expect(u.finalize).not.toHaveBeenCalled();
+  });
+});
+
+describe("資格情報の中継（EXE-API-006）", () => {
+  const withStore = () => {
+    const dir = mkdtempSync(join(tmpdir(), "rt-secrets-"));
+    const crypto = { isEncryptionAvailable: () => true, encryptString: (v: string) => Buffer.from(`enc:${v}`), decryptString: (b: Buffer) => b.toString().replace(/^enc:/, "") };
+    const store = createSecretStore({ dir, crypto });
+    return { dir, store, ...setup(undefined, store) };
+  };
+  const results = (c: FakeChild) => c.sent.filter((m) => m.type === "secret-result");
+
+  it("init に状態一覧（値なし）を載せ、secret-get に値を返す", () => {
+    const t = withStore();
+    t.store.set("openai", "apiKey", "sk-test");
+    t.rt.start();
+    const c = t.children[0];
+    expect(c.init.secretStates["openai/apiKey"]).toBe("configured");
+    expect(JSON.stringify(c.init)).not.toContain("sk-test");
+    c.emit({ type: "secret-get", requestId: "r1", providerId: "openai", kind: "apiKey" });
+    c.emit({ type: "secret-get", requestId: "r2", providerId: "gemini", kind: "apiKey" });
+    c.emit({ type: "secret-get", requestId: "r3", providerId: "evil", kind: "apiKey" });
+    expect(results(c)).toEqual([
+      { type: "secret-result", requestId: "r1", ok: true, state: "configured", value: "sk-test" },
+      { type: "secret-result", requestId: "r2", ok: true, state: "unset" },
+      { type: "secret-result", requestId: "r3", ok: false, state: "unset", code: "INVALID_ARGUMENT" },
+    ]);
+    rmSync(t.dir, { recursive: true, force: true });
+  });
+
+  it("secret-set / secret-remove を処理し、不正なメッセージは無視する", () => {
+    const t = withStore();
+    t.rt.start();
+    const c = t.children[0];
+    c.emit({ type: "secret-set", requestId: "s1", providerId: "chatgpt", kind: "oauth", value: '{"a":1}' });
+    expect(t.store.get("chatgpt", "oauth").value).toBe('{"a":1}');
+    c.emit({ type: "secret-remove", requestId: "s2", providerId: "chatgpt", kind: "oauth" });
+    expect(t.store.get("chatgpt", "oauth").state).toBe("unset");
+    // API キーは worker から書き換えられない（応答もしない）
+    t.store.set("openrouter", "apiKey", "k");
+    const before = results(c).length;
+    c.emit({ type: "secret-set", requestId: "s3", providerId: "openrouter", kind: "apiKey", value: "evil" });
+    c.emit({ type: "secret-remove", requestId: "s4", providerId: "openrouter", kind: "apiKey" });
+    expect(t.store.get("openrouter", "apiKey").value).toBe("k");
+    expect(results(c)).toHaveLength(before);
+    const n = results(c).length;
+    c.emit({ type: "secret-get", providerId: "openai", kind: "apiKey" }); // requestId なし
+    c.emit({ type: "secret-get", requestId: 1, providerId: "openai", kind: "apiKey" });
+    c.emit({ type: "secret-get", requestId: "x", providerId: 1, kind: "apiKey" });
+    c.emit({ type: "secret-set", requestId: "x", providerId: "openai", kind: "apiKey", value: 5 });
+    expect(results(c)).toHaveLength(n);
+    rmSync(t.dir, { recursive: true, force: true });
+  });
+
+  it("ストアが無ければ何も答えない。状態変更は worker へ伝える", () => {
+    const t = setup();
+    t.rt.start();
+    t.children[0].emit({ type: "secret-get", requestId: "r", providerId: "openai", kind: "apiKey" });
+    expect(t.children[0].sent.filter((m) => m.type === "secret-result")).toEqual([]);
+    t.rt.notifySecretChanged("openai/apiKey", "configured");
+    expect(t.children[0].sent.at(-1)).toEqual({ type: "secret-changed", secretRef: "openai/apiKey", state: "configured" });
   });
 });

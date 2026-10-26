@@ -5,10 +5,11 @@
  * - 初回は client_id=dynamic_agent_client で登録し、コールバックで返る発行済み client_id（oaiapp_...）を保存して再利用する
  * - 「別のアカウントでログイン」（newAccount）は保存済みの資格情報を使わず新規登録し、サインインできたら資格情報を差し替える
  * - redirect_uri は 127.0.0.1 のループバック（/auth/callback）。localhost は不可
- * - 資格情報は ~/.config/dc-designer/ に 0600 で保存（リポジトリには置かない）
+ * - 資格情報は server/secrets.ts 経由で保存する（開発版は ~/.config/dc-designer/chatgpt.json に 0600、製品版は main が DPAPI で保護）
  */
 import { createHash, createPublicKey, randomBytes, randomUUID, verify, type JsonWebKeyInput } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { getSecret, removeSecret, SecretError, setSecret } from "./secrets";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -25,7 +26,6 @@ export const USAGE_URL = "https://chatgpt.com/settings/usage";
 
 const CONFIG_DIR = process.env.DC_DESIGNER_CONFIG_DIR || join(homedir(), ".config", "dc-designer");
 const HOST_FILE = join(CONFIG_DIR, "host.json");
-const CRED_FILE = join(CONFIG_DIR, "chatgpt.json");
 
 /** ローカルの資格情報レコード（ドキュメントの例に準拠） */
 interface Credential {
@@ -84,8 +84,19 @@ function hostId(): string {
   return id;
 }
 
-const loadCred = () => readJson<Credential>(CRED_FILE);
-const saveCred = (c: Credential) => writeSecure(CRED_FILE, c);
+/** 復号不能・壊れたレコードは未認証として再登録を許す。通信障害などは呼び出し元へ返す */
+async function loadCred(): Promise<Credential | null> {
+  let raw: string | undefined;
+  try {
+    raw = await getSecret("chatgpt", "oauth");
+  } catch (e) {
+    if (e instanceof SecretError && e.state === "reauthRequired") return null;
+    throw e;
+  }
+  if (!raw) return null;
+  try { return JSON.parse(raw) as Credential; } catch { return null; }
+}
+const saveCred = (c: Credential) => setSecret("chatgpt", "oauth", JSON.stringify(c, null, 2));
 /** サインイン済み（アクセストークンか更新トークンが残っている） */
 const hasTokens = (c: Credential | null): c is Credential => !!(c?.access_token || c?.refresh_token);
 
@@ -154,9 +165,9 @@ async function tokenRequest(body: Record<string, string>) {
 // ---------- 公開 API ----------
 
 /** ブラウザで開く認可 URL を作る。newAccount は保存済みの資格情報を使わず新規登録、registeredClientId は登録済みの client_id でやり直す（内部用） */
-export function startLogin(opts: { port: number; returnTo: string; popup?: boolean; newAccount?: boolean; registeredClientId?: string }): string {
+export async function startLogin(opts: { port: number; returnTo: string; popup?: boolean; newAccount?: boolean; registeredClientId?: string }): Promise<string> {
   for (const [k, v] of pending) if (Date.now() - v.createdAt > PENDING_TTL) pending.delete(k);
-  const cred = loadCred();
+  const cred = opts.newAccount || opts.registeredClientId ? null : await loadCred();
   const state = random();
   const nonce = random();
   const verifier = random();
@@ -235,7 +246,7 @@ export async function handleCallback(query: Record<string, unknown>): Promise<st
       // 資格情報は本人確認が済むまで保存しない（既存のサインインを消さないため）
       if (!p.clientId) {
         // 新規登録時のみ 1 回だけ自動でやり直す（再認可で失敗したらループさせずにエラー表示）
-        return startLogin({ port: Number(new URL(p.redirectUri).port), returnTo: p.returnTo, popup: p.popup, registeredClientId: clientId });
+        return await startLogin({ port: Number(new URL(p.redirectUri).port), returnTo: p.returnTo, popup: p.popup, registeredClientId: clientId });
       }
       return back({ chatgpt_error: `認可コードの交換に失敗しました（${e.message}）。もう一度サインインしてください` });
     }
@@ -246,9 +257,9 @@ export async function handleCallback(query: Record<string, unknown>): Promise<st
     if (p.expectSubject && p.expectSubject !== claims.sub) {
       return back({ chatgpt_error: "以前と別の ChatGPT アカウントでサインインされました。別のアカウントを使う場合は「別のアカウントでログイン」からやり直してください" });
     }
-    const prev = loadCred();
+    const prev = await loadCred();
     const scopes = parseScopes(tok.scope ?? "");
-    saveCred({
+    await saveCred({
       email: claims.email,
       name: claims.name,
       picture: claims.picture,
@@ -274,8 +285,8 @@ export async function handleCallback(query: Record<string, unknown>): Promise<st
   }
 }
 
-export function authStatus() {
-  const c = loadCred();
+export async function authStatus() {
+  const c = await loadCred();
   // 次の再認可で使われる登録済み client_id があれば、前回のアカウントのメールを案内用に返す
   const reusable = c?.client_id && c.agent_name === AGENT_NAME ? c : undefined;
   if (!hasTokens(c)) return reusable ? { signedIn: false as const, previousEmail: reusable.email } : { signedIn: false as const };
@@ -305,12 +316,12 @@ async function refreshCredential(c: Credential & { refresh_token: string }): Pro
       scopes: tok.scope ? parseScopes(tok.scope) : c.scopes,
       saved_at: new Date().toISOString(),
     };
-    saveCred(next);
+    await saveCred(next);
     return next;
   } catch (e: any) {
     if (TERMINAL_REFRESH_ERRORS.has(e?.code)) {
       // 使えなくなったトークンだけ消す（client_id は再認可で再利用）
-      saveCred({ ...c, access_token: undefined, refresh_token: undefined });
+      await saveCred({ ...c, access_token: undefined, refresh_token: undefined });
       throw new ChatGPTAuthError(SESSION_EXPIRED);
     }
     throw e;
@@ -321,7 +332,7 @@ let refreshing: Promise<Credential> | null = null;
 
 /** 期限切れなら更新した上でアクセストークンを返す。更新トークンはローテーションするので同時更新を 1 本にまとめる */
 export async function getAccessToken(): Promise<string> {
-  const c = loadCred();
+  const c = await loadCred();
   if (!hasTokens(c)) throw new ChatGPTAuthError("ChatGPT にサインインしていません");
   if (!c.scopes.includes(PLAN_SCOPE)) throw new ChatGPTAuthError("ChatGPT プランの利用が許可されていません。もう一度サインインして許可してください");
   const expiresAt = Date.parse(c.saved_at) + (c.expires_in ?? 0) * 1000;
@@ -345,10 +356,14 @@ async function revokeRefreshToken(c: Credential) {
 
 /** トークンを失効させてローカルから削除。登録済み client_id とメールは次回の再認可用に残す（別のアカウントでのサインインは startLogin の newAccount で行う） */
 export async function logout() {
-  const c = loadCred();
-  if (!c) return;
+  const c = await loadCred();
+  if (!c) {
+    // 復号できず失効要求を送れない場合も、ローカルの壊れたレコードは削除できる
+    await removeSecret("chatgpt", "oauth");
+    return;
+  }
   await revokeRefreshToken(c);
-  saveCred({ ...c, id_token: undefined, access_token: undefined, refresh_token: undefined, scopes: [] });
+  await saveCred({ ...c, id_token: undefined, access_token: undefined, refresh_token: undefined, scopes: [] });
 }
 
 /** 戻り先はローカルのエディタだけに限定する（オープンリダイレクト防止） */
@@ -361,4 +376,3 @@ export function safeReturnTo(v: unknown): string {
   }
   return "http://localhost:5173";
 }
-
