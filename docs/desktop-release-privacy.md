@@ -1,6 +1,6 @@
 # Windows版：私有データ・AI送信確認・フォント取得設計
 
-- プロジェクト：DC-Designer ／ 版数：v0.1（2026-10-25） ／ 状態：設計のみ・未実装
+- プロジェクト：DC-Designer ／ 版数：v0.2（2026-10-26） ／ 状態：設計のみ・未実装
 - 上位設計：[Windows exe release設計](./README.md) ／ 既存方針：[配布・更新](./release-policy.md)
 
 > **3行で**
@@ -12,7 +12,7 @@
 
 | ID | 種類 | 論点 | おすすめ・止まるもの |
 | --- | --- | --- | --- |
-| [EXE-R-01](./README.md) | リスク | 外部CLI・ComfyUIの拡張が画像を外へ送る可能性 | egressを制御・検証できない経路では参考画像機能を無効化。AI送信の受け入れ判定に影響 |
+| [EXE-R-01](./README.md) | リスク | 外部CLI・ComfyUIの拡張が画像を外へ送る可能性 | 段階1〜3の製品版ではCodex・ComfyUI連携を無効にして経路自体を持たない（[段階分け](./desktop-release-spec.md)）。有効化する段階4以降はegressを制御・検証できない経路で参考画像機能を無効化 |
 | [EXE-Q-01〜03](./README.md) | 未決 | コード署名・配信先・公開範囲・対象OSの確定 | 親入口へ集約。本書では決めない |
 
 ## 全体図
@@ -36,7 +36,7 @@ flowchart LR
 - [要件と責任境界](#requirements)：原本だけでなく派生画像・音声・資料も保護する。
 - [私有ストア](#stores)：安定した利用者ルートをアプリ配置・CIから分離する。
 - [AI送信](#ai-gate)：実送信内容を固定し、変更・追加・再試行では許可を使い回さない。
-- [フォント取得](#fonts)：フルフォントを取得し、作品文字による絞り込みは端末内だけで行う。
+- [フォント取得](#fonts)：全文字入りのフォントを取得してそのまま埋め込む。作品文字は送らず、端末内サブセット化は段階2では行わない（後の任意改善）。
 - [画面・IPC](#interfaces)と[受け入れ観点](#acceptance)：拒否・障害でも送らず編集を続ける。
 
 ## 詳細
@@ -60,7 +60,7 @@ flowchart LR
 | --- | --- |
 | [`server/imagegen.ts:12`](../server/imagegen.ts#L12) | 生成・取り込み画像の既定保存先が`public/generated/`。私有`assets/`へ分離が必要 |
 | [`server/chatgpt-auth.ts:26–28,68–88`](../server/chatgpt-auth.ts#L26) | `chatgpt.json`にJSONで資格情報を保存。ファイルmode指定だけをWindows暗号化とはみなさない |
-| [`src/render/export.ts:65`](../src/render/export.ts#L65)、[`server/fonts.ts:76–84,104–118`](../server/fonts.ts#L76) | SVG/PPTXのフォント取得で`text=`に作品文字が入る。端末内サブセットへ変更する設計 |
+| [`src/render/export.ts:65`](../src/render/export.ts#L65)、[`server/fonts.ts:76–84,104–118`](../server/fonts.ts#L76) | SVG/PPTXのフォント取得で`text=`に作品文字が入る。`text=`を廃止し、全文字入りフォントをそのまま埋め込む設計（端末内サブセットは段階2では行わない） |
 | [`server/fonts.ts:138–175`](../server/fonts.ts#L138) | Windowsユーザーフォント配置・HKCU登録がある。取得とは別の明示確認と入力制限が必要 |
 
 <a id="stores"></a>
@@ -78,10 +78,10 @@ flowchart LR
 | --- | --- | --- |
 | `workspace/`・`assets/`／<a id="exe-tbl-001"></a>EXE-TBL-001 | `workspaceId`、`revision`、`assetId`、`opaqueId`、`kind`、`mimeType`、`byteLength`、`contentHash`、`derivedFrom?`と作品・素材実体 | 通常更新で維持。アプリが開いた作品の素材だけ解決。参照画像と生成物を区別 |
 | `secrets/`／<a id="exe-tbl-002"></a>EXE-TBL-002 | `secretRef`、`providerId`、`credentialKind`、`ciphertext`、`updatedAt`、復号・失効の状態 | Windows DPAPIに結びつくOS暗号化。main管理。バックアップ・移行・配布から除外 |
-| `fonts/`／<a id="exe-tbl-003"></a>EXE-TBL-003（fontcache） | `fontRef`、`family`、`weight`、`style`、`contentHash`、`license`、`sourceHost`、`validatedAt`、`osInstallState` | 検証済み全フォントとライセンス。作品由来サブセットは私有生成物として区別 |
+| `fonts/`／<a id="exe-tbl-003"></a>EXE-TBL-003（fontcache） | `fontRef`、`family`、`weight`、`style`、`contentHash`、`license`、`sourceHost`、`validatedAt`、`osInstallState` | 検証済みの全文字入りフォントとライセンス。段階2では作品由来サブセットを作らない（端末内サブセットを後で入れる場合は私有生成物として区別） |
 | main管理メモリ／<a id="exe-tbl-004"></a>EXE-TBL-004 | `requestId`、`ownerContext`、`workspaceRevision`、`canonicalPayload`、`payloadHash`、画像manifest、送信先・用途、`expiresAt`、`state` | 短命一回の確認・送信記録。再起動・ログアウト・確認元切断で破棄。ディスク・バックアップへ保存しない |
 | `browser/` | 安定originのブラウザ保存・端末内設定 | 秘密値は置かない。作品復元に必要な領域は形式を識別して移行 |
-| `runtime/`／EXE-TBL-006 | [世代間lease・停止記録](./desktop-release-runtime.md#runtime-lease) | 再生成可能なキャッシュではない。通常更新で維持し、キャッシュ削除・移行・作品バックアップから除外。詳細は実行構成の正本を参照 |
+| `runtime/`／EXE-TBL-006 | 段階1〜3は名前付きパイプleaseでありファイルを持たない。EXE-TBL-006（[世代間lease・停止記録](./desktop-release-runtime.md#runtime-lease)）は段階4の設計 | 段階4で作る場合は再生成可能なキャッシュではない。通常更新で維持し、キャッシュ削除・移行・作品バックアップから除外。詳細は実行構成の正本を参照 |
 | `cache/` | 再生成可能なキャッシュ。更新専用キャッシュは他用途と分離 | 私有画像を含む場合も同じ保護対象。不要時削除可。配布の入力にしない |
 | `logs/` | 時刻・処理段階・エラー分類・アプリ版だけ | 画像、本文、ファイル名、絶対パス、送信hash、認証値、トークン付きURLを記録しない |
 
@@ -91,7 +91,7 @@ flowchart LR
 - `runtimeUrl`は一時的な表示用参照であり、永続的なファイルパス・外部送信URL・公開許可ではない。保存するのは素材IDで、作品切替・窓終了等で一時URLを破棄する。画像・音声をローカルHTTPや汎用`app://`資源として公開しない。
 - 資格情報はElectronのOS暗号化機構を介したWindows DPAPIで保護し、通常利用者だけのアクセス制限を併用する。暗号化可否を検査できない／復号不能なら`reauthRequired`にし、平文fallbackはしない。
 - 復号値は必要な送信先の処理へ必要な間だけ渡す。rendererへ読み戻すAPIや、workerへ資格情報の永続フォルダを渡す契約は設けない。信頼するAPIの保存サービスはworkspace／assetsを管理するが、AIアダプター・Codex・ComfyUIへは当該操作の許可snapshotだけを渡す。
-- APIやCLIを同一Windows利用者の権限で起動するだけでは、OSのファイルアクセスを強制隔離したことにはならない。フォルダ指定・read-only・Job Objectだけを流出防止の証明とせず、経路ごとのアクセス・送信制約を検証できなければ該当連携を無効にする。ローカルプロセスのメモリまで絶対保護できるとはしない。
+- APIやCLIを同一Windows利用者の権限で起動するだけでは、OSのファイルアクセスを強制隔離したことにはならない。フォルダ指定・read-onlyだけ（段階4でJob Objectを入れてもそれだけ）を流出防止の証明とせず、経路ごとのアクセス・送信制約を検証できなければ該当連携を無効にする。ローカルプロセスのメモリまで絶対保護できるとはしない。
 - 利用者画像・資格情報をインストーラー、asar、`dist`、ソースマップ、リポジトリ、CI artifact、更新メタデータ・更新要求へ混入させない。ビルドの入力は承認済み製品アセットと合成fixtureに限定し、実利用の`public/generated/`を製品アセットとみなさない。
 
 <a id="ai-gate"></a>
@@ -109,8 +109,8 @@ flowchart LR
 - OpenRouter等の仲介サービスでは、HTTP接続先だけでなく仲介者・実際の推論事業者・選択endpoint／regionを確認画面に示す。`providerRouting`にその単一の選択とルーティング制約を固定し、事業者・endpoint・region変更は再確認する。
 - 画像付きOpenRouter要求は、採用版の公式仕様で一つの対象に限定できる完全なprovider slugを用い、`provider.only`と`provider.order`をその選択だけに限定、`allow_fallbacks: false`・`data_collection: deny`・`zdr: true`を固定する。基底slugで複数endpointを許可しない。自動model routing・model fallback・サーバー側tools／plugins等による別事業者への転送も無効化する。
 - 選択範囲を一つに限定できない・必要パラメーターが拒否／無視される・実際の宛先を検証できない場合、その画像経路は無効にする。これらは[OpenRouterのAPI仕様](https://openrouter.ai/docs/guides/routing/provider-selection)に基づく制約であり、相手内部の非保持を技術的に証明するものではない。送信先の利用条件と仲介を含む注意を本人に示す。
-- 確認UIはmainが作る専用のsandboxモーダル窓で、確定manifestだけをプレーンテキスト・ローカルプレビューとして表示する。通常editorと同じpreload権限を与えず、外部読込・任意HTML・別窓からの操作を拒否する。
-- `confirmAiRequest`の`approve`は承認済みという自己申告ではなく、main所有のネイティブ確認ダイアログを開く要求である。mainが保持する同じmanifestの宛先・画像枚数等を最終表示し、既定ボタン「送信しない」に対する本人の肯定応答をmainが直接受けた場合だけ許可する。rendererの`isTrusted`等の申告・通常editor・workerによる自動呼出しでは許可しない。
+- 確認UIはmainが生成する専用の確認窓（通常editorとは別のwebContents・別preload）で、確定manifestだけをプレーンテキスト・ローカルプレビューとして表示する。確認は**この窓での1回**で、別のネイティブ確認ダイアログは重ねない。通常editorと同じpreload権限を与えず、外部読込・任意HTML・別窓からの操作を拒否する。
+- `confirmAiRequest`の`approve`は、確認窓での本人の操作（「この内容を一回送信」）そのものである。mainは確認窓のwebContentsからのIPCだけを受け付け、`requestId`・`payloadHash`・確認元がmainの保持するmanifestと一致した場合だけ許可する。既定ボタンは「送信しない」で、Esc・閉じるは拒否、Enter単独・連打・準備中は不成立とする。通常editor・worker・rendererの自己申告（`isTrusted`等）による呼出しでは許可しない。
 - 許可は確認元・作品revision・canonical payload全体に結びつく短命一回分。成功・失敗・送達不明を問わず一度dispatchしたら消費し、通信再試行も新しい確認を要する。
 
 | 状況 | 許可・通信の扱い | 編集への影響 |
@@ -124,8 +124,9 @@ flowchart LR
 
 - 多段AI処理は確認対象の範囲を拡大しない。生成→評価→修正で追加の画像・比較スクショ・送信先が必要なら、その段階で別の一回確認を求める。画像なしのAI要求も本文・送信先を目的別ゲートで制限する。
 - CodexはCLIがローカルで動くことと処理がオフラインであることを区別する。参照画像の暗黙添付、広い作業フォルダ探索、他セッションの生成物取り込みを禁止し、ジョブ固有の入力・出力だけを扱う。
-- Codexの未知バージョンで画像egressを制御・検証できない場合は参考画像機能を無効にする。参考画像を付けなくても他の私有画像を探索・送信できる経路が残るなら、そのCodex連携全体を無効にする。プロンプト上の「送信しない」指示だけを防壁としない。
-- ComfyUIも指定先・workflow・custom nodeからの外部egressを検査対象にする。ローカル指定はloopbackの検証済み接続に限定し、遠隔指定・外部転送・参照画像追加は別送信として確認する。制御不能なら画像を渡さない。
+- **段階1〜3の製品版ではCodex連携・ComfyUI連携を無効にする**（画像を渡す経路を持たない）。以下のCodex・ComfyUIの条件は、段階4等で有効化する場合の条件として残す。
+- （有効化する場合）Codexの未知バージョンで画像egressを制御・検証できない場合は参考画像機能を無効にする。参考画像を付けなくても他の私有画像を探索・送信できる経路が残るなら、そのCodex連携全体を無効にする。プロンプト上の「送信しない」指示だけを防壁としない。
+- （有効化する場合）ComfyUIも指定先・workflow・custom nodeからの外部egressを検査対象にする。ローカル指定はloopbackの検証済み接続に限定し、遠隔指定・外部転送・参照画像追加は別送信として確認する。制御不能なら画像を渡さない。
 
 <a id="fonts"></a>
 <a id="exe-fr-005"></a>
@@ -134,12 +135,12 @@ flowchart LR
 入力はカタログの`family`・`weight`・`style`と用途、出力は検証済み`fontRef`と取得／OS登録状態。取得・表示・埋め込みを維持するが、`text=`による外部サブセット取得は廃止する。
 
 - Google Fontsにはカタログのfamily／weight／styleだけを送る。作品文字、タイトル、ファイル名、画像、任意URLをクエリ・ヘッダー・Referer・本文へ含めない。IP・選んだフォント・接続時刻が配信元へ伝わることは確認画面に示す。
-- 全文字範囲を持つ対象faceを取得して`fonts/`へキャッシュし、SVG/PPTX埋め込みのサブセット処理は端末内で行う。配信が分割フォントなら必要な全配布範囲を取得し、作品文字を指定して外部に絞り込みを依頼しない。
+- 全文字入りの対象face（Google Fontsが UAなしのCSSで返す単一TTF、現行`downloadTtf`）を取得して`fonts/`へキャッシュし、**段階2では端末内サブセット化をせず、そのままSVG/PPTXへ埋め込む**。現行`server/fonts.ts`も文字が多いと全体を入れる動作で互換。このため書き出しファイルは大きくなる。端末内サブセット化はサブセット用ライブラリが要るため後の任意改善とする。作品文字を指定して外部に絞り込みを依頼しない。
 - Google Fonts CSSの取得先は`fonts.googleapis.com`、フォント実体は`fonts.gstatic.com`の固定許可ホスト・HTTPSのみ。CSS内URL・リダイレクトごとにscheme・host・port・最終宛先を再検証し、追加ホストを自動許可しない。
 - CSSをrendererへ外部読込させない。外部`@import`・任意URL・想定外のContent-Typeを拒否し、受信／展開サイズ・件数・時間に上限を設け、フォント構造・hash・ライセンス・埋め込み制限を検査してからローカル利用する。
-- 1ファイルの受信・展開後上限は各32MiBを**AI設計値（未実測）**とする。日本語フルフォントとの適合は正式配信前に確認し、超過時は停止して値を見直す。作品文字送信へ切り替えて回避しない。
+- 1ファイルの受信・展開後上限は各32MiBを**AI設計値（未実測）**とする。全文字入りの日本語フォントとの適合は実測で確認し（書き出しサイズも含む）、超過時は停止して値を見直す。作品文字送信へ切り替えて回避しない。
 - ライセンス文・取得元・埋め込み制限をキャッシュと許される書き出しに保持する。フォント提案AIは取得機能ではなくAI目的別ゲートに属し、資料や画像を取得通信へ紛れ込ませない。
-- WindowsへのOSインストールはキャッシュ取得とは**別の明示同意**。`acquire(target: windowsUser)`内部で検証済みキャッシュを確定後、main所有のネイティブ確認ダイアログへ対象face・ライセンス・登録先を示し、mainが本人の応答を直接得る。rendererから同意済みIDを入力する契約にはしない。
+- WindowsへのOSインストールはキャッシュ取得とは**別の明示同意**。`acquire(target: windowsUser)`内部で検証済みキャッシュを確定後、main所有のネイティブ確認ダイアログ（1回）へ対象face・ライセンス・登録先を示し、mainが本人の応答を直接得る。rendererから同意済みIDを入力する契約にはしない。
 - OS登録の内部許可は要求元・対象face集合・実ファイルhashに結び付け、確認完了から5分以内の一回だけ有効とする。拒否・窓切断・内容変更・期限切れ・使用後は無効。登録直前にも同一bytesを検証し、別フォントへの流用・自動再試行を拒否する。拒否しても取得済みキャッシュは使える。
 - 登録はカタログ限定の検証済みファイルを通常ユーザーのフォント領域へ置く固定操作・HKCU登録に限定し、実行対象を固定して引数を安全に分離・検証する。管理者昇格、任意シェル文字列、任意path・コマンド引数を受け付けない。
 
@@ -158,11 +159,11 @@ flowchart LR
 
 | ID | 画面・表示 | 操作・状態／関連機能 |
 | --- | --- | --- |
-| <a id="exe-scr-002"></a>EXE-SCR-002 | AI送信確認：provider・正確なendpoint・model・仲介者と推論事業者／region・用途、全本文、原本と区別した実送信画像プレビュー・枚数・サイズ、相手側保存への注意 | 準備中／確認待ち／無効／送信中／成功／失敗／送達不明。初期フォーカスは「送信しない」。「この内容を一回送信」だけが許可。閉じる・Escは拒否／EXE-FR-004 |
+| <a id="exe-scr-002"></a>EXE-SCR-002 | AI送信確認：provider・正確なendpoint・model・仲介者と推論事業者／region・用途、全本文、原本と区別した実送信画像プレビュー・枚数・サイズ、相手側保存への注意 | 準備中／確認待ち／無効／送信中／成功／失敗／送達不明。初期フォーカスは「送信しない」。「この内容を一回送信」だけが許可（この窓での1回の確認で、ネイティブ確認ダイアログは重ねない）。閉じる・Escは拒否／EXE-FR-004 |
 | <a id="exe-scr-003"></a>EXE-SCR-003 | フォント取得：family・weight・style、取得先、ライセンス、キャッシュとOS登録の別々の状態 | 未取得／取得中／キャッシュ済み／オフライン／失敗。「取得」と「Windowsにもインストール」を分離。AIへの送信同意を兼ねない／EXE-FR-005 |
 | <a id="exe-scr-004"></a>EXE-SCR-004 | 秘密情報設定：provider別の未設定・設定済み・再認証必要。入力値は伏字、保存後の値は返さない | 保存／登録を削除／ログアウト／私有データの明示削除を区別。削除範囲を再確認し、失敗を成功表示しない／EXE-FR-003 |
 
-確認画面はキーボード操作、読み上げ可能なラベル、フォーカス移動・復帰を持つ。Enter単独・連打・画像準備中では同意を成立させず、送信対象が変わったら更新を知らせて再確認する。
+確認画面（main生成の専用確認窓）はキーボード操作、読み上げ可能なラベル、フォーカス移動・復帰を持つ。Enter単独・連打・画像準備中では同意を成立させず、送信対象が変わったら更新を知らせて再確認する。
 
 <details>
 <summary>EXE-API-003〜006：入出力・状態・失敗時の契約</summary>
@@ -170,7 +171,7 @@ flowchart LR
 | ID／契約名 | 入力 | 出力・状態 | 拒否・副作用／関連ID |
 | --- | --- | --- | --- |
 | <a id="exe-api-003"></a>EXE-API-003 `desktopPrivacy.prepareAiRequest` | `workspaceId`、`workspaceRevision`、登録済み`providerId`・`modelId`・`purpose`、本文入力、対象`assetIds`・派生処理指定。任意endpoint・path・確定hash指定は不可 | main／workerが確定した`requestId`、`expiresAt`、`manifest`、`payloadHash`、`state: prepared`。mainが対応する確認UIへ同じ内容を渡す | 素材不明・revision不一致・未許可provider・安全に固定できない派生処理で失敗。画像付き外部通信なし／EXE-FR-004、EXE-SCR-002、EXE-TBL-001/004 |
-| <a id="exe-api-004"></a>EXE-API-004 `desktopPrivacy.confirmAiRequest` | 当該確認用UIだけから`requestId`、`payloadHash`、`decision: approve/deny`。`approve`はmainの最終ネイティブ確認を要求するだけで、本人の許可そのものではない | 拒否なら`denied`。mainが直接得た肯定応答・一致検証成功なら一回だけ`dispatching`へ移り、`completed`／`failed`／`outcomeUnknown`を秘密値なしで返す。画像の出力は新規私有asset参照 | 未確認元・期限切れ・内容変更・重複呼出しを拒否。`expired`／`invalidated`では送信せず、必要なら再prepare。workerの自動承認・tokenのrenderer再利用不可／EXE-FR-004、EXE-SCR-002、EXE-TBL-004 |
+| <a id="exe-api-004"></a>EXE-API-004 `desktopPrivacy.confirmAiRequest` | 当該確認用UIだけから`requestId`、`payloadHash`、`decision: approve/deny`。`approve`は確認窓での本人の操作そのもの（ネイティブダイアログを開く要求ではない）。確認窓のwebContents以外からの呼出しは無効 | 拒否なら`denied`。確認窓から受けた肯定応答で`requestId`・`payloadHash`・確認元の一致検証に成功したら一回だけ`dispatching`へ移り、`completed`／`failed`／`outcomeUnknown`を秘密値なしで返す。画像の出力は新規私有asset参照 | 未確認元・期限切れ・内容変更・重複呼出しを拒否。`expired`／`invalidated`では送信せず、必要なら再prepare。workerの自動承認・tokenのrenderer再利用不可／EXE-FR-004、EXE-SCR-002、EXE-TBL-004 |
 | <a id="exe-api-005"></a>EXE-API-005 `desktopFonts.acquire` | カタログの`family`、`weights`、`style`、`target: cache/windowsUser`。`windowsUser`はmain内で対象を検証して別のネイティブ確認を行う要求であり、同意済みを意味しない | `fontRefs`、`license`、`state: cached/installed/osInstallDenied`、`fromCache`。進行中は`acquiring`。本人がOS登録を拒否・取消した場合は`cached`と`osInstallState: declined`を返す。fontRefからのみローカル利用 | カタログ外・任意URL・本文文字指定・同意なしOS登録を拒否。登録許可は内部で要求元・face・hashに束縛し一回消費。ネットワーク／検証失敗は`failed`、既存キャッシュを維持／EXE-FR-005、EXE-SCR-003、EXE-TBL-003 |
 | <a id="exe-api-006"></a>EXE-API-006 `desktopSecrets.set/remove` | `set`は登録済み`providerId`・`credentialKind`・入力した`value`、`remove`は`secretRef`と当該削除の確認情報。資格情報型はカタログで制限 | `secretRef`、`state: configured/unset/reauthRequired`。`remove`は未登録でも`unset`。値は応答しない | OS暗号化不能・書込失敗・削除失敗は分類エラー。成功前に既存値を失わず、平文保存しない。暗号化済みOAuth資格情報の保存も同じ保護方針／EXE-FR-003、EXE-SCR-004、EXE-TBL-002 |
 
@@ -190,7 +191,7 @@ flowchart LR
 | 形式変更・保存先移行 | 秘密値を除くバックアップ、形式検証、元データ維持、失敗時の旧形式利用または復旧案内を条件とする。未完了移行を成功扱いしない |
 | 別PC・別Windows利用者への移行／DPAPI復号不能 | 秘密値を移さず再認証。作品は独立して開ける。旧平文JSONの自動コピー・平文fallbackは禁止し、旧資格情報の移行可否は再認証を既定とする |
 | ログアウト／資格情報削除 | 対象のローカル資格情報・短命許可を消し、可能ならproviderへ失効要求。失効通信失敗は別表示。workspace／assetsは消さない |
-| アンインストール | 既定は利用者データ維持。明示的な「私有データも削除」で対象領域と復元不能の注意を確認。実データ・runtime記録の削除は所有Jobの停止確認後だけ行い、確認不能を削除で回避しない。OS登録済みフォントを無断で削除しない |
+| アンインストール | 既定は利用者データ維持。明示的な「私有データも削除」で対象領域と復元不能の注意を確認。実データの削除はAPI（utilityProcess）の終了確認後だけ行い（段階4でruntime記録を作る場合はその停止確認も）、確認不能を削除で回避しない。OS登録済みフォントを無断で削除しない |
 | 作品・全私有データの明示削除 | assetsの共有参照も確認して対象を削除。ログアウトと同義にしない。外部バックアップ・エクスポート・相手側保存・SSDの物理消去まで保証しない |
 | エラー・クラッシュ | 端末内の分類ログだけ。画像・認証値・本文入りの例外／stdout／stderrを直接保存しない。ダンプ・診断ファイルを自動送信しない |
 
@@ -202,20 +203,21 @@ flowchart LR
 | 要件 | 画面・API・ストア | 受け入れ観点 |
 | --- | --- | --- |
 | EXE-REQ-001 → EXE-FR-004 | EXE-SCR-002／EXE-API-003/004／EXE-TBL-001/004 | 通信検査で未同意・拒否・期限切れ・再起動時の画像bytesが0。直接HTTP／WebSocket／画像URL等のrenderer迂回も0。確認した送信先・本文・画像bytesと実通信が一致 |
-| 同上 | 同上 | 画像変更・追加・自動比較スクショ・派生処理変更・fallback・endpoint／model変更で再同意。重複confirm・再送・多段処理で許可拡大0。未知Codex／制御不能egressでは参考画像を渡さない |
+| 同上 | 同上 | 画像変更・追加・自動比較スクショ・派生処理変更・fallback・endpoint／model変更で再同意。重複confirm・再送・多段処理で許可拡大0。段階1〜3の製品版でCodex・ComfyUI連携が無効で画像を渡す経路が無い。有効化する場合は未知Codex／制御不能egressで参考画像を渡さない |
 | 同上 | 同上 | OpenRouter等の内部負荷分散・provider／region切替・model fallback・server tool転送を確認し、単一の確認先に固定できなければ画像要求を拒否する |
 | EXE-REQ-003 → EXE-FR-003 | EXE-SCR-004／EXE-API-006／EXE-TBL-001/002 | 既知の合成画像・本文・秘密値fixtureを用い、インストーラー／asar／dist／ソースマップ／CI artifact／ログ／更新通信への混入を検出。許可した製品fixtureと私有fixtureを区別 |
 | 同上 | 同上 | 通常更新で作品と認証状態を維持。別利用者・別PC・DPAPI失敗時は再認証し、平文を残さない。バックアップ秘密値0。保存失敗・移行失敗・削除失敗を成功表示しない |
-| EXE-REQ-005 → EXE-FR-005 | EXE-SCR-003／EXE-API-005／EXE-TBL-003 | フォントURL・Referer・全要求に作品文字・ファイル名0、`text=`0、画像bytes0。フルフォントのキャッシュと端末内サブセットで取得・埋め込み可能 |
+| EXE-REQ-005 → EXE-FR-005 | EXE-SCR-003／EXE-API-005／EXE-TBL-003 | フォントURL・Referer・全要求に作品文字・ファイル名0、`text=`0、画像bytes0。全文字入りフォントのキャッシュとそのままの埋め込みで取得・書き出し可能（書き出しが大きくなることを確認。端末内サブセットは後の改善で段階2の合格条件にしない） |
 | 同上 | 同上 | 許可外ホスト・リダイレクト・偽Content-Type・上限超過・壊れたフォントを拒否。オフライン未取得と代替表示を警告。OS登録の別同意、ポリシー拒否時の非昇格とキャッシュ維持を確認 |
-| 同上 | 同上 | OS登録はmain確認で提示したface・hashと一致する一回だけ。変更・期限切れ・再利用・別窓・確認拒否で登録0件、取得済みキャッシュは維持 |
+| 同上 | 同上 | OS登録はmainのネイティブ確認（1回）で提示したface・hashと一致する一回だけ。変更・期限切れ・再利用・別窓・確認拒否で登録0件、取得済みキャッシュは維持 |
 
 REQ→US→UCの上流対応は[技術仕様の対応表](./desktop-release-spec.md#トレーサビリティ)が正本。本書のEXE接頭辞IDは[既存更新設計](./desktop-update-design.md)の接頭辞なしIDと別の名前空間とする。
 
 ## このドキュメントで決まったこと
 
+- 2026-10-26改訂（v0.2、決定者：ユーザー（改善案の適用を承認））：(1) AI送信確認を、mainが生成する専用の確認窓での1回に改め、ネイティブ確認ダイアログとの二重確認をやめた（安全条件は維持）。(2) フォントは段階2では端末内サブセット化せず全文字入りで埋め込む（書き出しは大きくなる。端末内サブセットは後の任意改善。`text=`廃止とOS登録の別同意は維持）。(3) Codex・ComfyUI連携は段階1〜3の製品版で無効。既存条件は有効化する場合の条件として残す。(4) 実行構成は段階1〜3が名前付きパイプlease、EXE-TBL-006・supervisor・Jobは段階4の設計。段階分けの正本は[spec](./desktop-release-spec.md)。
 - ユーザー確認済み：画像のAI送信は送信先・対象画像を提示した本人の明示確認だけを許可し、フォント取得は維持する。
-- [ADR-002](./adr/ADR-002-private-data-and-consent.md)：私有ストアと目的別通信・短命一回確認。画像プレビューとmainが直接得る最終確認を分離する設計判断。
-- [ADR-004](./adr/ADR-004-font-acquisition.md)：作品文字を送らないフルフォント取得と、別同意のOS登録を採用する設計判断。
+- [ADR-002](./adr/ADR-002-private-data-and-consent.md)：私有ストアと目的別通信・短命一回確認。main生成の専用確認窓での1回の確認とする設計判断（v0.2で二重確認を改訂）。
+- [ADR-004](./adr/ADR-004-font-acquisition.md)：作品文字を送らない全文字入りフォントの取得・埋め込み（段階2は端末内サブセットなし）と、別同意のOS登録を採用する設計判断。
 - AI設計値：AI／OSフォント登録の許可期限各5分、フォント1ファイル受信・展開後各32MiB。安全性の実証値ではなく、正式配信前に妥当性を検証する。
 - 署名・公開先・OS対象は[親入口](./README.md)、更新の振る舞いは[既存設計](./desktop-update-design.md)へ委ねる。本書は実装・CI変更・公開を許可しない。
