@@ -5,7 +5,7 @@
 > 2. 段階1〜3はElectronの`utilityProcess`でAPIを実行し、名前付きパイプleaseで新旧APIの同時書き込みを防ぐ。supervisor・Job Objectは作らない。
 > 3. 全保存・書込drain・utilityProcessのexitとフォント登録子プロセスの完了を確認して終了する。子孫回収が必要な段階4（Codex連携）でsupervisorを追加する。Windows実機では未検証。
 ## 🧭 判断してほしいこと
-[EXE-Q-01〜03／EXE-R-01](../README.md#-判断してほしいこと)を維持。署名・配信先は未承認、対応OSはWindowsのみ（版・CPUは実機確認待ち）。名前付きパイプlease・OAuthの検証が正式配信を止める。
+[EXE-Q-01〜03／EXE-R-01](../README.md#-判断してほしいこと)を維持。配信先は公開GitHub Releases、署名はSignPath Foundation（審査待ち）、対応OSはWindowsのみ（版・CPUは実機確認待ち）。名前付きパイプlease・OAuthの検証が正式配信を止める。
 ## 全体図
 ```mermaid
 flowchart LR

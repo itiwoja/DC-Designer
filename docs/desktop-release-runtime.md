@@ -10,7 +10,7 @@
 
 ## 🧭 判断してほしいこと
 
-[EXE-Q-01〜03／EXE-R-01](./README.md#-判断してほしいこと)を維持する。署名・配信先は未承認。対応OSはWindowsのみ（版・CPUは推奨値で実機確認待ち）。utilityProcess終了・名前付きパイプlease・OAuth・通信制約の検証不能は正式配信を止める。
+[EXE-Q-01〜03／EXE-R-01](./README.md#-判断してほしいこと)を維持する。配信先は公開GitHub Releases、署名はSignPath Foundationに決定済み（審査待ち）。対応OSはWindowsのみ（版・CPUは推奨値で実機確認待ち）。utilityProcess終了・名前付きパイプlease・OAuth・通信制約の検証不能は正式配信を止める。
 
 ## 全体図（C2：コンテナ）
 
@@ -297,7 +297,7 @@ sequenceDiagram
 - 段階1の必須タスクに、iframeサムネイル（`src/editor/ui.tsx`の`?view=render&embed=1`）の受動的な描画snapshotへの置き換えを含める。
 - 対応OSはWindowsのみ（EXE-Q-03を一部決定。版・CPUは推奨値のWindows 10/11 x64で実機確認待ち）。
 - AI推奨の新規値：起動監視30秒、lease待機期限30秒、保存後停止待ち30秒、制御IPC入力4KiB。保存準備30秒・認証10分は既存値を維持。製品適合性の検証で見直す場合も安全側停止を崩さない。
-- 正式な署名方式・配信先の承認、名前付きパイプlease・utilityProcess終了・動的port OAuth・送信元認可の実証は未解決。実装・依存追加・CI変更・公開は本設計の対象外。
+- SignPath Foundationの署名審査、名前付きパイプlease・utilityProcess終了・動的port OAuth・送信元認可の実証は未解決。実装・依存追加・CI変更・公開は本設計の対象外。
 
 ## 付録：段階4：Codex連携時のsupervisor・Job Object（現時点では実装しない）
 

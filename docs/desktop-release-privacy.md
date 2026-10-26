@@ -13,7 +13,7 @@
 | ID | 種類 | 論点 | おすすめ・止まるもの |
 | --- | --- | --- | --- |
 | [EXE-R-01](./README.md) | リスク | 外部CLI・ComfyUIの拡張が画像を外へ送る可能性 | 段階1〜3の製品版ではCodex・ComfyUI連携を無効にして経路自体を持たない（[段階分け](./desktop-release-spec.md)）。有効化する段階4以降はegressを制御・検証できない経路で参考画像機能を無効化 |
-| [EXE-Q-01〜03](./README.md) | 未決 | コード署名・配信先・公開範囲・対象OSの確定 | 親入口へ集約。本書では決めない |
+| [EXE-Q-01〜03](./README.md) | 決定済み・一部確認待ち | 配信先は公開GitHub Releases、署名はSignPath Foundation（審査待ち）、OSはWindowsのみ（版・CPUは実機確認待ち） | 親入口へ集約。本書では決めない |
 
 ## 全体図
 

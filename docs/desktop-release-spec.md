@@ -232,7 +232,7 @@ Windows native supervisorの生成時Job所属・HANDLE監視と、その適用�
 | EXE-D-02 | 製品用の画面・API接続とWindowsプロセス管理を分離する。段階1〜3は`utilityProcess`、supervisorは段階4（EXE-D-08で改訂、2026-10-26） | AI判断（推奨方法の設計をユーザーが委任）／[ADR-003](./adr/ADR-003-desktop-runtime.md) |
 | EXE-D-03 | フォント取得は維持。作品文字の送信をなくす。端末内サブセット化は段階2では行わず全文字を埋め込む（EXE-D-09、2026-10-26で改訂） | 取得維持はユーザー指定、方式は安全性のためのAI判断／[ADR-004](./adr/ADR-004-font-acquisition.md) |
 | EXE-D-04 | クリーンCI・許可リスト・最終配布物の検査を公開必須条件にする | 安全性のためのAI判断／[ADR-005](./adr/ADR-005-release-artifact-boundary.md) |
-| EXE-D-05 | インストール版・通常ユーザー権限・任意連携は基本起動から分離。製品識別子と保存先を固定する | 既存範囲＋推奨構成のAI判断。OS・CPU・署名方式は未承認のまま明示 |
+| EXE-D-05 | インストール版・通常ユーザー権限・任意連携は基本起動から分離。製品識別子と保存先を固定する | 既存範囲＋推奨構成のAI判断。OS・配信先・署名方式は後にEXE-D-07・10・11で決定。版・CPUは実機確認待ち |
 | EXE-D-06 | 新規IDにEXE-を付け、既存更新のREQ-001〜005等を改番しない。実装・公開は行わない | 定石／ユーザー依頼の範囲 |
 | EXE-D-07 | 対応プラットフォームはWindowsのみ。macOS・Linux版はWon't。版・CPUはWindows 10 / 11のx64をAI推奨とし、実機確認した版だけ対応と表示（2026-10-26）。EXE-Q-03は一部決定 | ユーザー回答（Windowsのみ）／AI推奨（版・CPU） |
 | EXE-D-08 | [段階分け](#phases)（段階1〜4）を採用。API実行は`utilityProcess`、保存先の排他は名前付きパイプlease、Codex・ComfyUI連携は段階1〜3で製品版無効、native supervisor＋Job Objectは段階4（2026-10-26）。iframeサムネイルの置き換えを段階1の必須タスクにする | ユーザー（改善案の適用を承認）／AI設計判断／[ADR-003](./adr/ADR-003-desktop-runtime.md) |
