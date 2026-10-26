@@ -1,6 +1,6 @@
 # Windows exe版 release設計：読む入口
 
-- プロジェクト：DC-Designer ／ 版数：v0.2（2026-10-26）／ 状態：設計のみ・未実装
+- プロジェクト：DC-Designer ／ 版数：v0.2（2026-10-26）／ 状態：段階1を実装中（[実装メモ](./changes/2026-10-26-desktop-phase1-impl.md)）
 - 配布運用の正本：[配布・更新ポリシー](./release-policy.md)。本書はexe化の追加設計の入口。
 
 > **3行で**
@@ -13,7 +13,7 @@
 | ID | 種類 | 論点・おすすめ | 決まらないと止まるもの |
 | --- | --- | --- | --- |
 | EXE-Q-01 | 決定 | 公開GitHub Releases（ユーザー回答 2026-10-26）。リポジトリは公開・MITのため、利用者側にトークンは不要。[EXE-D-10](./desktop-release-spec.md#決定事項ログ) | — |
-| EXE-Q-02 | 決定（審査待ち） | [SignPath Foundation](https://signpath.org/)による無料のOSS向け署名（ユーザー回答 2026-10-26）。期待する発行者は「SignPath Foundation」。申請・審査が通るまで正式配信しない。[EXE-D-11](./desktop-release-spec.md#決定事項ログ) | 審査の合否 |
+| EXE-Q-02 | 決定（申請は段階3） | [SignPath Foundation](https://signpath.org/)による無料のOSS向け署名（ユーザー回答 2026-10-26）。期待する発行者は「SignPath Foundation」。申請は段階3のビルドが揃ってから行い、審査が通るまで正式配信しない。[EXE-D-11・12](./desktop-release-spec.md#決定事項ログ) | 審査の合否 |
 | EXE-Q-03 | 一部決定 | Windowsのみ（ユーザー回答 2026-10-26）。macOS・Linuxは対象外。版・CPUはWindows 10 / 11のx64を推奨するが実機確認待ちで、確認した版だけ対応と表示する | 配布対象・実機試験の確定 |
 | EXE-R-01 | リスク | 通信制御・最終配布物の検査は未実装（Windowsの子孫プロセス回収は段階4。段階1〜3はCodex無効で孫プロセスを常駐させない）。試験に失敗・検査不能なら配信しない | releaseの合格判定 |
 

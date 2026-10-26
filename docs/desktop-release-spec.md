@@ -239,6 +239,7 @@ Windows native supervisorの生成時Job所属・HANDLE監視と、その適用�
 | EXE-D-09 | AI送信の確認は、mainが生成する専用の確認窓（別webContents・別preload）での1回に簡素化し、ネイティブ確認ダイアログとの二重確認をやめる。フォント埋め込みは段階2で端末内サブセット化せず全文字のまま。`text=`廃止は維持（2026-10-26） | ユーザー（改善案の適用を承認）／[ADR-002](./adr/ADR-002-private-data-and-consent.md)、[ADR-004](./adr/ADR-004-font-acquisition.md) |
 | EXE-D-10 | 配信先は公開GitHub Releases（EXE-Q-01）。インストーラー・`latest.yml`等の更新用成果物を版単位で置き、公開済みアセットは差し替えない。リポジトリは公開・MITのため、利用者の更新確認・取得にトークンは不要 | ユーザー回答（2026-10-26） |
 | EXE-D-11 | コード署名は[SignPath Foundation](https://signpath.org/)（EXE-Q-02）。GitHub Actionsのタグ起点のビルド成果物を、SignPath上で本人が承認した署名要求だけ署名する。期待する発行者（証明書のsubject）は「SignPath Foundation」で、`electron-updater`の発行者検証もこの名前に固定する。前提：OSSライセンスの維持、リポジトリへのコード署名ポリシーの掲載、コミット権限者の多要素認証。審査が通らない場合は正式配信せず、署名方式を再検討する | ユーザー回答（2026-10-26）。運用条件はAI設計 |
+| EXE-D-12 | SignPath Foundationへの申請は、段階3のビルド（GitHub Actionsのタグ起点のインストーラー）が揃ってから行う。申請条件の「署名する形で公開済み」を満たすため、段階1〜2の成果物を署名なしで公開することはしない。審査待ちの期間は段階3の正式配信を遅らせる | ユーザー回答（2026-10-26） |
 
 ## このドキュメントで決まったこと
 
