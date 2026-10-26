@@ -16,7 +16,7 @@ import { acquireFonts, embedFonts, fontFiles, fontStatus, installFonts, parseExp
 import { httpError } from "./http-error";
 import { addDeckSlide, createDeck, createPoster, deckOfPoster, deleteDeck, deleteGenerated, deletePoster, duplicateDeck, duplicatePoster, getDeck, getPoster, listDecks, listGenerated, listPosters, removeDeckSlide, updateDeck, updatePoster } from "./library";
 import { API_PROTOCOL_VERSION, DESKTOP_ORIGIN, DESKTOP_TOKEN_HEADER, type DesktopHealth } from "../desktop/protocol";
-import { DESKTOP_ID_RE, DESKTOP_OPERATIONS } from "../desktop/operations";
+import { DESKTOP_ID_RE, DESKTOP_INTERNAL_OPERATIONS, DESKTOP_OPERATIONS, type DesktopOperation } from "../desktop/operations";
 
 // このファイルとその import 先は dotenv を読まない（製品版は環境変数を worker 起動時に固定するため）。開発版は server/index.ts が読む
 
@@ -44,7 +44,7 @@ function safeEqual(a: string, b: string) {
 /** 製品版で通す (method, path) か。route パターンの `:id` は DESKTOP_ID_RE に合うものだけ */
 export function isDesktopAllowed(method: string, path: string): boolean {
   const segs = path.split("/");
-  return Object.values(DESKTOP_OPERATIONS).some((op) => {
+  return [...Object.values(DESKTOP_OPERATIONS), ...Object.values(DESKTOP_INTERNAL_OPERATIONS)].some((op: DesktopOperation) => {
     if (op.method !== method) return false;
     const want = op.route.split("/");
     return want.length === segs.length && want.every((w, i) => (w.startsWith(":") ? DESKTOP_ID_RE.test(segs[i]) : w === segs[i]));
