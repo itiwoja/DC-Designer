@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "server": "tsx server/index.ts",
     "test": "vitest run",
+    "desktop:icon": "node scripts/build-icon.mjs",
     "desktop:build": "node scripts/build-desktop.mjs",
     "desktop:pack": "npm run desktop:build && electron-builder --win --dir && node scripts/inspect-desktop.mjs release/win-unpacked",
     "desktop:dist": "npm run desktop:build && electron-builder --win && node scripts/inspect-desktop.mjs release/win-unpacked"

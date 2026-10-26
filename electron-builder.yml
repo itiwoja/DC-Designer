@@ -18,11 +18,14 @@ npmRebuild: false
 nodeGypRebuild: false
 buildDependenciesFromSource: false
 win:
+  icon: desktop/assets/icon.ico
   target:
     - target: nsis
       arch:
         - x64
 nsis:
+  installerIcon: desktop/assets/icon.ico
+  uninstallerIcon: desktop/assets/icon.ico
   oneClick: false
   perMachine: false
   allowElevation: false
