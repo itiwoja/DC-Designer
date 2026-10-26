@@ -39,10 +39,12 @@ export function DesktopRuntime({ children }: { children: ReactNode }) {
   useEffect(() => { if (snap?.state === "ready") setMounted(true); }, [snap?.state]);
 
   const show = mounted || snap?.state === "ready";
-  if (!bridge || snap?.state === "ready") return <>{show && children}</>;
+  // 覆いの有無で返す形を変えない（子の並びが変わると、閉じる途中などで画面が付け直され、実行中の処理の結果を失う）
+  const covered = !!bridge && snap?.state !== "ready";
   const state = snap ?? { state: "starting" as const, appVersion: "" };
 
   const retry = async () => {
+    if (!bridge) return;
     setRetrying(true);
     try { setSnap(await bridge.runtime.retryStart()); } catch { /* 状態通知で更新される */ } finally { setRetrying(false); }
   };
@@ -52,13 +54,13 @@ export function DesktopRuntime({ children }: { children: ReactNode }) {
   return (
     <>
     {show && children}
-    <div className="desktop-runtime">
+    {covered && <div className="desktop-runtime">
       <div className={`desktop-runtime-card${failed ? " failed" : ""}`} role="status" aria-live="polite">
         <p className="desktop-runtime-title">{title}</p>
         {failed && <p className="desktop-runtime-detail">{state.error ? ERROR_TEXT[state.error] : "原因を特定できませんでした。"}</p>}
         {failed && <button ref={retryRef} type="button" className="desktop-runtime-retry" disabled={retrying} onClick={retry}>再試行</button>}
       </div>
-    </div>
+    </div>}
     </>
   );
 }

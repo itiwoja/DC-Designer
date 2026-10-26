@@ -273,7 +273,9 @@ export function createRuntime(deps: RuntimeDeps) {
 
   async function request(op: DesktopOperation, p: string, body: unknown): Promise<DesktopResult> {
     const inst = cur;
-    if (model.state !== "ready" || !alive(inst) || !inst.port) return { ok: false, error: "APIの準備ができていません", code: "INVALID_STATE" };
+    // 閉じる途中は新しい処理を受け付けないが、閉じる前の確定保存だけは通す（drain はその後に送る）
+    const accepting = model.state === "ready" || (model.state === "closing" && op.closeSave === true);
+    if (!accepting || !alive(inst) || !inst.port) return { ok: false, error: "APIの準備ができていません", code: "INVALID_STATE" };
     const payload = body === undefined ? undefined : JSON.stringify(body);
     if (payload !== undefined && (op.maxBody === undefined || Buffer.byteLength(payload) > op.maxBody)) {
       return { ok: false, error: "要求が大きすぎます", code: "INVALID_ARGUMENT" };
