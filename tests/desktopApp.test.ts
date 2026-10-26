@@ -100,3 +100,28 @@ describe("製品版の入口", () => {
     handle.resume();
   });
 });
+
+describe("ChatGPT サインインの内部 route", () => {
+  const post = (path: string, body: unknown, headers: Record<string, string> = good) => call(path, { method: "POST", headers, body: JSON.stringify(body) });
+
+  it("start は port が 1024〜65535 の整数以外を 400 にする", async () => {
+    for (const bad of [{}, { port: 80 }, { port: 70000 }, { port: 1234.5 }, { port: "5000" }, { port: 5000, extra: 1 }, { port: 5000, newAccount: "yes" }]) {
+      expect((await post("/api/auth/chatgpt/start", bad)).status).toBe(400);
+    }
+  });
+
+  it("complete は文字列以外の query を 400 にし、知らない state はエラー結果を返す", async () => {
+    expect((await post("/api/auth/chatgpt/complete", { query: { code: 1 } })).status).toBe(400);
+    expect((await post("/api/auth/chatgpt/complete", { query: "x" })).status).toBe(400);
+    expect((await post("/api/auth/chatgpt/complete", {})).status).toBe(400);
+    const res = await post("/api/auth/chatgpt/complete", { query: { state: "unknown", code: "x" } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ kind: "error" });
+  });
+
+  it("token が無ければ 401、GET や旧 login route は 404", async () => {
+    expect((await post("/api/auth/chatgpt/complete", { query: {} }, { origin: "app://dc-designer" })).status).toBe(401);
+    expect((await call("/api/auth/chatgpt/start", { headers: good })).status).toBe(404);
+    expect((await call("/api/auth/chatgpt/login", { headers: good })).status).toBe(404);
+  });
+});

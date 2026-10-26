@@ -35,6 +35,14 @@ export type DesktopBridge = {
     set(providerId: string, kind: string, value: string): Promise<DesktopResult>;
     remove(secretRef: string): Promise<DesktopResult>;
   };
+  /**
+   * ChatGPT のサインイン（EXE-SCR-004）。main が既定のブラウザで認可画面を開き、ループバックのコールバックを受けて完了する。
+   * 成功は { ok: true, data: { result: "signed-in" | "no-plan" } }、キャンセル・失敗は { ok: false, error, code }。
+   * 状態の取得は request({ operation: "status.get" })、ログアウトは request({ operation: "auth.logout" })
+   */
+  auth: {
+    signIn(opts?: { newAccount?: boolean }): Promise<DesktopResult>;
+  };
   close: {
     /** 解除関数を返す */
     onPrepare(cb: (req: PrepareCloseRequest) => void): () => void;
@@ -53,4 +61,5 @@ export const IPC = {
   secretsStatus: "dc:secrets-status",
   secretsSet: "dc:secrets-set",
   secretsRemove: "dc:secrets-remove",
+  authSignIn: "dc:auth-sign-in",
 } as const;

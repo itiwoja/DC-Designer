@@ -1,7 +1,7 @@
 /**
  * Windows 版（Electron）で画面から呼べる API 操作の静的な一覧（EXE-API-009）。
  * 画面は URL・method を渡さず、ここにある operation 名と params だけを渡す。main は同じ一覧で検証してから
- * 固定の内部 API へ中継する。AI・認証・画像生成は載せない。フォント取得・OS 登録は fontGate が許可・確認してから中継する
+ * 固定の内部 API へ中継する。AI・画像生成は載せない（認証はログアウトだけ。サインインは authGate が内部操作で行う）。フォント取得・OS 登録は fontGate が許可・確認してから中継する
  */
 
 export type DesktopMethod = "GET" | "POST" | "PUT" | "DELETE";
@@ -42,6 +42,8 @@ export const DESKTOP_OPERATIONS = {
   "generated.list": { method: "POST", route: "/api/generated/list", maxBody: 40 * MB },
   "generated.delete": { method: "POST", route: "/api/generated/delete", maxBody: 40 * MB },
 
+  "auth.logout": { method: "POST", route: "/api/auth/chatgpt/logout" },
+
   "fonts.status": { method: "POST", route: "/api/fonts/status", maxBody: 64 * 1024 },
   // 取得・埋め込み・OS 登録は main の fontGate を通す（許可・確認が済むまで worker へ送らない）。fonts.acquire は main 内部専用で載せない
   "fonts.files": { method: "POST", route: "/api/fonts/files", maxBody: 64 * 1024 },
@@ -52,6 +54,9 @@ export const DESKTOP_OPERATIONS = {
 /** main だけが内部で使う操作（画面からは呼べない。worker の許可リストには入る） */
 export const DESKTOP_INTERNAL_OPERATIONS = {
   "fonts.acquire": { method: "POST", route: "/api/fonts/acquire", maxBody: 64 * 1024 },
+  // ChatGPT サインイン：認可 URL の作成と結果の受け取り（authGate が呼ぶ。画面からは呼べない）
+  "auth.start": { method: "POST", route: "/api/auth/chatgpt/start", maxBody: 1024 },
+  "auth.complete": { method: "POST", route: "/api/auth/chatgpt/complete", maxBody: 16 * 1024 },
 } as const satisfies Record<string, DesktopOperation>;
 
 export type DesktopOperationName = keyof typeof DESKTOP_OPERATIONS;

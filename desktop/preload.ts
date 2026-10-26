@@ -24,6 +24,9 @@ const bridge: DesktopBridge = {
     set: (providerId, kind, value) => ipcRenderer.invoke(IPC.secretsSet, providerId, kind, value),
     remove: (secretRef) => ipcRenderer.invoke(IPC.secretsRemove, secretRef),
   },
+  auth: {
+    signIn: (opts) => ipcRenderer.invoke(IPC.authSignIn, { newAccount: opts?.newAccount === true }),
+  },
   close: {
     onPrepare: (cb) => subscribe<PrepareCloseRequest>(IPC.prepareClose, cb),
     complete: (result) => { void ipcRenderer.invoke(IPC.completeClose, result).catch(() => {}); },

@@ -17,6 +17,7 @@ import {
   isExternalHttpsUrl, resolveAppTarget, targetFilePath,
 } from "./appProtocol";
 import { createAiConsentBroker } from "./aiConsent";
+import { createAuthGate } from "./authGate";
 import { IPC, type DesktopResult, type PrepareCloseResult } from "./bridge";
 import { createCloseCoordinator } from "./close";
 import { CONSENT_PARTITION, createConsentWindowHost, lockdownConsentSession } from "./consentWindow";
@@ -154,6 +155,12 @@ const fontGate = createFontGate({
   confirmInstall: async (faces) => (await showMessage(installDialogOptions(faces))) === 1,
 });
 
+// ChatGPT のサインイン：既定のブラウザで認可画面を開き、一時的なループバックの受け口で結果を受ける
+const authGate = createAuthGate({
+  request: (op, p, body) => runtime.request(op, p, body),
+  openExternal: (url) => shell.openExternal(url),
+});
+
 /** 画面へ返す資格情報の結果（値は含めない）。変わった状態は worker のキャッシュへも伝える */
 function secretResult(r: SecretResult): DesktopResult {
   if (!r.ok) return failResult(r.code ?? "INTERNAL", "資格情報を保存できませんでした");
@@ -189,6 +196,11 @@ function registerIpc(): void {
   ipcMain.handle(IPC.secretsRemove, (e, secretRef: unknown): DesktopResult => {
     if (!isTrusted(e)) return failResult("UNAUTHORIZED_CONTEXT", "この画面からは実行できません");
     return secretResult(secrets.remove(secretRef));
+  });
+  ipcMain.handle(IPC.authSignIn, (e, opts: unknown): Promise<DesktopResult> | DesktopResult => {
+    if (!isTrusted(e)) return failResult("UNAUTHORIZED_CONTEXT", "この画面からは実行できません");
+    const newAccount = !!opts && typeof opts === "object" && (opts as { newAccount?: unknown }).newAccount === true;
+    return authGate.signIn({ newAccount });
   });
   consentHost.registerIpc();
   ipcMain.handle(IPC.completeClose, (e, r: unknown) => {
