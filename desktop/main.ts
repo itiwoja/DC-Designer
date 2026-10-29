@@ -352,11 +352,7 @@ function createWindow(): BrowserWindow {
       spellcheck: false,
     },
   });
-  win.once("ready-to-show", () => {
-    win.show();
-    // 起動を待たせず、表示の後に1回だけ確認する（結果は画面が購読前でも状態に残る）
-    if (updates) { const u = updates; setTimeout(() => { void u.check({ manual: false }); }, 3_000); }
-  });
+  win.once("ready-to-show", () => win.show());
   win.on("close", (e) => {
     if (closeApproved) return;
     e.preventDefault();
@@ -418,5 +414,7 @@ if (!app.requestSingleInstanceLock()) {
     runtime.start();
     editorWindow = createWindow();
     void editorWindow.loadURL(APP_ORIGIN_URL).catch(() => {});
+    // 窓の読み込みと並べて1回だけ確認する。起動は待たせず、結果は画面が購読前でも状態に残り、表示後に getState で拾われる
+    void updates?.check({ manual: false });
   });
 }
