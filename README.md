@@ -65,6 +65,9 @@ npm run dev            # http://localhost:5173
 | `src/components/index.tsx` | 各コンポーネントの SVG 実装（ピル、QR、吹き出し、付箋、PC/スマホモック、ポラロイド、キラキラ…） |
 | `src/render/` | SVG レンダラ、テキスト（縁取り・自動縮小）、書き出し |
 | `src/editor/` | エディタ UI |
+| `server/app.ts` | API の組み立て、アクセス制御、終了時の書き込み待機 |
+| `server/routes/` | 認証・AI 生成/編集・画像・フォント・成果物管理・設定の API |
+| `server/route-handlers.ts` | JSON / NDJSON の応答、エラー処理、接続切断時のキャンセル |
 | `server/planner.ts` | ChatGPT でブリーフ → PosterSpec / チャットのメッセージ（直近の会話つき）→ 返答 + 修正後の PosterSpec。zod 検証に失敗したら 1 回だけ自動修正 |
 | `server/chatgpt-auth.ts` | Sign in with ChatGPT（OAuth/PKCE、ID トークン検証、トークン更新、資格情報の保存） |
 | `server/chatgpt.ts` | ChatGPT プランでの推論（Responses API、`store:false` / `stream:true`） |
