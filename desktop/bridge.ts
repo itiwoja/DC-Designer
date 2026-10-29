@@ -20,6 +20,26 @@ export type PrepareCloseRequest = { requestId: string };
 /** 画面 → main：保存準備の結果。allSaved が false か busy が true なら main は閉じない */
 export type PrepareCloseResult = { requestId: string; allSaved: boolean; busy: boolean };
 
+/** 更新の状態（docs/desktop-update-design.md の状態遷移） */
+export type UpdateState = "idle" | "checking" | "upToDate" | "available" | "downloading" | "downloaded" | "preparingRestart" | "error";
+export type UpdateErrorStage = "check" | "download";
+/** 画面に出す案内。available：新版あり／progress：取得中／downloaded：再起動で更新／restarting：保存して再起動中／upToDate・error：手動確認の結果など */
+export type UpdatePromptKind = "available" | "progress" | "downloaded" | "restarting" | "upToDate" | "error";
+export type UpdatePromptAction = "later" | "background" | "close";
+export type UpdateSnapshot = {
+  state: UpdateState;
+  currentVersion: string;
+  latestVersion?: string;
+  /** プレーンテキスト（最大 2,000 文字） */
+  releaseNotes?: string;
+  /** 最後に確認できた日時（ISO 8601） */
+  checkedAt?: string;
+  progress?: { transferred: number; total: number; percent: number };
+  error?: { stage: UpdateErrorStage; message: string };
+  /** 表示待ちの案内。答えるまで残り、再マウントしても出し直す */
+  prompt?: { id: string; kind: UpdatePromptKind };
+};
+
 /** 生成の進み具合（server の Progress と同じ形） */
 export type DesktopProgress = { phase: "thinking" | "writing"; attempt: number; chars?: number; items?: number };
 export type DesktopCallOptions = {
@@ -63,6 +83,16 @@ export type DesktopBridge = {
     onPrepare(cb: (req: PrepareCloseRequest) => void): () => void;
     complete(result: PrepareCloseResult): void;
   };
+  /** 更新（API-001〜007）。確認・取得・適用は main が持ち、画面は表示と操作だけ */
+  update: {
+    getState(): Promise<UpdateSnapshot>;
+    check(): Promise<UpdateSnapshot>;
+    download(version: string): Promise<UpdateSnapshot>;
+    install(version: string): Promise<UpdateSnapshot>;
+    respond(promptId: string, action: UpdatePromptAction): Promise<UpdateSnapshot>;
+    /** 解除関数を返す */
+    onStateChanged(cb: (s: UpdateSnapshot) => void): () => void;
+  };
 };
 
 /** IPC channel 名（preload と main だけが使う） */
@@ -78,6 +108,13 @@ export const IPC = {
   secretsSet: "dc:secrets-set",
   secretsRemove: "dc:secrets-remove",
   authSignIn: "dc:auth-sign-in",
+  updateGetState: "dc:update-get-state",
+  updateCheck: "dc:update-check",
+  updateDownload: "dc:update-download",
+  updateInstall: "dc:update-install",
+  updateRespond: "dc:update-respond",
+  /** main → 画面：UpdateSnapshot */
+  updateState: "dc:update-state",
   /** main → 画面：{ callId, progress: DesktopProgress } */
   progress: "dc:api-progress",
   /** 画面 → main：callId */

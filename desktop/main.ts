@@ -2,6 +2,7 @@
  * Windows 版 Electron の main（段階1）。
  * 固定 origin の app://dc-designer で同梱の画面を出し、API は utilityProcess の worker に任せる。
  * 外部通信はこのセッションで止める。AI 操作は main で送信内容を検証したら追加の確認窓なしで進める。
+ * 更新は公開 GitHub Releases の正式版だけを起動ごとに確認し、同意後に取得、保存を確かめてから再起動で適用する。
  */
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
@@ -12,6 +13,7 @@ import {
   app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, safeStorage, session, shell, utilityProcess,
   type IpcMainInvokeEvent, type MenuItemConstructorOptions,
 } from "electron";
+import { autoUpdater } from "electron-updater";
 import {
   APP_ORIGIN_URL, APP_SCHEME, buildCsp, inlineScriptHashes, isAllowedRequestUrl, isAppUrl,
   isExternalHttpsUrl, resolveAppTarget, targetFilePath,
@@ -26,6 +28,7 @@ import { resolveDesktopRequest } from "./operations";
 import { USER_ROOT_DIRS } from "./protocol";
 import { buildWorkerEnv, createRuntime, type WorkerChild } from "./runtime";
 import { createSecretStore, type SecretResult } from "./secrets";
+import { createUpdateManager, type UpdateManager } from "./updater";
 
 const PARTITION = "persist:dc-designer";
 
@@ -221,6 +224,27 @@ function registerIpc(): void {
     const newAccount = !!opts && typeof opts === "object" && (opts as { newAccount?: unknown }).newAccount === true;
     return authGate.signIn({ newAccount });
   });
+  // 更新：版は main が案内したものと一致するときだけ受け付ける（URL・path は受け取らない）
+  ipcMain.handle(IPC.updateGetState, (e) => {
+    if (!isTrusted(e)) throw new Error("UNAUTHORIZED_CONTEXT");
+    return updates?.snapshot() ?? idleUpdate();
+  });
+  ipcMain.handle(IPC.updateCheck, (e) => {
+    if (!isTrusted(e)) throw new Error("UNAUTHORIZED_CONTEXT");
+    return updates?.check({ manual: true }) ?? idleUpdate();
+  });
+  ipcMain.handle(IPC.updateDownload, (e, version: unknown) => {
+    if (!isTrusted(e)) throw new Error("UNAUTHORIZED_CONTEXT");
+    return updates?.download(version) ?? idleUpdate();
+  });
+  ipcMain.handle(IPC.updateInstall, (e, version: unknown) => {
+    if (!isTrusted(e)) throw new Error("UNAUTHORIZED_CONTEXT");
+    return updates?.install(version) ?? idleUpdate();
+  });
+  ipcMain.handle(IPC.updateRespond, (e, promptId: unknown, action: unknown) => {
+    if (!isTrusted(e)) throw new Error("UNAUTHORIZED_CONTEXT");
+    return updates?.respond(promptId, action) ?? idleUpdate();
+  });
   ipcMain.handle(IPC.completeClose, (e, r: unknown) => {
     if (!isTrusted(e) || !r || typeof r !== "object") return;
     const { requestId, allSaved, busy } = r as Partial<PrepareCloseResult>;
@@ -248,6 +272,44 @@ const closer = createCloseCoordinator({
   },
 });
 
+// ---- 更新 ----
+
+// quitAndInstall の後もアプリが残っていたら（インストーラーを起動できなかった）、知らせて終了する
+const INSTALL_START_TIMEOUT_MS = 15_000;
+
+/** インストール版だけ、ready の後に作る（開発中の electron . と ready 前には autoUpdater に触れない） */
+let updates: UpdateManager | null = null;
+const idleUpdate = () => ({ state: "idle" as const, currentVersion: app.getVersion() });
+
+function setupUpdates(): void {
+  if (!app.isPackaged) return;
+  // 起動時に確認するだけで、取得・適用は画面での同意を待つ。プレリリース・ダウングレードには進まない
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.allowPrerelease = false;
+  autoUpdater.allowDowngrade = false;
+  // 署名後に作り直す latest.yml には blockmap を載せないので、差分取得はしない
+  autoUpdater.disableDifferentialDownload = true;
+  // 既定のロガーは console へ URL などを出すので止める
+  autoUpdater.logger = null;
+  // 失敗は check / download の Promise で扱う。error を誰も聞いていないと EventEmitter が例外にして main が落ちる
+  autoUpdater.on("error", () => {});
+  updates = createUpdateManager({
+    updater: autoUpdater,
+    currentVersion: app.getVersion(),
+    onState: (s) => { sendToEditor(IPC.updateState, s); },
+    restartToInstall: () => closer.requestClose(() => {
+      closeApproved = true;
+      // 保存と worker の停止は済んでいる。インストーラーを静かに起動し、終わったら新しい版を立ち上げる
+      autoUpdater.quitAndInstall(true, true);
+      setTimeout(() => {
+        dialog.showErrorBox("DC-Designer", "更新を開始できませんでした。作業内容は保存されています。アプリを終了するので、もう一度起動してください。");
+        app.quit();
+      }, INSTALL_START_TIMEOUT_MS).unref?.();
+    }),
+  });
+}
+
 // ---- 窓 ----
 
 function buildMenu(): void {
@@ -264,6 +326,11 @@ function buildMenu(): void {
     }],
   };
   const menu: MenuItemConstructorOptions[] = [edit, fonts];
+  // 更新はインストール版だけ（開発中の electron . では確認しない）
+  if (updates) {
+    const u = updates;
+    menu.push({ label: "ヘルプ", submenu: [{ label: "更新を確認", click: () => { void u.check({ manual: true }); } }] });
+  }
   if (!app.isPackaged) menu.push({ label: "開発", submenu: [{ role: "toggleDevTools" }, { role: "reload" }] });
   Menu.setApplicationMenu(Menu.buildFromTemplate(menu));
 }
@@ -285,7 +352,11 @@ function createWindow(): BrowserWindow {
       spellcheck: false,
     },
   });
-  win.once("ready-to-show", () => win.show());
+  win.once("ready-to-show", () => {
+    win.show();
+    // 起動を待たせず、表示の後に1回だけ確認する（結果は画面が購読前でも状態に残る）
+    if (updates) { const u = updates; setTimeout(() => { void u.check({ manual: false }); }, 3_000); }
+  });
   win.on("close", (e) => {
     if (closeApproved) return;
     e.preventDefault();
@@ -341,6 +412,7 @@ if (!app.requestSingleInstanceLock()) {
 
   void app.whenReady().then(() => {
     lockdownSession();
+    setupUpdates();
     registerIpc();
     buildMenu();
     runtime.start();

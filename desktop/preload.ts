@@ -3,7 +3,7 @@
  * 生の ipcRenderer・任意 channel は出さない
  */
 import { contextBridge, ipcRenderer } from "electron";
-import { IPC, type DesktopBridge, type DesktopProgress, type PrepareCloseRequest, type RuntimeSnapshot } from "./bridge";
+import { IPC, type DesktopBridge, type DesktopProgress, type PrepareCloseRequest, type RuntimeSnapshot, type UpdateSnapshot } from "./bridge";
 
 /** 購読して解除関数を返す（IpcRendererEvent は画面へ渡さない） */
 function subscribe<T>(channel: string, cb: (v: T) => void): () => void {
@@ -48,6 +48,14 @@ const bridge: DesktopBridge = {
   close: {
     onPrepare: (cb) => subscribe<PrepareCloseRequest>(IPC.prepareClose, cb),
     complete: (result) => { void ipcRenderer.invoke(IPC.completeClose, result).catch(() => {}); },
+  },
+  update: {
+    getState: () => ipcRenderer.invoke(IPC.updateGetState),
+    check: () => ipcRenderer.invoke(IPC.updateCheck),
+    download: (version) => ipcRenderer.invoke(IPC.updateDownload, version),
+    install: (version) => ipcRenderer.invoke(IPC.updateInstall, version),
+    respond: (promptId, action) => ipcRenderer.invoke(IPC.updateRespond, promptId, action),
+    onStateChanged: (cb) => subscribe<UpdateSnapshot>(IPC.updateState, cb),
   },
 };
 
