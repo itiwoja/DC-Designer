@@ -6,18 +6,16 @@
  */
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
-import { stat } from "node:fs/promises";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import {
   app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, safeStorage, session, shell, utilityProcess,
   type IpcMainInvokeEvent, type MenuItemConstructorOptions,
 } from "electron";
 import { autoUpdater } from "electron-updater";
 import {
-  APP_ORIGIN_URL, APP_SCHEME, buildCsp, inlineScriptHashes, isAllowedRequestUrl, isAppUrl,
-  isExternalHttpsUrl, resolveAppTarget, targetFilePath,
+  APP_SCHEME, isAllowedRequestUrl, isAppUrl, isExternalHttpsUrl,
 } from "./appProtocol";
+import { createAppHandler } from "./appHandler";
 import { createAiConsentBroker } from "./aiConsent";
 import { createAuthGate } from "./authGate";
 import { IPC, type DesktopResult, type PrepareCloseResult } from "./bridge";
@@ -28,6 +26,7 @@ import { resolveDesktopRequest } from "./operations";
 import { USER_ROOT_DIRS } from "./protocol";
 import { buildWorkerEnv, createRuntime, type WorkerChild } from "./runtime";
 import { createSecretStore, type SecretResult } from "./secrets";
+import { startDesktop } from "./startup";
 import { createUpdateManager, type UpdateManager } from "./updater";
 
 const PARTITION = "persist:dc-designer";
@@ -86,42 +85,7 @@ const runtime = createRuntime({
 
 // ---- app:// の配信 ----
 
-const baseHeaders = (type: string, csp: string): Record<string, string> => ({
-  "content-type": type,
-  "content-security-policy": csp,
-  "x-content-type-options": "nosniff",
-});
-
-async function handleApp(request: Request): Promise<Response> {
-  const csp = buildCsp();
-  const notFound = () => new Response("Not Found", { status: 404, headers: baseHeaders("text/plain; charset=utf-8", csp) });
-  if (request.method !== "GET" && request.method !== "HEAD") {
-    return new Response("Method Not Allowed", { status: 405, headers: baseHeaders("text/plain; charset=utf-8", csp) });
-  }
-  const target = resolveAppTarget(request.url);
-  const file = target && targetFilePath(target, roots);
-  if (!target || !file) return notFound();
-  try {
-    if (!(await stat(file)).isFile()) return notFound();
-  } catch {
-    return notFound();
-  }
-  const fileUrl = pathToFileURL(file).toString();
-  // index.html は inline script（テーマ決定）のハッシュだけ CSP に足す
-  if (target.kind === "dist" && target.segments.length === 1 && target.segments[0] === "index.html") {
-    const res = await net.fetch(fileUrl, { bypassCustomProtocolHandlers: true });
-    const html = await res.text();
-    return new Response(html, { status: 200, headers: baseHeaders(target.type, buildCsp(inlineScriptHashes(html))) });
-  }
-  const range = request.headers.get("range");
-  const res = await net.fetch(fileUrl, { bypassCustomProtocolHandlers: true, ...(range ? { headers: { range } } : {}) });
-  const headers = baseHeaders(target.type, csp);
-  for (const k of ["content-length", "content-range", "accept-ranges"]) {
-    const v = res.headers.get(k);
-    if (v) headers[k] = v;
-  }
-  return new Response(res.body, { status: res.status, headers });
-}
+const handleApp = createAppHandler(roots, (url, options) => net.fetch(url, options));
 
 // ---- IPC ----
 
@@ -261,9 +225,7 @@ const closer = createCloseCoordinator({
   sendPrepare: (requestId) => sendToEditor(IPC.prepareClose, { requestId }),
   choose: async ({ message, detail, buttons }) => {
     const opts = { type: "warning" as const, title: "DC-Designer", message, detail, buttons, defaultId: 0, cancelId: 0, noLink: true };
-    const w = editorWindow;
-    const r = w && !w.isDestroyed() ? await dialog.showMessageBox(w, opts) : await dialog.showMessageBox(opts);
-    return r.response;
+    return showMessage(opts);
   },
   finalize: () => {
     closeApproved = true;
@@ -388,33 +350,18 @@ function lockdownSession(): Electron.Session {
 
 // ---- 起動 ----
 
-if (!app.requestSingleInstanceLock()) {
-  app.quit();
-} else {
-  hardenContents();
-  app.on("second-instance", () => {
-    const w = editorWindow;
-    if (!w || w.isDestroyed()) return;
-    if (w.isMinimized()) w.restore();
-    w.focus();
-  });
-  app.on("before-quit", (e) => {
-    if (closeApproved || !editorWindow || editorWindow.isDestroyed()) return;
-    e.preventDefault();
-    editorWindow.close();
-  });
-  app.on("will-quit", () => { if (runtime.hasLiveWorker()) void runtime.forceStop(); });
-  app.on("window-all-closed", () => app.quit());
-
-  void app.whenReady().then(() => {
+void startDesktop({
+  app, runtime,
+  getWindow: () => editorWindow,
+  createWindow: () => (editorWindow = createWindow()),
+  isCloseApproved: () => closeApproved,
+  hardenContents,
+  prepare: () => {
     lockdownSession();
     setupUpdates();
     registerIpc();
     buildMenu();
-    runtime.start();
-    editorWindow = createWindow();
-    void editorWindow.loadURL(APP_ORIGIN_URL).catch(() => {});
-    // 窓の読み込みと並べて1回だけ確認する。起動は待たせず、結果は画面が購読前でも状態に残り、表示後に getState で拾われる
-    void updates?.check({ manual: false });
-  });
-}
+  },
+  checkUpdates: () => { void updates?.check({ manual: false }); },
+  showStartupError: () => dialog.showErrorBox("DC-Designer", "画面を起動できませんでした。アプリを終了するので、もう一度起動してください。"),
+});
