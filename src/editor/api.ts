@@ -48,7 +48,7 @@ export type ChatContext = { memory?: string; history: ChatTurn[] };
 
 /** AI 修正の資料全体のスライド（番号は 1 始まり） */
 /** spec があるスライドは書き換え・統合の対象、texts だけのスライドは参考（文字の要約） */
-export type DeckEditContext = { current: number; total: number; slides: { number: number; title?: string; spec?: PosterSpec; texts?: string[] }[]; instagram?: boolean };
+export type DeckEditContext = { current: number; total: number; slides: { number: number; title?: string; spec?: PosterSpec; texts?: string[]; notes?: string }[]; instagram?: boolean };
 
 export type FontProposal = { name: string; reason: string; display: string; body: string };
 export type FontStatus = { target: "windows" | "mac" | "linux"; installed: Record<string, boolean> };
@@ -111,7 +111,7 @@ export const api = {
   /** チャットでの修正。spec が無ければ変更なし（質問への回答など） */
   /** across はデッキの全スライドへの指示を 1 枚ずつ当てるときの、そのスライドの位置と先に直したスライドの方針 */
   edit: (spec: PosterSpec, instruction: string, selectedIds: string[] | undefined, signal?: AbortSignal, deck?: DeckEditContext, chat?: ChatContext, instagram?: boolean, across?: { number: number; total: number; guide?: string }, references?: RefImage[], subject?: AiSubject) =>
-    post<{ reply: string; spec?: PosterSpec; target?: number; remove?: number[] }>("/api/edit", withSubject({ spec, instruction, selectedIds, deck, across, history: chat?.history, memory: chat?.memory, instagram, references }, subject), signal),
+    post<{ reply: string; spec?: PosterSpec; target?: number; remove?: number[]; others?: { target: number; spec: PosterSpec }[] }>("/api/edit", withSubject({ spec, instruction, selectedIds, deck, across, history: chat?.history, memory: chat?.memory, instagram, references }, subject), signal),
   /** デッキの並び（文字）とお手本のスライドから、position 番目に追加する新しいスライドを 1 枚作る（追加はしない） */
   planSlide: (body: { instruction: string; position: number; total: number; title?: string; outline: { number: number; title?: string; texts: string[] }[]; samples: { number: number; title?: string; spec: PosterSpec }[]; instagram?: boolean; references?: RefImage[]; subject?: AiSubject }, chat?: ChatContext, signal?: AbortSignal) =>
     post<{ reply: string; spec: PosterSpec }>("/api/slide", { ...body, history: chat?.history, memory: chat?.memory }, signal),

@@ -329,8 +329,8 @@ export async function refineReproduction(opts: { reference: ImageRef; render: Im
 /** 座標の基準がずれないよう、キャンバスの大きさは参考画像に合わせて固定する */
 const fixSize = (spec: PosterSpec, width: number, height: number): PosterSpec => ({ ...spec, meta: { ...spec.meta, width, height } });
 
-/** 資料全体のスライド（PPTX エディターモード。現在のスライド以外も含む）。spec が無いものは文字だけの参考 */
-type SlideRef = { number: number; title?: string; spec?: PosterSpec; texts?: string[] };
+/** 資料全体のスライド（PPTX エディターモード。現在のスライド以外も含む）。spec が無いものは文字（と台本）だけの参考 */
+type SlideRef = { number: number; title?: string; spec?: PosterSpec; texts?: string[]; notes?: string };
 export type DeckContext = { current: number; total: number; slides: SlideRef[]; instagram?: boolean };
 
 /**
@@ -340,7 +340,10 @@ export type DeckContext = { current: number; total: number; slides: SlideRef[]; 
  * 現在の状態は毎回 PosterSpec そのものを渡すので、会話には意図・好み・決定事項だけが残っていればよい
  */
 export type ChatTurn = { role: "user" | "assistant" | "note"; text: string };
-type EditResult = { reply: string; spec?: PosterSpec; target?: number; remove?: number[] };
+/** デッキで書き換えた 1 枚 */
+export type SlideEdit = { target: number; spec: PosterSpec };
+/** spec / target は主に書き換えたスライド（今のスライドを書き換えたならそれ）。others はそれ以外に書き換えたスライド */
+type EditResult = { reply: string; spec?: PosterSpec; target?: number; remove?: number[]; others?: SlideEdit[] };
 /**
  * デッキの全スライドへの指示（「授業スライド全体の差し色を変えて」）を 1 枚ずつ当てるときの、今直しているスライドの位置。
  * guide は先に直したスライドで AI が返した方針（ほかのスライドでも同じ直し方にそろえるため）
@@ -405,10 +408,17 @@ const acrossNote = (a: AcrossDeck) => [
 export async function editPoster(opts: EditOptions): Promise<EditResult> {
   const r = await editSpec(opts);
   // BGM は AI に触らせない（書き戻しで落とされても、書き換えたスライドの元の BGM を残す）
-  if (!r.spec || r.spec.bgm?.length) return r;
-  const target = r.target ?? opts.deck?.current;
-  const bgm = target === undefined || target === opts.deck?.current ? opts.spec.bgm : opts.deck?.slides.find((s) => s.number === target)?.spec?.bgm;
-  return bgm?.length ? { ...r, spec: { ...r.spec, bgm } } : r;
+  const keepBgm = (spec: PosterSpec, target: number | undefined): PosterSpec => {
+    if (spec.bgm?.length) return spec;
+    const bgm = target === undefined || target === opts.deck?.current ? opts.spec.bgm : opts.deck?.slides.find((s) => s.number === target)?.spec?.bgm;
+    return bgm?.length ? { ...spec, bgm } : spec;
+  };
+  if (!r.spec) return r;
+  return {
+    ...r,
+    spec: keepBgm(r.spec, r.target ?? opts.deck?.current),
+    ...(r.others ? { others: r.others.map((e) => ({ ...e, spec: keepBgm(e.spec, e.target) })) } : {}),
+  };
 }
 
 async function editSpec(opts: EditOptions): Promise<EditResult> {
@@ -435,8 +445,8 @@ async function editSpec(opts: EditOptions): Promise<EditResult> {
 }
 
 /**
- * 「スライド8の内容をスライド5に反映」のように別のスライドを参照する指示。
- * 言及されたスライドの spec も渡し、どのスライドを書き換えるか（target）と修正後の spec を返させる。
+ * 「スライド8の内容をスライド5に反映」「3枚目と5枚目のタイトルを直して」「8〜10枚目の台本の流れをそろえて」のように、ほかのスライドに触れる指示。
+ * 言及されたスライドの spec も渡し、書き換えるスライドごとに番号（target）と修正後の spec を返させる（複数可）。
  * 「スライド18,19を1枚にまとめて」のような統合では、不要になったスライドの番号（remove）も返させる（削除は画面側で確認してから行う）
  */
 async function editDeckSlide(opts: EditOptions & { deck: DeckContext }): Promise<EditResult> {
@@ -452,8 +462,8 @@ async function editDeckSlide(opts: EditOptions & { deck: DeckContext }): Promise
       : `これは ${total} 枚のスライドからなるデッキです。各スライドは 1 つの PosterSpec です。ユーザーは今スライド ${current} を開いています。`,
     referenceSources(opts.references),
     "資料の構成や内容について相談されたら、渡された全スライドを参照して答えてください。相談や確認だけなら spec は null にし、スライドを変更しないでください。",
-    "指示を読み、書き換えるべきスライドを 1 枚だけ選んで修正してください。「AをBに反映」「Aに合わせてBを直す」なら書き換えるのは B、参照元の A は変更しません。書き換え先が読み取れなければ、今開いているスライドを書き換えます。",
-    "「スライドAとBを1枚にまとめて」のように複数のスライドを統合する指示なら、まとめ先（指示が無ければ番号の小さい方）を target にして、統合するスライドすべての内容（見出し・本文・図や画像）を 1 枚に収まるよう整理し直し、不要になったスライドの番号を \"remove\" に入れてください。統合でなければ \"remove\" は空配列にします。",
+    "指示を読み、書き換えが必要なスライドだけを修正してください。「3枚目と5枚目を直して」「8〜10枚目の台本の整合性を取って」のように複数のスライドを指していれば、それぞれを書き換えます（台本どうしの整合性なら、話の流れ・用語・口調・つなぎの言葉がそろうように各スライドの notes を直します）。「AをBに反映」「Aに合わせてBを直す」なら書き換えるのは B、参照元の A は変更しません。書き換え先が読み取れなければ、今開いているスライドを書き換えます。",
+    "「スライドAとBを1枚にまとめて」のように複数のスライドを統合する指示なら、まとめ先（指示が無ければ番号の小さい方）だけを書き換えて、統合するスライドすべての内容（見出し・本文・図や画像）を 1 枚に収まるよう整理し直し、不要になったスライドの番号を \"remove\" に入れてください。統合でなければ \"remove\" は空配列にします。",
     "文字だけの参考スライドは内容を知るための資料です。そこに書かれた内容を取り込むときは、書き換え先のスライドに書き写してください（参考スライドを target や remove にはできません）。",
     "参照元から内容（文言・レイヤー・画像など）を持ち込むときは、書き換え先のスライドのサイズ・テーマ・既存のレイアウトになじむように配置し、id は書き換え先の中で一意にしてください。指示と無関係なレイヤーは id・値ともにそのまま残してください。",
     "src が設定済みの画像は、内容を変える指示がない限り src と asset をそのまま残してください（参照元の画像を使う場合も src ごと持ち込んでよい）。",
@@ -463,20 +473,34 @@ async function editDeckSlide(opts: EditOptions & { deck: DeckContext }): Promise
     opts.instruction,
     ...slides.map((s) => s.spec
       ? `# スライド ${s.number}${s.number === current ? "（今開いているスライド）" : ""}${s.title ? `「${s.title}」` : ""}\n${JSON.stringify(s.spec)}`
-      : `# スライド ${s.number}${s.title ? `「${s.title}」` : ""}（文字だけの参考。書き換え・統合の対象にはしない）\n${(s.texts ?? []).join(" / ") || "（文字なし）"}`),
+      : `# スライド ${s.number}${s.title ? `「${s.title}」` : ""}（文字だけの参考。書き換え・統合の対象にはしない）\n${(s.texts ?? []).join(" / ") || "（文字なし）"}${s.notes?.trim() ? `\n台本: ${s.notes.trim()}` : ""}`),
     "# 出力",
-    `{"reply": 返答, "target": 書き換えるスライド番号（${numbers.join(" / ")} のいずれか）, "spec": 修正後のそのスライドの PosterSpec 全体 または null, "remove": 統合して不要になったスライド番号の配列} の JSON のみを出力してください。${REPLY_RULE}`,
+    `{"reply": 返答, "edits": [{"target": 書き換えるスライド番号（${numbers.join(" / ")} のいずれか）, "spec": 修正後のそのスライドの PosterSpec 全体}], "remove": 統合して不要になったスライド番号の配列} の JSON のみを出力してください。edits には書き換えたスライドだけを 1 枚 1 件で入れ、変更が無ければ空配列にしてください。${REPLY_RULE.replace('"spec" は null', '"edits" は空配列')}`,
   ].filter(Boolean).join("\n\n");
   return generateJson({ role: "user", text, images: opts.references }, (j) => {
-    const r = parseEdit(j);
-    if (!r.spec) return r;
-    const raw = (j as { target?: unknown })?.target;
-    const target = raw == null ? current : Number(raw);
-    if (!numbers.includes(target)) throw new Error(`target は ${numbers.join(" / ")} のいずれかにしてください（受け取った値: ${String(raw)}）`);
-    const remove = [...new Set(Array.isArray((j as { remove?: unknown })?.remove) ? (j as { remove: unknown[] }).remove.map(Number) : [])]
-      .filter((n) => n !== target && numbers.includes(n));
-    return { ...r, spec: resolveReferenceSources(r.spec, opts.references, slides.find((s) => s.number === target)?.spec), target, ...(remove.length ? { remove } : {}) };
-  }, '{"reply", "target", "spec", "remove"} の JSON ', undefined, opts.signal);
+    // PosterSpec そのものが返ってきたら、今のスライドの書き換えとして扱う
+    const o = (j && Array.isArray((j as { layers?: unknown }).layers) ? { reply: "", spec: j } : j) as { reply?: unknown; edits?: unknown; target?: unknown; spec?: unknown; remove?: unknown };
+    // 古い形式（{reply, target, spec}）も 1 件の edits として受け付ける
+    // spec が null の件（「このスライドは変更なし」のつもりのもの）は読み飛ばす
+    const rawEdits = (Array.isArray(o?.edits) ? (o.edits as { target?: unknown; spec?: unknown }[]) : [{ target: o?.target, spec: o?.spec }]).filter((e) => e?.spec != null);
+    const reply = typeof o?.reply === "string" ? o.reply : "";
+    if (!rawEdits.length) {
+      if (!reply) throw new Error('"reply" と "edits" のどちらもありません');
+      return { reply };
+    }
+    const edits = new Map<number, PosterSpec>();
+    for (const e of rawEdits) {
+      const target = e?.target == null ? current : Number(e.target);
+      if (!numbers.includes(target)) throw new Error(`target は ${numbers.join(" / ")} のいずれかにしてください（受け取った値: ${String(e?.target)}）`);
+      edits.set(target, resolveReferenceSources(PosterSpecSchema.parse(e.spec), opts.references, slides.find((s) => s.number === target)?.spec));
+    }
+    // 画面は今のスライドの変更をその場で見せるので、今のスライドを書き換えたならそれを主にする
+    const [target, spec] = edits.has(current) ? [current, edits.get(current)!] : [...edits][0];
+    const others = [...edits].filter(([n]) => n !== target).map(([n, sp]) => ({ target: n, spec: sp }));
+    const remove = [...new Set(Array.isArray(o?.remove) ? o.remove.map(Number) : [])]
+      .filter((n) => !edits.has(n) && numbers.includes(n));
+    return { reply, spec, target, ...(others.length ? { others } : {}), ...(remove.length ? { remove } : {}) };
+  }, '{"reply", "edits", "remove"} の JSON ', undefined, opts.signal);
 }
 
 // ---------- スライドの追加 ----------
