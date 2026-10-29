@@ -440,6 +440,23 @@ const PRESET_PATHS: Record<string, string> = {
 const flipPath = (d: string, h: boolean, v: boolean) =>
   !h && !v ? d : d.replace(/([\d.]+) ([\d.]+)/g, (_, x, y) => `${h ? +(1 - Number(x)).toFixed(4) : x} ${v ? +(1 - Number(y)).toFixed(4) : y}`);
 
+/** 中が抜けた図形（frame・donut）の 0..1 正規化パス。外形と穴の 2 つのサブパスを evenodd で塗る。太さが半分以上なら外形だけ */
+function hollowPath(prst: string, geom: El | null, box: Box): string | null {
+  const name = prst === "frame" ? "adj1" : prst === "donut" ? "adj" : null;
+  if (!name) return null;
+  const gd = kids(at(geom, "avLst"), "gd").find((g) => attr(g, "name") === name);
+  const adj = Number(attr(gd, "fmla")?.replace("val ", "") ?? (prst === "frame" ? 12500 : 25000)) / 100000;
+  const t = adj * Math.min(box.w, box.h);
+  const tx = +(t / Math.max(box.w, 1)).toFixed(4), ty = +(t / Math.max(box.h, 1)).toFixed(4);
+  const solid = !(adj > 0) || tx >= 0.5 || ty >= 0.5;
+  if (prst === "frame") {
+    const outer = "M0 0 L1 0 L1 1 L0 1 Z";
+    return solid ? outer : `${outer} M${tx} ${ty} L${+(1 - tx).toFixed(4)} ${ty} L${+(1 - tx).toFixed(4)} ${+(1 - ty).toFixed(4)} L${tx} ${+(1 - ty).toFixed(4)} Z`;
+  }
+  const ring = (rx: number, ry: number, x0: number) => `M${x0} 0.5 A${rx} ${ry} 0 1 0 ${+(1 - x0).toFixed(4)} 0.5 A${rx} ${ry} 0 1 0 ${x0} 0.5 Z`;
+  return solid ? ring(0.5, 0.5, 0) : `${ring(0.5, 0.5, 0)} ${ring(+(0.5 - tx).toFixed(4), +(0.5 - ty).toFixed(4), tx)}`;
+}
+
 const ROUND_RECTS = new Set(["roundRect", "round2SameRect", "round1Rect", "snipRoundRect"]);
 const LINES = new Set(["line", "straightConnector1", "bentConnector2", "bentConnector3", "curvedConnector3"]);
 
@@ -469,6 +486,8 @@ function shapeLayer(spPr: El | null, style: El | null, ctx: Ctx, box: Box, name:
     const d = custPath(kid(spPr, "custGeom")!, box.flipH, box.flipV, { w: Number(attr(ext, "cx") ?? 0), h: Number(attr(ext, "cy") ?? 0) });
     if (d) return { ...base, type: "shape", shape: "path", d, ...paint };
   }
+  const hollow = hollowPath(prst, geom, box);
+  if (hollow) return { ...base, type: "shape", shape: "path", d: hollow, fillRule: "evenodd", ...paint };
   if (PRESET_PATHS[prst]) return { ...base, type: "shape", shape: "path", d: flipPath(PRESET_PATHS[prst], box.flipH, box.flipV), ...paint };
   // それ以外は四角形（角丸は調整値から半径を出す）
   const adj = Number(attr(at(geom, "avLst/gd"), "fmla")?.replace("val ", "") ?? 16667) / 100000;
