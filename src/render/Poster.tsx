@@ -91,7 +91,7 @@ function LayerView({ layer, theme, spec, props }: { layer: Layer; theme: Theme; 
   const shadowId = `${props.idPrefix ?? ""}${layer.id}-shadow`;
   return (
     <g
-      id={`layer-${layer.id}`}
+      id={`${props.idPrefix ?? ""}layer-${layer.id}`}
       data-layer-id={layer.id}
       data-layer-name={layer.name ?? layer.id}
       data-locked={layer.locked ? "true" : undefined}
@@ -136,7 +136,7 @@ export const Poster = forwardRef<SVGSVGElement, PosterProps>(function Poster(pro
       <clipPath id={clipId}>
         <rect width={width} height={height} />
       </clipPath>
-      <g clipPath={`url(#${clipId})`}>
+      <g data-poster-layers="" clipPath={`url(#${clipId})`}>
         {layers.map((l) => (
           <LayerView key={l.id} layer={l} theme={theme} spec={spec} props={props} />
         ))}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as RKeyboardEvent, type DragEvent as RDragEvent } from "react";
 import { slideContent } from "../notes";
 import { Poster } from "../render/Poster";
-import { buildExportSvg, download, renderSpecPng, svgToPngSized } from "../render/export";
+import { buildExportSvg, download, renderSpecPng, svgToPngSized } from "../render/svg";
 import { A4Check } from "./A4Check";
 import { a4Fit, a4Instruction, a4Issues, a4Size, exportPixels, fitToA4, pngA4Report, PRINT_DPI, readPngInfo, SAFE_MARGIN_MM, setPngDpi } from "./a4";
 import { cropTarget } from "../render/ImageBox";

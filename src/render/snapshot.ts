@@ -1,8 +1,5 @@
-import { createElement } from "react";
-import { flushSync } from "react-dom";
-import { createRoot } from "react-dom/client";
-import { Poster } from "./Poster";
-import { buildExportSvg } from "./export";
+import { withOffscreenPoster } from "./offscreen";
+import { buildExportSvg } from "./svg";
 import type { PosterSpec } from "../schema";
 
 /**
@@ -99,23 +96,10 @@ export function createSnapshotStore(deps: SnapshotDeps, opts: { concurrency?: nu
 
 /** spec を画面外に実寸で描き、画像を埋めた SVG の Blob にする（フォントは埋め込まない） */
 async function makeSnapshotBlob(spec: PosterSpec): Promise<Blob> {
-  const host = document.createElement("div");
-  host.style.cssText = `position:fixed;left:-100000px;top:0;pointer-events:none;width:${spec.meta.width}px;`;
-  document.body.appendChild(host);
-  const root = createRoot(host);
-  try {
-    let svg: SVGSVGElement | null = null;
-    flushSync(() => root.render(createElement(Poster, { spec, ref: (el: SVGSVGElement | null) => { svg = el; } })));
-    // フォントの読み込みと文字の自動縮小（useLayoutEffect）を待つ。裏のタブでは rAF が来ないので時間でも切る
-    await document.fonts?.ready;
-    await new Promise<void>((r) => { const t = setTimeout(r, 100); requestAnimationFrame(() => { clearTimeout(t); r(); }); });
-    if (!svg) throw new Error("ポスターを描画できませんでした");
+  return withOffscreenPoster(spec, async (svg) => {
     const text = await buildExportSvg(svg, spec, { embedFonts: false });
     return new Blob([text], { type: "image/svg+xml" });
-  } finally {
-    root.unmount();
-    host.remove();
-  }
+  });
 }
 
 export const snapshots = createSnapshotStore({

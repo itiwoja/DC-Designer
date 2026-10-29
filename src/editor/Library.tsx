@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { findPendingAssets, PosterSpecSchema, type PosterSpec } from "../schema";
 import { THEMES } from "../themes";
-import { download } from "../render/export";
+import { download } from "../render/svg";
 import { api, deckBySlide, type Deck, type GeneratedFile, type SavedPoster } from "./api";
 import { modeEditorUrl, modeHomeUrl, modeOfDeck, MODES, readLastId, readModeParam } from "./mode";
 import { BLANK_SLIDE_SPEC, BLANK_SPEC, openDeckInEditor, openInEditor } from "./nav";
