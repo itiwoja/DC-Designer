@@ -6,7 +6,7 @@ import type { AcrossDeck, ChatTurn, DeckContext } from "./planner";
 export const optString = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : undefined);
 export const strings = (v: unknown, max: number) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, max) : []);
 
-/** PPTX の全スライド（{ current, total, slides: [{ number, title?, spec? | texts? }] }）。spec は書き換え・統合の対象、texts は文字だけの参考 */
+/** PPTX の全スライド（{ current, total, slides: [{ number, title?, spec? | texts?, notes? }] }）。spec は書き換え・統合の対象、texts・notes は文字だけの参考 */
 export function parseDeckContext(v: any): DeckContext | undefined {
   if (!v || !Array.isArray(v.slides)) return undefined;
   const current = Number(v.current), total = Number(v.total);
@@ -16,6 +16,7 @@ export function parseDeckContext(v: any): DeckContext | undefined {
     title: typeof s?.title === "string" ? s.title : undefined,
     spec: s?.spec == null ? undefined : PosterSpecSchema.parse(s.spec),
     texts: Array.isArray(s?.texts) ? s.texts.filter((t: unknown): t is string => typeof t === "string").slice(0, 30) : undefined,
+    notes: typeof s?.notes === "string" ? s.notes.slice(0, 1000) : undefined,
   }));
   return { current, total, slides: slides.filter((s: { number: number; spec?: unknown; texts?: unknown }) => Number.isInteger(s.number) && (s.spec || s.texts)), instagram: v.instagram === true };
 }
