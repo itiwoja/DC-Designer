@@ -60,7 +60,7 @@ READMEや `CODEOWNERS` の記載だけでは、配信権限は制限できない
 - タグを push した人が所有者であること、タグと `package.json` / `package-lock.json` の版、タグのコミットが `release` の履歴にあることを検証し、型チェック・テストを通す。
 - Windows のランナーで `npm run desktop:dist`（隔離ステージと `win-unpacked` の検査を含む）を実行する。
 - 公開ジョブは Environment `production-release` の承認を待つ。シークレット `SIGNPATH_API_TOKEN` と変数 `SIGNPATH_ORGANIZATION_ID`・`SIGNPATH_PROJECT_SLUG`・`SIGNPATH_SIGNING_POLICY_SLUG`・`SIGNPATH_ARTIFACT_CONFIGURATION_SLUG` が登録されていれば SignPath で署名し、発行者を確かめてから公開する。未登録の間は**未署名**のまま、その旨をリリースノートに書いて公開する（SignPath の審査待ちの間の暫定。2026-10-29 所有者の判断）。
-- 公開するのはインストーラーと `SHA256SUMS.txt` だけ。自動更新は未実装のため `latest.yml`・blockmap は出さない。
+- 公開するのはインストーラー、`SHA256SUMS.txt`、自動更新の目録 `latest.yml`（公開する exe から `scripts/update-manifest.mjs` で作る。blockmap は出さず差分更新はしない）。
 - タグ・`release` の Ruleset、署名後の配布物の再検査、Windows 実機試験の自動化は未実装。
 
 1. `main` の変更・テスト結果を確認し、配布可能な状態にする。
