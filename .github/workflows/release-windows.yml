@@ -1,0 +1,165 @@
+# Windows 版の配信：v* タグを起点に、検証 → ビルド・配布物検査 → 承認 → 署名（設定済みなら）→ 公開。
+# 方針は docs/release-policy.md、署名は docs/code-signing-policy.md。
+name: release-windows
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      # 所有者以外が push したタグでは何もしない
+      - name: Check actor
+        if: github.actor != github.repository_owner
+        run: |
+          echo "::error::配信はリポジトリ所有者だけが起動できます（actor: ${{ github.actor }}）"
+          exit 1
+
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      # タグ・package.json の版・release ブランチの履歴をそろえる
+      - name: Check tag, version and release branch
+        id: check
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version="$(node -p 'require("./package.json").version')"
+          lock="$(node -p 'require("./package-lock.json").version')"
+          if [ "$tag" != "v$version" ] || [ "$lock" != "$version" ]; then
+            echo "::error::タグ $tag と package.json ($version) / package-lock.json ($lock) の版が一致しません"
+            exit 1
+          fi
+          git fetch -q origin release
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/release; then
+            echo "::error::タグのコミットが release ブランチの履歴にありません"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  build:
+    needs: verify
+    runs-on: windows-latest
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    env:
+      # 署名は publish ジョブで SignPath に任せる。ビルド機の証明書は探さない
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # 隔離ステージの検査・インストーラー作成・win-unpacked の検査まで含む
+      - run: npm run desktop:dist
+
+      - name: Upload unsigned installer
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-installer
+          path: release/DC-Designer-Setup-${{ needs.verify.outputs.version }}.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [verify, build]
+    runs-on: windows-latest
+    # 所有者の承認を待つ（Environment の必須レビュアー）
+    environment: production-release
+    permissions:
+      contents: write
+      actions: read
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: unsigned-installer
+          path: unsigned
+
+      - name: Check signing configuration
+        id: signing
+        run: |
+          if [ -n "$SIGNPATH_API_TOKEN" ]; then echo "enabled=true" >> "$GITHUB_OUTPUT"; else echo "enabled=false" >> "$GITHUB_OUTPUT"; fi
+
+      # SignPath 側でも Approver（所有者）が1件ずつ承認する
+      - name: Sign with SignPath
+        if: steps.signing.outputs.enabled == 'true'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ needs.build.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Verify signature
+        if: steps.signing.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          $sig = Get-AuthenticodeSignature "signed/DC-Designer-Setup-$env:VERSION.exe"
+          if ($sig.Status -ne "Valid" -or $sig.SignerCertificate.Subject -notmatch "SignPath Foundation") {
+            Write-Error "署名を確認できません: $($sig.Status) $($sig.SignerCertificate.Subject)"
+            exit 1
+          }
+
+      - name: Prepare assets and notes
+        run: |
+          mkdir -p out
+          if [ "${{ steps.signing.outputs.enabled }}" = "true" ]; then src=signed; else src=unsigned; fi
+          cp "$src/DC-Designer-Setup-$VERSION.exe" out/
+          (cd out && sha256sum "DC-Designer-Setup-$VERSION.exe" > SHA256SUMS.txt)
+          {
+            echo "Windows 10 / 11（x64）向けのインストーラーです。"
+            echo
+            if [ "${{ steps.signing.outputs.enabled }}" != "true" ]; then
+              echo "> **この版はコード署名をしていません。** 実行時に Windows SmartScreen の警告が出たら「詳細情報」→「実行」で進めてください。SignPath Foundation の署名は審査が通りしだい次の版から付けます。"
+              echo
+            fi
+            echo "SHA-256: \`$(cut -d' ' -f1 out/SHA256SUMS.txt)\`"
+          } > notes.md
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" out/* \
+            --title "DC-Designer $GITHUB_REF_NAME" \
+            --notes-file notes.md \
+            --generate-notes \
+            --verify-tag
