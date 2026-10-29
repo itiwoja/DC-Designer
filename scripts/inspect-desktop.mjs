@@ -100,13 +100,15 @@ export async function asarEntries(asarPath) {
   const list = asar.listPackage(asarPath, { isPack: false });
   const entries = [];
   for (const item of list) {
-    const rel = item.replace(/\\/g, "/").replace(/^\//, "");
+    // asar は OS の区切り文字で引くので、読むときは元の形（先頭の区切りだけ外す）を渡す
+    const native = item.replace(/^[\\/]/, "");
+    const rel = native.replace(/\\/g, "/");
     let buf;
     try {
-      const stat = asar.statFile(asarPath, rel, false);
+      const stat = asar.statFile(asarPath, native, false);
       if ("link" in stat) throw new Error("symbolic link");
       if ("files" in stat) continue;
-      buf = asar.extractFile(asarPath, rel);
+      buf = asar.extractFile(asarPath, native);
     } catch {
       // 元の例外には開発者の絶対 path などが含まれ得るため出力しない。
       throw new Error("inspect: ASAR entry could not be inspected");
