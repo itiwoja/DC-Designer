@@ -4,7 +4,7 @@ DC-Designer の Windows 版インストーラー・更新ファイルのコー�
 
 Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org)
 
-> 状態：未申請。段階3のビルド（タグ起点のインストーラー）が揃ってから SignPath Foundation に申請する（[EXE-D-11・12](./desktop-release-spec.md#決定事項ログ)）。承認されるまで、署名済みの Windows 版は公開しない。
+> 状態：未申請。タグ起点のビルド（`.github/workflows/release-windows.yml`）は 2026-10-29 に用意した。SignPath Foundation の審査が通り、シークレットを登録するまでは、未署名であることをリリースノートに明記して公開する（所有者の判断）。
 
 ## 署名するもの
 
