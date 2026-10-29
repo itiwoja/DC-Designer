@@ -63,6 +63,17 @@ describe("デッキの文脈（言及したスライドは全体、ほかは文�
     expect(r.others).toBeUndefined();
   });
 
+  it("PosterSpec そのものの返答は今のスライドの書き換えとして受け付ける", async () => {
+    ai.ask.mockResolvedValue(JSON.stringify(spec("直後")));
+    const r = await editPoster({
+      spec: current, instruction: "スライド2を参考に直して",
+      deck: { current: 1, total: 2, slides: [{ number: 2, title: "二", spec: spec("二枚目") }] },
+    });
+    expect(ai.ask).toHaveBeenCalledTimes(1);
+    expect(r.target).toBe(1);
+    expect(r.spec?.meta.title).toBe("直後");
+  });
+
   it("古い形式（target と spec）の返答も受け付ける", async () => {
     ai.ask.mockResolvedValue(JSON.stringify({ reply: "直した", target: 2, spec: spec("直後"), remove: [] }));
     const r = await editPoster({

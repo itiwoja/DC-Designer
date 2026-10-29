@@ -478,7 +478,8 @@ async function editDeckSlide(opts: EditOptions & { deck: DeckContext }): Promise
     `{"reply": 返答, "edits": [{"target": 書き換えるスライド番号（${numbers.join(" / ")} のいずれか）, "spec": 修正後のそのスライドの PosterSpec 全体}], "remove": 統合して不要になったスライド番号の配列} の JSON のみを出力してください。edits には書き換えたスライドだけを 1 枚 1 件で入れ、変更が無ければ空配列にしてください。${REPLY_RULE.replace('"spec" は null', '"edits" は空配列')}`,
   ].filter(Boolean).join("\n\n");
   return generateJson({ role: "user", text, images: opts.references }, (j) => {
-    const o = j as { reply?: unknown; edits?: unknown; target?: unknown; spec?: unknown; remove?: unknown };
+    // PosterSpec そのものが返ってきたら、今のスライドの書き換えとして扱う
+    const o = (j && Array.isArray((j as { layers?: unknown }).layers) ? { reply: "", spec: j } : j) as { reply?: unknown; edits?: unknown; target?: unknown; spec?: unknown; remove?: unknown };
     // 古い形式（{reply, target, spec}）も 1 件の edits として受け付ける
     // spec が null の件（「このスライドは変更なし」のつもりのもの）は読み飛ばす
     const rawEdits = (Array.isArray(o?.edits) ? (o.edits as { target?: unknown; spec?: unknown }[]) : [{ target: o?.target, spec: o?.spec }]).filter((e) => e?.spec != null);
