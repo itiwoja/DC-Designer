@@ -62,7 +62,7 @@ function Num({ label, value, onChange, step = 1 }: { label: string; value: numbe
   );
 }
 
-/** 候補の中で最も近い値（render/export.ts の snap と同じ考え方） */
+/** 候補の中で最も近い値（render/svg.ts の snap と同じ考え方） */
 function nearestWeight(want: number, have: number[]): number {
   return have.reduce((best, w) => (Math.abs(w - want) < Math.abs(best - want) ? w : best), have[0]);
 }

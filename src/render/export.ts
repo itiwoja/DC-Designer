@@ -1,8 +1,6 @@
-import PptxGenJS from "pptxgenjs";
-import { createElement } from "react";
-import { flushSync } from "react-dom";
-import { createRoot } from "react-dom/client";
-import { Poster } from "./Poster";
+import type PptxGenJS from "pptxgenjs";
+import { withOffscreenPoster } from "./offscreen";
+import { buildExportSvg, svgToPngBlob, toDataUrl } from "./svg";
 import type { Layer, PosterSpec, TextLayerT } from "../schema";
 import { resolveColor, resolvePaint, resolveTheme } from "../themes";
 import { lineSegments } from "../textRuns";
@@ -15,142 +13,11 @@ import { addSlideSounds, specSounds } from "../sounds";
 import { buildTransitionXml } from "../transition";
 import { api } from "../editor/api";
 
-/** Google Fonts で提供されているウェイト（書き出し時のサブセット取得用） */
+// 既存の呼び出し元向けの公開 API。SVG/PNG だけを使う画面は ./svg を直接参照する。
+export { buildExportSvg, buildFontCss, download, renderSpecPng, svgToPngBlob, svgToPngSized } from "./svg";
+
+/** Google Fonts で提供されているウェイト（太字・フォント埋め込みの判定用） */
 const FONT_WEIGHTS: Record<string, number[]> = Object.fromEntries(FONT_CATALOG.map((f) => [f.family, f.weights]));
-
-const snap = (family: string, w: number) => {
-  const list = FONT_WEIGHTS[family] ?? [400];
-  return list.reduce((a, b) => (Math.abs(b - w) < Math.abs(a - w) ? b : a));
-};
-
-async function toDataUrl(src: string | Blob): Promise<string> {
-  if (typeof src === "string" && src.startsWith("data:")) return src;
-  let blob: Blob;
-  if (typeof src === "string") {
-    const response = await fetch(src);
-    if (!response.ok) throw new Error(`画像を読み込めません（HTTP ${response.status}）: ${src}`);
-    blob = await response.blob();
-    if (blob.type && !blob.type.startsWith("image/")) throw new Error(`画像として読み込めないURLです: ${src}`);
-  } else blob = src;
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result as string);
-    r.onerror = reject;
-    r.readAsDataURL(blob);
-  });
-}
-
-/** /api/fonts/files に一度に頼める face の数 */
-const FONT_FILES_CHUNK = 16;
-
-/** 使っている family×weight の TTF を API のフォントキャッシュから取って @font-face を作る（作品の文字は送らない） */
-export async function buildFontCss(root: Element): Promise<string> {
-  const usage = new Map<string, Set<number>>();
-  const add = (fam: string, w: number) => usage.set(fam, (usage.get(fam) ?? new Set()).add(snap(fam, w)));
-  root.querySelectorAll("text").forEach((t) => {
-    const fam = (t.getAttribute("font-family") ?? "").split(",")[0].replace(/['"]/g, "").trim();
-    if (!fam || !FONT_WEIGHTS[fam]) return;
-    const w = Number(t.getAttribute("font-weight") ?? 400);
-    add(fam, w);
-    // かな・英数字だけのフォントに無い文字は、フォールバックの Noto Sans JP で表示されるので一緒に埋め込む
-    if (FONT_BY_FAMILY.get(fam)?.script !== "ja") add(FALLBACK_FONT, w);
-  });
-  const faces = [...usage].flatMap(([family, ws]) => [...ws].sort((a, b) => a - b).map((weight) => ({ family, weight })));
-  const css: string[] = [];
-  for (let i = 0; i < faces.length; i += FONT_FILES_CHUNK) {
-    const chunk = faces.slice(i, i + FONT_FILES_CHUNK);
-    try {
-      const res = await api.fontFiles(chunk);
-      for (const f of res.files) {
-        css.push(`@font-face { font-family: '${f.family}'; font-weight: ${f.weight}; src: url(data:font/ttf;base64,${f.data}) format('truetype'); }`);
-      }
-      for (const f of res.failed) console.warn("フォント埋め込みに失敗:", f.family, f.weight, f.code);
-    } catch (e) {
-      console.warn("フォント埋め込みに失敗:", chunk.map((f) => f.family).join(", "), e);
-    }
-  }
-  return css.join("\n");
-}
-
-/**
- * 書き出し用の自己完結 SVG 文字列を作る。
- * - レイヤー（トップレベルの <g>）に Inkscape/Affinity 互換のレイヤー属性を付与
- * - 画像は data URI に、フォントはサブセットを埋め込み
- */
-export async function buildExportSvg(svg: SVGSVGElement, spec: PosterSpec, opts: { embedFonts?: boolean } = {}): Promise<string> {
-  const clone = svg.cloneNode(true) as SVGSVGElement;
-  clone.removeAttribute("style");
-  clone.setAttribute("width", String(spec.meta.width));
-  clone.setAttribute("height", String(spec.meta.height));
-  clone.setAttribute("xmlns:inkscape", "http://www.inkscape.org/namespaces/inkscape");
-  clone.querySelectorAll("[data-export-skip]").forEach((n) => n.remove());
-  clone.querySelectorAll("[data-editor-only]").forEach((n) => n.remove());
-
-  // トップレベルのレイヤーを「レイヤー」として扱えるようにする
-  const top = clone.querySelector('g[clip-path="url(#poster-clip)"]');
-  top?.querySelectorAll(":scope > g[data-layer-id]").forEach((g) => {
-    const name = g.getAttribute("data-layer-name") ?? g.getAttribute("data-layer-id")!;
-    g.setAttribute("inkscape:groupmode", "layer");
-    g.setAttribute("inkscape:label", name);
-    g.setAttribute("id", name.replace(/\s+/g, "_"));
-  });
-
-  for (const img of clone.querySelectorAll("image")) {
-    const href = img.getAttribute("href") ?? img.getAttribute("xlink:href");
-    if (href) img.setAttribute("href", await toDataUrl(href));
-  }
-
-  if (opts.embedFonts !== false) {
-    const css = await buildFontCss(clone);
-    if (css) {
-      const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
-      style.textContent = css;
-      clone.insertBefore(style, clone.firstChild);
-    }
-  }
-  return new XMLSerializer().serializeToString(clone);
-}
-
-export async function svgToPngBlob(svgText: string, width: number, height: number, scale = 2, crop?: { x: number; y: number; w: number; h: number }): Promise<Blob> {
-  const c = crop ?? { x: 0, y: 0, w: width, h: height };
-  return rasterize(svgText, width, height, Math.max(1, Math.round(c.w * scale)), Math.max(1, Math.round(c.h * scale)), c);
-}
-
-/** ポスター全体を out の画素数ちょうどに描く（A4 300dpi の 2480×3508 のように、縦横の倍率がわずかに違ってもよい） */
-export function svgToPngSized(svgText: string, width: number, height: number, out: { w: number; h: number }): Promise<Blob> {
-  return rasterize(svgText, width, height, out.w, out.h, { x: 0, y: 0, w: width, h: height });
-}
-
-async function rasterize(svgText: string, width: number, height: number, outW: number, outH: number, c: { x: number; y: number; w: number; h: number }): Promise<Blob> {
-  const url = URL.createObjectURL(new Blob([svgText], { type: "image/svg+xml" }));
-  try {
-    const img = new Image();
-    img.decoding = "sync";
-    await new Promise<void>((res, rej) => {
-      img.onload = () => res();
-      img.onerror = () => rej(new Error("SVG のラスタライズに失敗しました"));
-      img.src = url;
-    });
-    const canvas = document.createElement("canvas");
-    canvas.width = outW;
-    canvas.height = outH;
-    const ctx = canvas.getContext("2d")!;
-    // ポスター全体を拡大して描き、crop 領域だけがキャンバスに入るようずらす
-    const sx = outW / c.w, sy = outH / c.h;
-    ctx.drawImage(img, -c.x * sx, -c.y * sy, width * sx, height * sy);
-    return await new Promise((res) => canvas.toBlob((b) => res(b!), "image/png"));
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-export function download(blob: Blob, filename: string) {
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-}
 
 /** レイヤーのポスター座標系でのバウンディングボックス（回転・縁取り・影込み） */
 function layerBox(svg: SVGSVGElement, spec: PosterSpec, id: string) {
@@ -192,7 +59,7 @@ export function textTransparency(opacity: number | undefined): number {
  * - それ以外 → レイヤー単位で切り出した透過 PNG
  */
 export async function buildPptx(svg: SVGSVGElement, spec: PosterSpec): Promise<Blob> {
-  const pptx = newPptx(spec);
+  const pptx = await newPptx(spec);
   const fonts: FontUsage = new Map();
   const timing = buildTransitionXml(spec.transition) + await addPosterSlide(pptx, svg, spec, fonts);
   return finishPptx((await pptx.write({ outputType: "blob" })) as Blob, [timing], fonts, [spec]);
@@ -263,7 +130,8 @@ export async function embedFontFiles(zip: JSZip, fonts: { family: string; bold: 
 }
 
 const PX_PER_IN = 100;
-function newPptx(spec: PosterSpec) {
+async function newPptx(spec: PosterSpec) {
+  const { default: PptxGenJS } = await import("pptxgenjs");
   const pptx = new PptxGenJS();
   pptx.defineLayout({ name: "POSTER", width: spec.meta.width / PX_PER_IN, height: spec.meta.height / PX_PER_IN });
   pptx.layout = "POSTER";
@@ -275,7 +143,7 @@ function newPptx(spec: PosterSpec) {
  * 各スライドは画面外に描画してから、1 枚の書き出しと同じ方法でオブジェクト化する
  */
 export async function buildDeckPptx(specs: PosterSpec[], onProgress?: (done: number, total: number) => void): Promise<Blob> {
-  const pptx = newPptx(specs[0]);
+  const pptx = await newPptx(specs[0]);
   const timings: string[] = [];
   const fonts: FontUsage = new Map();
   for (const [i, spec] of specs.entries()) {
@@ -285,31 +153,6 @@ export async function buildDeckPptx(specs: PosterSpec[], onProgress?: (done: num
   onProgress?.(specs.length, specs.length);
   return finishPptx((await pptx.write({ outputType: "blob" })) as Blob, timings, fonts, specs);
 }
-
-/** spec を画面外に実寸で描画し、その SVG で fn を実行する（エディタに開いていないポスターの書き出し・比較用） */
-async function withOffscreenPoster<T>(spec: PosterSpec, fn: (svg: SVGSVGElement) => Promise<T>): Promise<T> {
-  const host = document.createElement("div");
-  // 実寸で描画しないと getBoundingClientRect による切り抜き範囲がずれる
-  host.style.cssText = `position:fixed;left:-100000px;top:0;pointer-events:none;width:${spec.meta.width}px;`;
-  document.body.appendChild(host);
-  const root = createRoot(host);
-  try {
-    let svg: SVGSVGElement | null = null;
-    flushSync(() => root.render(createElement(Poster, { spec, ref: (el: SVGSVGElement | null) => { svg = el; } })));
-    // 文字の自動縮小（useLayoutEffect）とフォント読み込みを待つ
-    await document.fonts?.ready;
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    if (!svg) throw new Error("ポスターを描画できませんでした");
-    return await fn(svg);
-  } finally {
-    root.unmount();
-    host.remove();
-  }
-}
-
-/** spec を PNG に描画する（参考画像の再現で、AI に今の見た目を見せる） */
-export const renderSpecPng = (spec: PosterSpec, scale = 1) =>
-  withOffscreenPoster(spec, async (svg) => svgToPngBlob(await buildExportSvg(svg, spec), spec.meta.width, spec.meta.height, scale));
 
 /** スライドを 1 枚足し、そのスライドのアニメーション（<p:timing>。無ければ空文字）を返す。使ったフォントは fonts に足す */
 async function addPosterSlide(pptx: PptxGenJS, svg: SVGSVGElement, spec: PosterSpec, fonts: FontUsage): Promise<string> {

@@ -59,11 +59,16 @@ npm run dev            # http://localhost:5173
 
 | パス | 役割 |
 | --- | --- |
+| `desktop/main.ts` / `desktop/startup.ts` | exe の依存処理の組み立て / 単一起動・窓のライフサイクル・起動失敗時の後始末 |
+| `desktop/appHandler.ts` / `desktop/appProtocol.ts` | `app://` の静的ファイル配信 / URL・CSP・配信対象の制限 |
+| `src/main.tsx` / `src/Application.tsx` | React の起動 / 画面ごとの遅延読み込み。exe では API の準備完了後に画面を開く |
 | `src/schema.ts` | PosterSpec のスキーマ（zod）。レイヤー型: `background` / `shape` / `text` / `image` / `component` / `group` |
 | `src/themes.ts` | テーマ（色・グラデーション・フォントのトークン）。`$primary` などのトークンで色指定するので、テーマ切替だけで配色違いが作れる |
 | `src/components/catalog.ts` | コンポーネント一覧と props 定義。**エディタとChatGPTのプロンプトの両方がここを参照** |
 | `src/components/index.tsx` | 各コンポーネントの SVG 実装（ピル、QR、吹き出し、付箋、PC/スマホモック、ポラロイド、キラキラ…） |
 | `src/render/` | SVG レンダラ、テキスト（縁取り・自動縮小）、書き出し |
+| `src/render/offscreen.ts` | サムネイル・PNG・PPTX で共用する画面外描画。SVG 定義 ID の隔離・フォント待機・後始末 |
+| `src/render/svg.ts` / `src/render/export.ts` | SVG・PNG の書き出し / PPTX の書き出し（PowerPoint ライブラリは書き出し時に読み込む） |
 | `src/editor/` | エディタ UI |
 | `server/app.ts` | API の組み立て、アクセス制御、終了時の書き込み待機 |
 | `server/routes/` | 認証・AI 生成/編集・画像・フォント・成果物管理・設定の API |
