@@ -1,9 +1,11 @@
 /** 「18,19」「18・19」「18と19」「18〜20」などの番号の並び（範囲は展開する） */
-const NUM_LIST = String.raw`\d+(?:\s*(?:[,、・&/]|と|及び|および|や|か|〜|~|-|–|から)\s*\d+)*`;
+const NUM_LIST = String.raw`\d+(?:\s*(?:[,、・&/]|と|及び|および|や|から|か|〜|~|-|–)\s*\d+)*`;
+const RANGE = String.raw`(?:〜|~|-|–|から)`;
 
 const expand = (list: string): number[] => {
   const out: number[] = [];
-  for (const part of list.split(/\s*(?:[,、・&/]|と|及び|および|や|か)\s*/)) {
+  // 「か」で区切ると「3から5」の「から」まで割れるので、「から」は範囲として残す
+  for (const part of list.split(/\s*(?:[,、・&/]|と|及び|および|や|か(?!ら))\s*/)) {
     const r = part.match(/^(\d+)\s*(?:〜|~|-|–|から)\s*(\d+)$/);
     if (!r) { out.push(Number(part)); continue; }
     const [a, b] = [Number(r[1]), Number(r[2])];
@@ -18,7 +20,8 @@ const expand = (list: string): number[] => {
  * 「スライド18,19」「18・19枚目」「スライド3〜5」のような並び・範囲も拾う。全角数字も可。範囲外の番号は捨てる
  */
 export function slideRefs(text: string, current: number, total: number): number[] {
-  const t = text.normalize("NFKC");
+  // 「8枚目〜10枚目」「スライド3からスライド5」は、範囲の手前の単位を外して「8〜10枚目」「スライド3から5」と同じに読む
+  const t = text.normalize("NFKC").replace(new RegExp(String.raw`(\d+)\s*(?:枚目|ページ目?|番目)?\s*(${RANGE})\s*(?:スライド|ページ|slides?|pages?|p\.?)?\s*(?=\d)`, "gi"), "$1$2");
   const found: number[] = [];
   const re = new RegExp(String.raw`(?:スライド|ページ|slides?|pages?|p\.?)\s*(?:no\.?|番号)?\s*(${NUM_LIST})|(${NUM_LIST})\s*(?:枚目|ページ目?|番目|p\b)`, "gi");
   for (const m of t.matchAll(re)) found.push(...expand(m[1] ?? m[2]));

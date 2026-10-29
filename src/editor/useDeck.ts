@@ -607,7 +607,7 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
   }, { cancelable: true });
 
   return {
-    deck, slides, specOf, deckOpen, toggleDeck, openSlide, addSlide, duplicateSlide, removeSlide, deleteSlides, moveSlide, reorderSlide, exportDeck,
+    deck, slides, specOf, deckOpen, toggleDeck, openSlide, updateSlide, addSlide, duplicateSlide, removeSlide, deleteSlides, moveSlide, reorderSlide, exportDeck,
     fontDialog, setFontDialog, openFontDialog, applyDeckFonts, applyTransitionToAll, renumberDeckPages, writeNotes, addSlideByAI, editAcrossDeck, importPptxFile,
     instagram, full, exportImages, changeRatio, openNewDeck, deckReady,
   };

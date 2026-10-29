@@ -24,6 +24,8 @@ win:
       arch:
         - x64
 nsis:
+  # 公開時の名前と同じにする（空白があると Releases で別名に置き換わる）
+  artifactName: DC-Designer-Setup-${version}.${ext}
   installerIcon: desktop/assets/icon.ico
   uninstallerIcon: desktop/assets/icon.ico
   oneClick: false

@@ -27,6 +27,8 @@ export type ChatMsg = {
   before?: PosterSpec;
   /** before を適用するポスター（デッキで別スライドを書き換えたとき用） */
   posterId?: string | null;
+  /** 同じ返答でほかにも書き換えたスライドの変更前（「元に戻す」用。保存しない） */
+  others?: { posterId: string; before: PosterSpec }[];
   undone?: boolean;
 };
 
@@ -39,7 +41,7 @@ const loadChat = (): ChatMsg[] => {
   try { return JSON.parse(localStorage.getItem(CHAT_KEY) ?? "[]"); } catch { return []; }
 };
 const saveChat = (msgs: ChatMsg[]) => {
-  try { localStorage.setItem(CHAT_KEY, JSON.stringify(msgs.slice(-MAX_SAVED).map(({ before: _b, references: _r, ...m }) => m))); } catch { /* 無視 */ }
+  try { localStorage.setItem(CHAT_KEY, JSON.stringify(msgs.slice(-MAX_SAVED).map(({ before: _b, others: _o, references: _r, ...m }) => m))); } catch { /* 無視 */ }
 };
 
 /**

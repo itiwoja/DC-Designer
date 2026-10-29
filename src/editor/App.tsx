@@ -542,7 +542,7 @@ export function App() {
   const workRefs = () => [posterIdRef.current, ...(deck ? deck.slides.map((s) => specOf(s.id)) : [specOf(posterIdRef.current ?? "")])];
   /**
    * 資料全体を把握できるよう、PPTX の全スライドを渡す。現在のスライドは api.edit の spec に含まれる。
-   * 言及したスライドは spec 全体（書き換えや統合の対象になる）、それ以外は文字だけ（参考）にして、枚数が多くても AI の入力を抑える
+   * 言及したスライドは spec 全体（書き換えや統合の対象になる）、それ以外は文字と台本だけ（参考）にして、枚数が多くても AI の入力を抑える
    */
   const deckEditContext = async (text: string): Promise<DeckEditContext | undefined> => {
     if (!deck) return undefined;
@@ -552,7 +552,8 @@ export function App() {
     const full = new Set(slideRefs(text, current, deck.slides.length));
     const slides = await Promise.all(deck.slides.flatMap((s, i) => i + 1 === current ? [] : [{ slide: s, number: i + 1 }]).map(async ({ slide, number }) => {
       const spec = (await api.poster(slide.id)).spec;
-      return full.has(number) ? { number, title: slide.title, spec } : { number, title: slide.title, texts: slideContent(spec).texts.map((t) => t.slice(0, 120)) };
+      const notes = spec.notes?.trim().slice(0, 300);
+      return full.has(number) ? { number, title: slide.title, spec } : { number, title: slide.title, texts: slideContent(spec).texts.map((t) => t.slice(0, 120)), ...(notes ? { notes } : {}) };
     }));
     return { current, total: deck.slides.length, slides, ...(instagram ? { instagram } : {}) };
   };
@@ -645,21 +646,32 @@ export function App() {
       if (!next) return { text: res.reply || "変更はありませんでした" };
       // 別のスライドを書き換える指示なら、そのスライドを開いてから適用する（履歴に積まれるので Ctrl+Z / 元に戻す が効く）
       const target = ctx && res.target && res.target !== ctx.current ? deck?.slides[res.target - 1] : undefined;
+      // 「3枚目と5枚目を直して」: 開いていないほかのスライドは、開かずに書き換えて裏で保存する
+      const others = (res.others ?? []).flatMap((e) => {
+        const slide = deck?.slides[e.target - 1];
+        const old = slide && slide.id !== (target?.id ?? posterIdRef.current) ? specOf(slide.id) : undefined;
+        return slide && old && diffLayers(old, e.spec).hasChanges ? [{ n: e.target, posterId: slide.id, before: old, spec: e.spec }] : [];
+      });
       let before = cur;
       if (target) {
         if (signal.aborted) throw new Error("aborted");
         before = await openSlide(target.id);
       }
+      for (const o of others) updateSlide(o.posterId, o.spec);
       const d = diffLayers(before, next);
-      if (!d.hasChanges) {
+      if (!d.hasChanges && !others.length) {
         return { text: res.reply ? `${res.reply}\n（ポスターに変更はありませんでした。もう少し具体的に指示してみてください）` : "変更はありませんでした。指示をもう少し具体的にしてみてください" };
       }
-      setSpec(next);
-      setFlash([...d.added, ...d.changed]);
-      setTimeout(() => setFlash([]), 1800);
+      if (d.hasChanges) {
+        setSpec(next);
+        setFlash([...d.added, ...d.changed]);
+        setTimeout(() => setFlash([]), 1800);
+      }
       const parts = [d.changed.length && `${d.changed.length} 件変更`, d.added.length && `${d.added.length} 件追加`, d.removed && `${d.removed} 件削除`, d.themeChanged && "テーマ変更", d.metaChanged && "ポスター設定変更", d.reordered && "重ね順変更", d.notesChanged && "台本変更", d.transitionChanged && "画面切り替え変更"].filter(Boolean);
-      if (d.notesChanged && isSlides) toggleNotes(true);
-      const reply = { text: res.reply || "修正しました", changes: `${target ? `スライド ${res.target}: ` : ""}${parts.join("・") || "変更"}`, before, posterId: posterIdRef.current };
+      if ((d.notesChanged || others.some((o) => o.before.notes !== o.spec.notes)) && isSlides) toggleNotes(true);
+      const main = d.hasChanges ? `${target || others.length ? `スライド ${res.target ?? ctx?.current}: ` : ""}${parts.join("・") || "変更"}` : "";
+      const changes = [main, others.length && `スライド ${others.map((o) => o.n).join("・")} も変更`].filter(Boolean).join("・");
+      const reply = { text: res.reply || "修正しました", changes, before, posterId: posterIdRef.current, ...(others.length ? { others: others.map(({ posterId, before }) => ({ posterId, before })) } : {}) };
       // 「スライド18,19を1枚にまとめて」: まとめ元のスライドを、確認してから削除する
       const merged = (res.remove ?? []).map((n) => ({ n, slide: deck?.slides[n - 1] })).filter((r) => r.slide && r.slide.id !== posterIdRef.current);
       if (merged.length) {
@@ -673,6 +685,11 @@ export function App() {
           await deleteSlides(merged.map((r) => r.slide!.id));
           reply.changes += `・スライド ${nums} を削除`;
         }
+      }
+      if (autoImages && others.some((o) => findPendingAssets(o.spec).length)) {
+        chat.push({ role: "assistant", ...reply });
+        await generateAcross([posterIdRef.current!, ...others.map((o) => o.posterId)], signal);
+        return { text: "画像も生成しました" };
       }
       if (autoImages && findPendingAssets(next).length) {
         chat.push({ role: "assistant", ...reply });
@@ -760,6 +777,7 @@ export function App() {
       try { await openSlide(m.posterId); } catch (e) { notifyAIError(e); return; }
     }
     setSpec(m.before);
+    for (const o of m.others ?? []) updateSlide(o.posterId, o.before);
     setSelected(null);
     chat.markUndone(m.id);
   };
@@ -883,6 +901,7 @@ export function App() {
       }
       base = prev.before;
       setSpec(base);
+      for (const o of prev.others ?? []) updateSlide(o.posterId, o.before);
     }
     return sendChat(m.text, { msg: m, base });
   };
@@ -1018,7 +1037,7 @@ export function App() {
 
   // ---------- PPTX エディターモード ----------
   const {
-    deck, slides, specOf, deckOpen, toggleDeck, openSlide, addSlide, duplicateSlide, removeSlide, deleteSlides, moveSlide, reorderSlide, exportDeck,
+    deck, slides, specOf, deckOpen, toggleDeck, openSlide, updateSlide, addSlide, duplicateSlide, removeSlide, deleteSlides, moveSlide, reorderSlide, exportDeck,
     fontDialog, setFontDialog, openFontDialog, applyDeckFonts, applyTransitionToAll, renumberDeckPages, writeNotes, addSlideByAI, editAcrossDeck, importPptxFile,
     instagram, exportImages, changeRatio, openNewDeck, deckReady,
   } = useDeck({ spec, theme, save, apiUp, busy, run, notify, exported, setBusyProgress, setSpec, resetSpec, stashHistory, setSelected, fitView });
