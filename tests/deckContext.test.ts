@@ -52,6 +52,17 @@ describe("デッキの文脈（言及したスライドは全体、ほかは文�
     expect(r.others?.map((e) => [e.target, e.spec.notes])).toEqual([[3, "三の台本"]]);
   });
 
+  it("edits の spec が null の件は変更なしとして読み飛ばす", async () => {
+    ai.ask.mockResolvedValue(JSON.stringify({ reply: "3枚目だけ直した", edits: [{ target: 1, spec: null }, { target: 3, spec: spec("直後") }], remove: [] }));
+    const r = await editPoster({
+      spec: current, instruction: "1枚目と3枚目を見直して",
+      deck: { current: 1, total: 3, slides: [{ number: 3, title: "三", spec: spec("三枚目") }] },
+    });
+    expect(ai.ask).toHaveBeenCalledTimes(1);
+    expect(r.target).toBe(3);
+    expect(r.others).toBeUndefined();
+  });
+
   it("古い形式（target と spec）の返答も受け付ける", async () => {
     ai.ask.mockResolvedValue(JSON.stringify({ reply: "直した", target: 2, spec: spec("直後"), remove: [] }));
     const r = await editPoster({

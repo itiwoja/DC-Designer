@@ -480,7 +480,8 @@ async function editDeckSlide(opts: EditOptions & { deck: DeckContext }): Promise
   return generateJson({ role: "user", text, images: opts.references }, (j) => {
     const o = j as { reply?: unknown; edits?: unknown; target?: unknown; spec?: unknown; remove?: unknown };
     // 古い形式（{reply, target, spec}）も 1 件の edits として受け付ける
-    const rawEdits: { target?: unknown; spec?: unknown }[] = Array.isArray(o?.edits) ? o.edits : o?.spec != null ? [{ target: o.target, spec: o.spec }] : [];
+    // spec が null の件（「このスライドは変更なし」のつもりのもの）は読み飛ばす
+    const rawEdits = (Array.isArray(o?.edits) ? (o.edits as { target?: unknown; spec?: unknown }[]) : [{ target: o?.target, spec: o?.spec }]).filter((e) => e?.spec != null);
     const reply = typeof o?.reply === "string" ? o.reply : "";
     if (!rawEdits.length) {
       if (!reply) throw new Error('"reply" と "edits" のどちらもありません');
