@@ -4,7 +4,7 @@
 - 上位方針：[配布・更新ポリシー](./release-policy.md) ／ 状態：v1.0.3 で実装（2026-10-29）
 
 > **実装メモ（2026-10-29）**
-> - main：`desktop/updater.ts`（状態・案内・期限・間隔）と `desktop/main.ts`（`electron-updater` 6.8.10 の設定と IPC）。インストール版（`app.isPackaged`）だけで動く。
+> - main：`desktop/updater.ts`（状態・案内・期限・間隔）と `desktop/main.ts`（`electron-updater` 6.8.11 の設定と IPC）。インストール版（`app.isPackaged`）だけで動く。
 > - 画面：`src/editor/DesktopUpdate.tsx` が SCR-001〜003 を出す。SCR-004（更新欄）の代わりに、メニューの「ヘルプ → 更新を確認」で手動確認・案内の出し直しをする。
 > - 「保存して再起動」は通常終了の調停（`desktop/close.ts`）をそのまま使い、保存・書き込みの完了・worker の停止を確かめてから `quitAndInstall` を呼ぶ。中止時のダイアログの文言は通常終了と共通。
 > - 配信：CI が公開する exe から `latest.yml` を作る（`scripts/update-manifest.mjs`）。blockmap は出さず、差分取得はしない。

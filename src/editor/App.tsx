@@ -14,7 +14,7 @@ import { applyFonts, specTexts } from "../fonts";
 import { blankInstagramSpec, IG_DEFAULT_RATIO, IG_MAX_IMAGES, IG_RATIO_KEYS, IG_RATIOS, nearestRatio, ratioOf, type IgRatio } from "../instagram";
 import { CATALOG_BY_NAME } from "../components/catalog";
 import { workSubject, watchWork, WORK_CHANGED_MESSAGE, type AiSubject } from "./aiSubject";
-import { desktopBridge } from "./desktop";
+import { desktopBridge, useDesktopVersion } from "./desktop";
 import { api, readDataUrl, type AIProgress, type AIProvider, type DeckEditContext, type RefImage, type Status } from "./api";
 import { AccountBar, ModelSelect, WelcomeModal } from "./AccountBar";
 import { unionBox } from "./canvas";
@@ -119,6 +119,7 @@ export function App() {
   const W = spec.meta.width, H = spec.meta.height;
   const theme = resolveTheme(spec.theme, spec.themeOverride);
   const pending = useMemo(() => findPendingAssets(spec), [spec]);
+  const appVersion = useDesktopVersion();
 
   // ---------- 選択 ----------
   // 範囲選択・Shift+クリックで複数選べる。1 件だけのときはインスペクター等で編集できる
@@ -1393,6 +1394,7 @@ export function App() {
                   </>}
                   <div className="menu-sep" />
                   <button role="menuitem" onClick={saveNow} disabled={save.savingNow}><Ico name="save" /> 今すぐ保存<small><kbd>{MOD}+S</kbd></small></button>
+                  {appVersion && <><div className="menu-sep" /><p className="menu-note">DC-Designer {appVersion}</p></>}
                 </div>
               )}
             </Menu>

@@ -1,6 +1,6 @@
 appId: io.github.itiwoja.dcdesigner
 productName: DC-Designer
-electronVersion: 44.7.0
+electronVersion: 45.0.0
 directories:
   app: .desktop-stage/app
   output: release

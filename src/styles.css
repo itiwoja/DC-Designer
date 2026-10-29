@@ -211,6 +211,7 @@ button.brand:hover:not(:disabled), button.brand[aria-expanded="true"] { backgrou
 .menu-list button .ico, .menu-list .as-button .ico { color: var(--muted); }
 .menu-list button small, .menu-list .as-button small { color: var(--muted); font-size: 12px; margin-left: auto; padding-left: 12px; }
 .menu-sep { height: 1px; background: var(--line); margin: 4px 2px; }
+.menu-note { margin: 0; padding: 4px 10px 6px; color: var(--muted); font-size: 12px; }
 .menu-list button:hover:not(:disabled), .menu-list .as-button:hover { background: var(--hover); }
 
 /* 右は「選んだ要素の編集」と「レイヤー一覧」の 2 枚のカードに分ける */
@@ -753,6 +754,7 @@ button.primary.danger, button.primary.danger:hover:not(:disabled) { background: 
 /* ---------- ホーム画面（/） ---------- */
 .home { height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
 .home-topbar { flex: 0 0 56px; }
+.app-version { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .home-account { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); max-width: 260px; overflow: hidden; padding: 0 4px; }
 .home-account img { width: 26px; height: 26px; border-radius: 50%; }
 .home-account span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

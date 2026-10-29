@@ -6,7 +6,7 @@ import { findPendingAssets } from "../schema";
 import { blankInstagramSpec, IG_RATIO_KEYS, IG_RATIOS, type IgRatio } from "../instagram";
 import { api, AUTH_CHANNEL, deckBySlide, type Deck, type SavedPoster, type Status } from "./api";
 import { DESKTOP_ACCOUNT_CHANGED } from "./accountView";
-import { desktopBridge } from "./desktop";
+import { desktopBridge, useDesktopVersion } from "./desktop";
 import { BLANK_SLIDE_SPEC, BLANK_SPEC, IMPORT_NOTICE_KEY, HOME_URL, openDeckInEditor, openInEditor } from "./nav";
 import { MODE_KEYS, MODES, modeHomeUrl, modeLibraryUrl, modeOfDeck, readLastId, type AppMode } from "./mode";
 import { PosterFrame, ThemeMenu, useLoadWithRetry } from "./ui";
@@ -69,6 +69,7 @@ export function Home({ mode }: { mode?: AppMode }) {
   useSignInWatch(reload);
   // 製品版：ホームからのサインイン（既定のブラウザ）が終わったら取り直す
   const [signingIn, setSigningIn] = useState(false);
+  const appVersion = useDesktopVersion();
   useEffect(() => {
     const onChanged = () => { setSigningIn(false); reload(); };
     window.addEventListener(DESKTOP_ACCOUNT_CHANGED, onChanged);
@@ -236,6 +237,7 @@ export function Home({ mode }: { mode?: AppMode }) {
 
   const topbarRight = (
     <>
+      {appVersion && <span className="app-version" title="DC-Designer のバージョン">v{appVersion}</span>}
       <ThemeMenu />
       {gpt?.signedIn ? (
         <span className="home-account" title={gpt.email}>

@@ -21,6 +21,12 @@ rmSync(path.join(root, "build"), { recursive: true, force: true });
 rmSync(stage, { recursive: true, force: true });
 mkdirSync(app, { recursive: true });
 
+// 配布物の Electron は electron-builder.yml の electronVersion で決まる。package.json の版とずれたら止める
+const builderElectron = readFileSync(path.join(root, "electron-builder.yml"), "utf8").match(/^electronVersion:\s*(\S+)/m)?.[1];
+if (builderElectron !== pkg.devDependencies.electron) {
+  fail(`electron-builder.yml の electronVersion（${builderElectron}）を package.json の electron（${pkg.devDependencies.electron}）に合わせてください`);
+}
+
 // 入口が無ければ分かりやすく止める
 for (const f of ["desktop/main.ts", "desktop/preload.ts", "server/desktop-worker.ts"]) {
   if (!existsSync(path.join(root, f))) fail(`入口がありません: ${f}`);
