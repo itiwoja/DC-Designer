@@ -1,8 +1,22 @@
+import { useEffect, useState } from "react";
 import type { DesktopBridge, PrepareCloseRequest } from "../../desktop/bridge";
 
 /** 製品版（Electron）なら preload の橋、開発版（ブラウザ）なら undefined */
 export function desktopBridge(): DesktopBridge | undefined {
   return typeof window === "undefined" ? undefined : window.dcDesktop;
+}
+
+/** 製品版のアプリのバージョン（開発版・取得前は ""） */
+export function useDesktopVersion(): string {
+  const [version, setVersion] = useState("");
+  useEffect(() => {
+    const bridge = desktopBridge();
+    if (!bridge) return;
+    let alive = true;
+    bridge.runtime.getState().then((s) => alive && setVersion(s.appVersion)).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  return version;
 }
 
 // ---------- 閉じる前の保存準備 ----------
