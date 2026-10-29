@@ -1,6 +1,6 @@
 {
   "name": "dc-designer",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "ポスターを「レイヤーを重ねた設計図（JSON）」として AI に組み立てさせ、エディタで調整して SVG / PNG / PPTX に書き出すツール",
   "license": "MIT",
   "repository": {
@@ -16,7 +16,7 @@
     "desktop:icon": "node scripts/build-icon.mjs",
     "desktop:build": "node scripts/build-desktop.mjs",
     "desktop:pack": "npm run desktop:build && electron-builder --win --dir && node scripts/inspect-desktop.mjs release/win-unpacked",
-    "desktop:dist": "npm run desktop:build && electron-builder --win && node scripts/inspect-desktop.mjs release/win-unpacked"
+    "desktop:dist": "npm run desktop:build && electron-builder --win --publish never && node scripts/inspect-desktop.mjs release/win-unpacked"
   },
   "type": "module",
   "dependencies": {
