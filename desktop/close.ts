@@ -87,7 +87,7 @@ export function createCloseCoordinator(deps: CloseDeps) {
     await runtime.resume(id);
   }
 
-  async function run(): Promise<void> {
+  async function run(finalize: () => void): Promise<void> {
     const state = runtime.snapshot().state;
     if (state === "closing") return;
     if (state !== "ready") {
@@ -101,21 +101,21 @@ export function createCloseCoordinator(deps: CloseDeps) {
         if (i !== 1) return;
       }
       await runtime.forceStop();
-      deps.finalize();
+      finalize();
       return;
     }
     runtime.beginClosing();
     for (;;) {
       const id = deps.newId();
       const r = await attempt(id);
-      if (r.kind === "done") return deps.finalize();
+      if (r.kind === "done") return finalize();
       if (r.kind === "lost") {
         const i = await choose({
           message: "保存を完了できませんでした",
           detail: "内部処理が停止したため、保存を確認できません。このまま閉じると、保存されていない変更は失われます。",
           buttons: [BACK, "保存せず閉じる"],
         });
-        if (i === 1) { await runtime.forceStop(); return deps.finalize(); }
+        if (i === 1) { await runtime.forceStop(); return finalize(); }
         return;
       }
       if (r.kind === "busy") {
@@ -132,11 +132,14 @@ export function createCloseCoordinator(deps: CloseDeps) {
     }
   }
 
-  /** 窓の close から呼ぶ。実行中の再入は無視する */
-  async function requestClose(): Promise<void> {
+  /**
+   * 窓の close から呼ぶ。実行中の再入は無視する。
+   * finalize を渡すと、保存・停止を確かめた後の終わり方を差し替える（更新の適用で使う）。閉じずに編集へ戻ったら何も呼ばずに戻る
+   */
+  async function requestClose(finalize: () => void = deps.finalize): Promise<void> {
     if (running) return;
     running = true;
-    try { await run(); } finally { running = false; }
+    try { await run(finalize); } finally { running = false; }
   }
 
   return { requestClose, complete };
