@@ -17,7 +17,7 @@ const ERROR_TEXT: Record<RuntimeError, string> = {
  * 製品版だけ表示する起動状態。ready になるまで全面を覆って、下の画面を操作させない。
  * 画面（children）は最初に ready になってからマウントし（起動前に API を呼ばせない）、その後は API が止まっても編集中の内容を残すため外さない
  */
-export function DesktopRuntime({ children }: { children: ReactNode }) {
+export function DesktopRuntime({ children, showUpdates = true }: { children: ReactNode; showUpdates?: boolean }) {
   const bridge = desktopBridge();
   const [snap, setSnap] = useState<RuntimeSnapshot | null>(null);
   const [retrying, setRetrying] = useState(false);
@@ -67,7 +67,7 @@ export function DesktopRuntime({ children }: { children: ReactNode }) {
   return (
     <>
     {show && children}
-    {show && <DesktopUpdate />}
+    {show && showUpdates && <DesktopUpdate />}
     {covered && <div className="desktop-runtime">
       <div className={`desktop-runtime-card${failed ? " failed" : ""}`} role="status" aria-live="polite">
         <p className="desktop-runtime-title">{title}</p>
