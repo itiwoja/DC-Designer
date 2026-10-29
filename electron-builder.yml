@@ -34,4 +34,8 @@ nsis:
   packElevateHelper: false
   allowToChangeInstallationDirectory: false
   deleteAppDataOnUninstall: false
-publish: null
+# 更新確認の先（resources/app-update.yml に書かれる）。公開は CI が行うので、builder 自身は publish しない（--publish never）
+publish:
+  provider: github
+  owner: itiwoja
+  repo: DC-Designer

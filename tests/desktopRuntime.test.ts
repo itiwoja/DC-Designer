@@ -265,6 +265,21 @@ describe("createCloseCoordinator", () => {
     expect(t.rt.snapshot().state).toBe("ready");
   });
 
+  it("終わり方を渡すと、保存・停止を確かめた後にそれだけを呼ぶ（更新の適用）", async () => {
+    let t = setupClose(); await tick();
+    const install = vi.fn();
+    await t.coord.requestClose(install);
+    expect(install).toHaveBeenCalledTimes(1);
+    expect(t.finalize).not.toHaveBeenCalled();
+    expect(t.c.sent.map((m) => m.type)).toEqual(["init", "drain", "shutdown"]);
+
+    t = setupClose({ prepare: () => ({ allSaved: false, busy: false }) }); await tick();
+    const install2 = vi.fn();
+    await t.coord.requestClose(install2);
+    expect(install2).not.toHaveBeenCalled();
+    expect(t.rt.snapshot().state).toBe("ready");
+  });
+
   it("古い requestId の応答は無視する", async () => {
     const t = setupClose({ prepare: () => null }); await tick();
     t.coord.complete({ requestId: "stale", allSaved: true, busy: false });

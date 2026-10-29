@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi, type TestContext } from "vitest";
 // @ts-expect-error .mjs のスクリプトを直接読む
-import { asarEntries, checkPath, dirEntries, inspectEntries, inspectTarget, scanContent } from "../scripts/inspect-desktop.mjs";
+import { asarEntries, checkPath, checkUpdateConfig, dirEntries, inspectEntries, inspectTarget, scanContent } from "../scripts/inspect-desktop.mjs";
 
 const asar = createRequire(import.meta.url)("@electron/asar");
 
@@ -88,6 +88,23 @@ describe("実 ASAR の検査", () => {
     else writeFileSync(path.join(resources, name), "extra");
     expect(await inspectTarget(target)).toBe(false);
     expect(error).toHaveBeenCalledWith(`  NG resources/${name}: not in allowlist`);
+  });
+
+  it("resources の app-update.yml は更新先が固定されていれば通す", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { target, resources } = await makeArchive();
+    writeFileSync(path.join(resources, "app-update.yml"), "owner: itiwoja\nrepo: DC-Designer\nprovider: github\nupdaterCacheDirName: dc-designer-updater\n");
+    expect(await inspectTarget(target)).toBe(true);
+  });
+
+  it("app-update.yml の更新先が違えば拒否する", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { target, resources } = await makeArchive();
+    writeFileSync(path.join(resources, "app-update.yml"), "owner: someone\nrepo: DC-Designer\nprovider: github\n");
+    expect(await inspectTarget(target)).toBe(false);
+    expect(error).toHaveBeenCalledWith("  NG resources/app-update.yml: unexpected update config");
   });
 
   it("ASAR 内のリンクを追跡せず拒否する", async () => {
@@ -191,5 +208,22 @@ describe("inspectEntries", () => {
   it("秘密値入りの js を検出する", () => {
     const p = run({ ...clean, "dist/assets/index-abc.js": "ghp_abcdefghijklmnop" });
     expect(p).toEqual([{ file: "dist/assets/index-abc.js", kind: "GitHub token" }]);
+  });
+});
+
+describe("checkUpdateConfig", () => {
+  const base = "owner: itiwoja\nrepo: DC-Designer\nprovider: github\n";
+  it("固定の更新先と許可した鍵だけなら通す", () => {
+    expect(checkUpdateConfig(base)).toBe(true);
+    expect(checkUpdateConfig(`${base}updaterCacheDirName: dc-designer-updater\r\npublisherName: SignPath Foundation\n`)).toBe(true);
+  });
+  it.each([
+    ["token", `${base}token: ghp_xxxxxxxxxxxx\n`],
+    ["url", `${base}url: https://example.com/\n`],
+    ["provider", "owner: itiwoja\nrepo: DC-Designer\nprovider: generic\n"],
+    ["重複", `${base}owner: other\n`],
+    ["入れ子", `${base}  nested: x\n`],
+  ])("%s を拒否する", (_name, text) => {
+    expect(checkUpdateConfig(text)).toBe(false);
   });
 });

@@ -187,7 +187,7 @@ Instagram のフィードやストーリーズに載せる画像を作る。1 �
 
 ## Windows版の配布・更新方針
 
-Windows用インストーラーと配信CI（`v*` タグで起動。[配布・更新ポリシー](./docs/release-policy.md#1回の配信手順)）はある。自動更新・コード署名（SignPathの審査待ち。それまでは未署名で公開）・配信権限の制限は未実装・未設定。
+Windows用インストーラー、配信CI（`v*` タグで起動。[配布・更新ポリシー](./docs/release-policy.md#1回の配信手順)）、起動時の更新確認（v1.0.3から）はある。コード署名（SignPathの審査待ち。それまでは未署名で公開し、更新ファイルはSHA-512だけで確かめる）・配信権限の制限は未実装・未設定。
 
 - 対象はWindowsのみ。インストーラーと更新ファイルは公開GitHub Releasesで配り、コード署名はSignPath Foundationを使う（段階3のビルドが揃ってから申請）。署名の方針は [Code signing policy](./docs/code-signing-policy.md)。実装は段階1〜4に分けて進める（[段階分け](./docs/desktop-release-spec.md#phases)）。
 - 日常の開発は `main` で行い、配布するタイミングで `main` を `release` にマージする。チェリーピックは原則使わない。

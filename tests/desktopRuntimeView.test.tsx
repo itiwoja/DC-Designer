@@ -32,6 +32,7 @@ it("複数の子の編集状態を終了・失敗・再起動で維持し、終�
     },
     close: { onPrepare: () => offClose, complete },
     window: { setTheme: vi.fn() },
+    update: { getState: async () => ({ state: "idle", currentVersion: "1.0.0" }), onStateChanged: () => () => {} },
   } as unknown as DesktopBridge;
   vi.stubGlobal("dcDesktop", bridge);
   let mounts = 0;

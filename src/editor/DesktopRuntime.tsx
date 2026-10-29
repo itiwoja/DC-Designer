@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { RuntimeError, RuntimeSnapshot } from "../../desktop/bridge";
 import { desktopBridge, listenForClose } from "./desktop";
+import { DesktopUpdate } from "./DesktopUpdate";
 import "./desktopRuntime.css";
 import "./desktopWindow.css";
 
@@ -66,6 +67,7 @@ export function DesktopRuntime({ children }: { children: ReactNode }) {
   return (
     <>
     {show && children}
+    {show && <DesktopUpdate />}
     {covered && <div className="desktop-runtime">
       <div className={`desktop-runtime-card${failed ? " failed" : ""}`} role="status" aria-live="polite">
         <p className="desktop-runtime-title">{title}</p>

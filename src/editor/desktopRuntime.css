@@ -34,3 +34,22 @@
 .desktop-runtime-retry:hover { background: var(--accent-2); }
 .desktop-runtime-retry:disabled { background: var(--disabled-bg); color: var(--muted); cursor: default; }
 .desktop-runtime-retry:focus-visible { outline: 2px solid var(--sel-line); outline-offset: 2px; }
+
+/* 製品版の更新案内（ほかのモーダルより手前、起動状態の覆いより奥） */
+.desktop-update { z-index: 9000; }
+.desktop-update .confirm-dialog p + p { margin-top: 8px; }
+.desktop-update-notes {
+  max-height: 220px;
+  overflow: auto;
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: rgba(127, 127, 127, .1);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.desktop-update-hint { font-size: 12px; }
+.desktop-update-progress { width: 100%; margin: 6px 0 4px; }

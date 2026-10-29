@@ -53,6 +53,23 @@ export function checkPath(rel) {
   return null;
 }
 
+const UPDATE_CONFIG_KEYS = new Set(["provider", "owner", "repo", "updaterCacheDirName", "publisherName"]);
+
+/**
+ * electron-builder が resources に置く更新設定（app-update.yml）。更新先が公開 GitHub Releases の
+ * itiwoja/DC-Designer に固定されていて、ほかの鍵（トークンや任意の URL など）が無いことを確かめる
+ */
+export function checkUpdateConfig(text) {
+  const kv = new Map();
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const m = /^([A-Za-z]+): (.+)$/.exec(line);
+    if (!m || !UPDATE_CONFIG_KEYS.has(m[1]) || kv.has(m[1])) return false;
+    kv.set(m[1], m[2].trim());
+  }
+  return kv.get("provider") === "github" && kv.get("owner") === "itiwoja" && kv.get("repo") === "DC-Designer";
+}
+
 /** テキストの中身の検査。値は返さず種類だけ返す */
 export function scanContent(rel, buf) {
   if (!TEXT_EXT.test(rel) && path.posix.basename(rel) !== "LICENSE") return [];
@@ -137,7 +154,11 @@ export async function inspectTarget(target) {
     for (const name of readdirSync(resources).sort()) {
       const stat = lstatSync(path.join(resources, name));
       if (stat.isSymbolicLink()) throw new Error("inspect: symbolic links are not allowed");
-      if (name !== "app.asar" && name !== "app.asar.unpacked") {
+      if (name === "app-update.yml") {
+        if (!stat.isFile() || !checkUpdateConfig(readFileSync(path.join(resources, name), "utf8"))) {
+          resourceProblems.push({ file: `resources/${name}`, kind: "unexpected update config" });
+        }
+      } else if (name !== "app.asar" && name !== "app.asar.unpacked") {
         resourceProblems.push({ file: `resources/${name}`, kind: "not in allowlist" });
       } else if (name === "app.asar.unpacked" && !stat.isDirectory()) {
         throw new Error("inspect: app.asar.unpacked must be a directory");

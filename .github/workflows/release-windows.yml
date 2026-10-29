@@ -144,6 +144,8 @@ jobs:
           if [ "${{ steps.signing.outputs.enabled }}" = "true" ]; then src=signed; else src=unsigned; fi
           cp "$src/DC-Designer-Setup-$VERSION.exe" out/
           (cd out && sha256sum "DC-Designer-Setup-$VERSION.exe" > SHA256SUMS.txt)
+          # 自動更新の目録。署名で exe の中身が変わるので、公開する exe から作り直す（blockmap は載せない）
+          node scripts/update-manifest.mjs "out/DC-Designer-Setup-$VERSION.exe" "$VERSION" > out/latest.yml
           {
             echo "Windows 10 / 11（x64）向けのインストーラーです。"
             echo

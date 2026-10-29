@@ -1,7 +1,15 @@
 # Windows版：起動時の更新確認・ポップアップ設計
 
 - プロジェクト：DC-Designer ／ 版数：v0.3（2026-10-26）
-- 上位方針：[配布・更新ポリシー](./release-policy.md) ／ 状態：設計のみ・未実装
+- 上位方針：[配布・更新ポリシー](./release-policy.md) ／ 状態：v1.0.3 で実装（2026-10-29）
+
+> **実装メモ（2026-10-29）**
+> - main：`desktop/updater.ts`（状態・案内・期限・間隔）と `desktop/main.ts`（`electron-updater` 6.8.10 の設定と IPC）。インストール版（`app.isPackaged`）だけで動く。
+> - 画面：`src/editor/DesktopUpdate.tsx` が SCR-001〜003 を出す。SCR-004（更新欄）の代わりに、メニューの「ヘルプ → 更新を確認」で手動確認・案内の出し直しをする。
+> - 「保存して再起動」は通常終了の調停（`desktop/close.ts`）をそのまま使い、保存・書き込みの完了・worker の停止を確かめてから `quitAndInstall` を呼ぶ。中止時のダイアログの文言は通常終了と共通。
+> - 配信：CI が公開する exe から `latest.yml` を作る（`scripts/update-manifest.mjs`）。blockmap は出さず、差分取得はしない。
+> - **署名の検証はまだ無い。** 配布物が未署名のため `publisherName` を設定しておらず、更新ファイルは HTTPS と `latest.yml` の SHA-512 だけで確かめている。SignPath の署名が入ったら `publisherName` を「SignPath Foundation」に固定する。
+> - v1.0.2 以前には更新確認が無いので、v1.0.3 は手でインストールする。v1.0.3 から後の版は起動時に案内される。
 
 > **3行で**
 > 1. 起動のたびに裏で更新を確認し、新しい正式版があればアプリ内ポップアップで知らせる。
