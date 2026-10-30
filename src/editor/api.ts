@@ -1,7 +1,7 @@
 import type { AssetContext, AssetRequest, PosterSpec } from "../schema";
 import { postWithProgress, request, type AIProgress } from "./apiTransport";
 import { withSubject, type AiSubject } from "./aiSubject";
-import { DESKTOP_ACCOUNT_CHANGED } from "./accountView";
+import { runDesktopSignIn } from "./accountView";
 import { desktopBridge } from "./desktop";
 export type { AIProgress } from "./apiTransport";
 /** 画像生成 1 回の待ち時間の上限（ミリ秒） */
@@ -75,7 +75,7 @@ function openChatGPTLogin(newAccount: boolean) {
   // 製品版は main が既定のブラウザとループバックの受け口でサインインする（画面から別タブは開けない）
   const bridge = desktopBridge();
   if (bridge) {
-    void bridge.auth.signIn({ newAccount }).catch(() => {}).finally(() => window.dispatchEvent(new Event(DESKTOP_ACCOUNT_CHANGED)));
+    void runDesktopSignIn(bridge, newAccount);
     return;
   }
   const params: Record<string, string> = { returnTo: location.origin, popup: "1" };

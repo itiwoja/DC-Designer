@@ -5,7 +5,9 @@ import { PDF_FILE_ACCEPT } from "../import/pdfDocument";
 import { findPendingAssets } from "../schema";
 import { blankInstagramSpec, IG_RATIO_KEYS, IG_RATIOS, type IgRatio } from "../instagram";
 import { api, AUTH_CHANNEL, deckBySlide, type Deck, type SavedPoster, type Status } from "./api";
-import { DESKTOP_ACCOUNT_CHANGED } from "./accountView";
+import type { DesktopResult } from "../../desktop/bridge";
+import { DESKTOP_ACCOUNT_CHANGED, isSignInCancelled, signInOutcome } from "./accountView";
+import { useDesktopSigningIn } from "./DesktopAccount";
 import { desktopBridge, useDesktopVersion } from "./desktop";
 import { BLANK_SLIDE_SPEC, BLANK_SPEC, IMPORT_NOTICE_KEY, HOME_URL, openDeckInEditor, openInEditor } from "./nav";
 import { MODE_KEYS, MODES, modeHomeUrl, modeLibraryUrl, modeOfDeck, readLastId, type AppMode } from "./mode";
@@ -67,11 +69,16 @@ export function Home({ mode }: { mode?: AppMode }) {
   }, [reload]);
   // 結果が別タブから届かなくても、サインインが済んだら取り直す
   useSignInWatch(reload);
-  // 製品版：ホームからのサインイン（既定のブラウザ）が終わったら取り直す
-  const [signingIn, setSigningIn] = useState(false);
+  // 製品版：サインイン（既定のブラウザ）が終わったら取り直す。ホームにはトーストが無いので失敗はここに出す
+  const signingIn = useDesktopSigningIn();
   const appVersion = useDesktopVersion();
   useEffect(() => {
-    const onChanged = () => { setSigningIn(false); reload(); };
+    const onChanged = (e: Event) => {
+      const res = (e as CustomEvent<DesktopResult | undefined>).detail;
+      const outcome = res && !isSignInCancelled(res) ? signInOutcome(res) : null;
+      if (outcome?.tone === "error") setError(outcome.text);
+      reload();
+    };
     window.addEventListener(DESKTOP_ACCOUNT_CHANGED, onChanged);
     return () => window.removeEventListener(DESKTOP_ACCOUNT_CHANGED, onChanged);
   }, [reload]);
@@ -246,13 +253,19 @@ export function Home({ mode }: { mode?: AppMode }) {
           <span>{gpt.name || gpt.email || "ChatGPT"}</span>
           {!gpt.planEnabled && <small className="warn">プラン利用不可</small>}
         </span>
+      ) : desktopBridge() && signingIn ? (
+        <span className="home-signin-wait" role="status">
+          ブラウザでサインインを続けてください
+          <button className="small" onClick={() => desktopBridge()?.auth.reopen()} title="認可画面を閉じてしまったときに、もう一度開きます">開き直す</button>
+          <button className="small" onClick={() => desktopBridge()?.auth.cancel()}>取り消す</button>
+        </span>
       ) : desktopBridge() ? (
         // 製品版の AI は ChatGPT プランだけ（OpenRouter は使えない）。ホームからもサインインできる
         <button
-          className="home-signin" disabled={signingIn} onClick={() => { setSigningIn(true); api.chatgptLogin(); }}
+          className="home-signin" onClick={api.chatgptLogin}
           title="既定のブラウザで ChatGPT にサインインします。ChatGPT Plus / Pro などの対象プランが必要です（無料プランは非対応）"
         >
-          {signingIn ? "ブラウザでサインインを続けてください" : "ChatGPT にサインイン（対象の有料プラン）"}
+          ChatGPT にサインイン（対象の有料プラン）
         </button>
       ) : (
         <span className="home-account" title="レイアウト生成・AI 修正は OpenRouter の API キーで行います（ChatGPT にはエディタ左下からサインインできます）">
