@@ -3,16 +3,29 @@ import type { AssetContext, AssetRequest, Layer, PosterSpec } from "../schema";
 import { resolveTheme } from "../themes";
 import { aabb, unionBox, type Handle } from "./canvas";
 
-/** 選択全体を反対側の角を固定して等倍に拡縮する。開始時のレイヤーから毎回計算する。 */
+/**
+ * 選択全体を反対側の角・辺を固定して拡縮する。開始時のレイヤーから毎回計算する。
+ * 四隅のハンドルは縦横比を保って等倍に（文字サイズ・線の太さも比例）、辺のハンドルはその向きだけ伸び縮みさせる（文字サイズは変えない）。
+ */
 export function resizeSelection(layers: Layer[], handle: Handle, delta: { x: number; y: number }): Layer[] {
   const targets = layers.filter((l) => !l.locked && l.type !== "background");
   if (!targets.length) return [];
   const b = unionBox(targets);
   if (b.w <= 0 || b.h <= 0) return targets;
   const [hx, hy] = handle;
+  const ax = b.x + (1 - hx) * b.w / 2, ay = b.y + (1 - hy) * b.h / 2;
+  if (!hx || !hy) {
+    const rx = hx ? Math.max(8 / b.w, 1 + (hx * delta.x) / b.w) : 1;
+    const ry = hy ? Math.max(8 / b.h, 1 + (hy * delta.y) / b.h) : 1;
+    const stretch = (l: Layer, ox: number, oy: number): Layer => {
+      const next = { ...l, x: ox + (l.x - ox) * rx, y: oy + (l.y - oy) * ry, w: l.w * rx, h: l.h * ry };
+      if (next.type === "group") next.children = next.children.map((c) => stretch(c, 0, 0));
+      return next;
+    };
+    return targets.map((l) => stretch(l, ax, ay));
+  }
   const vx = hx * b.w, vy = hy * b.h;
   const ratio = Math.max(8 / Math.min(b.w, b.h), 1 + (delta.x * vx + delta.y * vy) / (vx * vx + vy * vy));
-  const ax = b.x + (1 - hx) * b.w / 2, ay = b.y + (1 - hy) * b.h / 2;
   const scale = (l: Layer, ox: number, oy: number): Layer => {
     const next = { ...l, x: ox + (l.x - ox) * ratio, y: oy + (l.y - oy) * ratio, w: l.w * ratio, h: l.h * ratio };
     if (next.shadow) next.shadow = { ...next.shadow, dx: (next.shadow.dx ?? 0) * ratio, dy: (next.shadow.dy ?? 4) * ratio, blur: (next.shadow.blur ?? 6) * ratio };
@@ -29,6 +42,13 @@ export function resizeSelection(layers: Layer[], handle: Handle, delta: { x: num
     return next;
   };
   return targets.map((l) => scale(l, ax, ay));
+}
+
+/** キャンバスのほぼ全面（9 割以上）を覆うレイヤーか。PPTX の全面画像など、背景代わりのものを見分ける */
+export function coversCanvas(l: Layer, width: number, height: number) {
+  const a = aabb(l);
+  const w = Math.min(a.x + a.w, width) - Math.max(a.x, 0), h = Math.min(a.y + a.h, height) - Math.max(a.y, 0);
+  return w > 0 && h > 0 && (w * h) / (width * height) >= 0.9;
 }
 
 export const uid = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 7)}`;

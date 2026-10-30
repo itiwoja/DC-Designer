@@ -98,12 +98,12 @@ function MultiSelection({ layers, px, resizable, onResizeDown }: { layers: Layer
   return <>
     {layers.map((l) => <rect key={`sel-${l.id}`} className={"sel-box member" + (l.locked ? " locked" : "")} transform={boxTransform(l)} width={l.w} height={l.h} />)}
     <rect className="sel-group" x={b.x} y={b.y} width={b.w} height={b.h} />
-    {resizable && targets.length > 0 && HANDLES.filter(([x, y]) => x && y).map((h) => (
+    {resizable && targets.length > 0 && HANDLES.map((h) => (
       <rect key={h.join()} className="handle" data-selection-resize={h.join()}
         x={b.x + (h[0] + 1) * b.w / 2 - 5 * px} y={b.y + (h[1] + 1) * b.h / 2 - 5 * px}
         width={10 * px} height={10 * px} style={{ cursor: HANDLE_CURSORS[h.join()] }}
         onPointerDown={(e) => onResizeDown(e, h)}>
-        <title>ドラッグで選択全体を拡大・縮小（縦横比を保持）</title>
+        <title>{h[0] && h[1] ? "ドラッグで選択全体を拡大・縮小（縦横比を保持）" : "ドラッグで選択全体をこの向きに伸び縮み"}</title>
       </rect>
     ))}
   </>;
