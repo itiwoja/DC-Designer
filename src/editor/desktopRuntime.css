@@ -35,11 +35,25 @@
 .desktop-runtime-retry:disabled { background: var(--disabled-bg); color: var(--muted); cursor: default; }
 .desktop-runtime-retry:focus-visible { outline: 2px solid var(--sel-line); outline-offset: 2px; }
 
-/* 製品版の更新案内（ほかのモーダルより手前、起動状態の覆いより奥） */
-.desktop-update { z-index: 9000; }
-.desktop-update .confirm-dialog p + p { margin-top: 8px; }
+/* 製品版の更新案内。右下のトーストで出す（ほかのモーダルより手前、起動状態の覆いより奥） */
+.desktop-update {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 9000;
+  width: min(360px, calc(100vw - 32px));
+  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-pop);
+  animation: toast-in .18s ease-out;
+}
+.desktop-update h2 { margin: 0 0 6px; font-size: 14px; }
+.desktop-update p { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--ink-2); }
+.desktop-update p + p { margin-top: 6px; }
+.desktop-update .row { margin-top: 12px; }
 .desktop-update-notes {
-  max-height: 220px;
+  max-height: 140px;
   overflow: auto;
   margin: 10px 0;
   padding: 10px 12px;
