@@ -8,13 +8,13 @@ const formatMB = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
 /**
  * 製品版の更新案内（SCR-001〜003）。表示待ちの案内は main が持ち、ここは表示と操作だけ。
- * 初期フォーカスは「あとで」側に置き、Enter だけで不意に更新・再起動しない。Esc は保留
+ * 作業を止めないよう画面右下のトーストで出し、フォーカスは奪わない。Esc（トースト内に焦点があるとき）は保留
  */
 export function DesktopUpdate() {
   const bridge = desktopBridge();
   const [snap, setSnap] = useState<UpdateSnapshot | null>(null);
   const [busy, setBusy] = useState(false);
-  const laterRef = useRef<HTMLButtonElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!bridge) return;
@@ -25,7 +25,6 @@ export function DesktopUpdate() {
   }, [bridge]);
 
   const prompt = snap?.prompt;
-  useEffect(() => { if (prompt) laterRef.current?.focus(); }, [prompt?.id]);
 
   const respond = (action: UpdatePromptAction) => {
     if (!bridge || !prompt) return;
@@ -35,7 +34,7 @@ export function DesktopUpdate() {
   useEffect(() => {
     if (!prompt || prompt.kind === "restarting") return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || !rootRef.current?.contains(document.activeElement)) return;
       e.preventDefault();
       e.stopPropagation();
       respond(prompt.kind === "progress" ? "background" : "later");
@@ -63,7 +62,7 @@ export function DesktopUpdate() {
         <p className="desktop-update-hint">ダウンロード後も、再起動するまで作業を続けられます。 <a href={`${RELEASES_URL}/tag/v${encodeURIComponent(version)}`} target="_blank" rel="noreferrer">更新内容の詳細</a></p>
       </>;
       actions = <>
-        <button ref={laterRef} onClick={() => respond("later")}>あとで</button>
+        <button onClick={() => respond("later")}>あとで</button>
         <button className="primary" disabled={busy} onClick={() => run(() => bridge.update.download(version))}>更新する</button>
       </>;
       break;
@@ -74,14 +73,14 @@ export function DesktopUpdate() {
         <progress className="desktop-update-progress" max={100} value={p && p.total > 0 ? p.percent : undefined} />
         <p className="desktop-update-hint">{p && p.total > 0 ? `${Math.floor(p.percent)}%（${formatMB(p.transferred)} / ${formatMB(p.total)}）` : "準備しています…"}</p>
       </>;
-      actions = <button ref={laterRef} onClick={() => respond("background")}>バックグラウンドで続ける</button>;
+      actions = <button onClick={() => respond("background")}>バックグラウンドで続ける</button>;
       break;
     }
     case "downloaded":
       title = "更新の準備ができました";
       body = <p>作業を保存してアプリを再起動し、{version} に更新します。</p>;
       actions = <>
-        <button ref={laterRef} onClick={() => respond("later")}>あとで</button>
+        <button onClick={() => respond("later")}>あとで</button>
         <button className="primary" disabled={busy} onClick={() => run(() => bridge.update.install(version))}>保存して再起動</button>
       </>;
       break;
@@ -92,13 +91,13 @@ export function DesktopUpdate() {
     case "upToDate":
       title = "最新のバージョンです";
       body = <p>DC-Designer {snap.currentVersion} は最新です。</p>;
-      actions = <button ref={laterRef} onClick={() => respond("close")}>閉じる</button>;
+      actions = <button onClick={() => respond("close")}>閉じる</button>;
       break;
     case "error":
       title = snap.error?.stage === "download" ? "更新を取得できませんでした" : "更新を確認できませんでした";
       body = <p>{snap.error?.message}</p>;
       actions = <>
-        <button ref={laterRef} onClick={() => respond("close")}>閉じる</button>
+        <button onClick={() => respond("close")}>閉じる</button>
         {snap.error?.stage === "download" && snap.state === "available" &&
           <button className="primary" disabled={busy} onClick={() => run(() => bridge.update.download(version))}>再試行</button>}
       </>;
@@ -106,12 +105,10 @@ export function DesktopUpdate() {
   }
 
   return (
-    <div className="modal-backdrop desktop-update">
-      <div className="modal confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="desktop-update-title">
-        <h2 id="desktop-update-title">{title}</h2>
-        {body}
-        {actions && <div className="row end">{actions}</div>}
-      </div>
+    <div ref={rootRef} className="desktop-update" role="status" aria-live="polite" aria-labelledby="desktop-update-title">
+      <h2 id="desktop-update-title">{title}</h2>
+      {body}
+      {actions && <div className="row end">{actions}</div>}
     </div>
   );
 }

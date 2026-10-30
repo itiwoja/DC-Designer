@@ -35,26 +35,29 @@ function setup(initial: UpdateSnapshot) {
 
 const button = (label: string) => [...container.querySelectorAll("button")].find((b) => b.textContent === label)!;
 
-it("新版の案内：初期フォーカスは「あとで」。更新内容はテキストのまま出し、「更新する」で案内した版を取得する", async () => {
+it("新版の案内：右下のトーストで出し、フォーカスは奪わない。更新内容はテキストのまま出し、「更新する」で案内した版を取得する", async () => {
   const { update } = setup({
     state: "available", currentVersion: "1.0.2", latestVersion: "1.0.3",
     releaseNotes: "<img src=x onerror=alert(1)>修正", prompt: { id: "p1", kind: "available" },
   });
   await act(async () => root.render(<DesktopUpdate />));
-  expect(container.querySelector("[role=dialog]")?.textContent).toContain("1.0.2 → 最新 1.0.3");
+  expect(container.querySelector(".desktop-update")?.textContent).toContain("1.0.2 → 最新 1.0.3");
   expect(container.querySelector("img")).toBeNull();
-  expect(document.activeElement).toBe(button("あとで"));
+  expect(document.activeElement).toBe(document.body);
   await act(async () => button("更新する").click());
   expect(update.download).toHaveBeenCalledWith("1.0.3");
   expect(container.textContent).toContain("更新をダウンロードしています");
 });
 
-it("Esc と「あとで」は保留として答え、案内を閉じる", async () => {
+it("Esc はトースト内に焦点があるときだけ保留として答え、案内を閉じる", async () => {
   const { update } = setup({ state: "available", currentVersion: "1.0.2", latestVersion: "1.0.3", prompt: { id: "p1", kind: "available" } });
   await act(async () => root.render(<DesktopUpdate />));
   await act(async () => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); });
+  expect(update.respond).not.toHaveBeenCalled();
+  button("あとで").focus();
+  await act(async () => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); });
   expect(update.respond).toHaveBeenCalledWith("p1", "later");
-  expect(container.querySelector("[role=dialog]")).toBeNull();
+  expect(container.querySelector(".desktop-update")).toBeNull();
 });
 
 it("取得済みなら「保存して再起動」で適用を頼む。案内が無ければ何も出さない", async () => {
@@ -63,5 +66,5 @@ it("取得済みなら「保存して再起動」で適用を頼む。案内が�
   await act(async () => button("保存して再起動").click());
   expect(update.install).toHaveBeenCalledWith("1.0.3");
   await act(async () => notify({ state: "downloaded", currentVersion: "1.0.2", latestVersion: "1.0.3" }));
-  expect(container.querySelector("[role=dialog]")).toBeNull();
+  expect(container.querySelector(".desktop-update")).toBeNull();
 });
