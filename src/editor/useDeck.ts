@@ -230,6 +230,18 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
     }
     setDeck(d);
   };
+  /** デッキ名を変える（見た目はすぐ変え、保存は打ち終わるのを待ってまとめて送る。空のあいだは保存しない） */
+  const renameTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const renameDeck = (name: string) => {
+    const d = deckRef.current;
+    if (!d) return;
+    setDeck({ ...d, name });
+    clearTimeout(renameTimer.current);
+    if (!name.trim()) return;
+    renameTimer.current = setTimeout(() => {
+      api.updateDeck(d.id, { name: name.trim() }).catch(() => notify({ kind: "error", text: "名前を保存できませんでした" }));
+    }, 600);
+  };
   /** スライドの並びを ids に変える（見た目は先に並べ替え、失敗したら元に戻す） */
   const setOrder = (label: string, ids: string[]) => {
     if (!deck || busy) return;
@@ -609,6 +621,6 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
   return {
     deck, slides, specOf, deckOpen, toggleDeck, openSlide, updateSlide, addSlide, duplicateSlide, removeSlide, deleteSlides, moveSlide, reorderSlide, exportDeck,
     fontDialog, setFontDialog, openFontDialog, applyDeckFonts, applyTransitionToAll, renumberDeckPages, writeNotes, addSlideByAI, editAcrossDeck, importPptxFile,
-    instagram, full, exportImages, changeRatio, openNewDeck, deckReady,
+    instagram, full, exportImages, changeRatio, openNewDeck, deckReady, renameDeck,
   };
 }
