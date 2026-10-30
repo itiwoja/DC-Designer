@@ -1040,7 +1040,7 @@ export function App() {
   const {
     deck, slides, specOf, deckOpen, toggleDeck, openSlide, updateSlide, addSlide, duplicateSlide, removeSlide, deleteSlides, moveSlide, reorderSlide, exportDeck,
     fontDialog, setFontDialog, openFontDialog, applyDeckFonts, applyTransitionToAll, renumberDeckPages, writeNotes, addSlideByAI, editAcrossDeck, importPptxFile,
-    instagram, exportImages, changeRatio, openNewDeck, deckReady,
+    instagram, exportImages, changeRatio, openNewDeck, deckReady, renameDeck,
   } = useDeck({ spec, theme, save, apiUp, busy, run, notify, exported, setBusyProgress, setSpec, resetSpec, stashHistory, setSelected, fitView });
   /** PPTX のスライド（Instagram の投稿でない普通のデッキ）を開いているか。投影・台本・アニメーションはこのときだけ */
   const isSlides = !!deck && !instagram;
@@ -1414,8 +1414,8 @@ export function App() {
             className="title-input"
             aria-label={`${MODES[mode].item}のタイトル`}
             placeholder={mode === "instagram" ? "無題の投稿" : mode === "slides" ? "無題のプレゼンテーション" : "無題のポスター"}
-            value={spec.meta.title}
-            onChange={(e) => setSpec((s) => ({ ...s, meta: { ...s.meta, title: e.target.value } }), "title")}
+            value={deck ? deck.name : spec.meta.title}
+            onChange={(e) => deck ? renameDeck(e.target.value) : setSpec((s) => ({ ...s, meta: { ...s.meta, title: e.target.value } }), "title")}
           />
         </div>
         <div className="left-body">

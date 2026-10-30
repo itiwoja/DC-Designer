@@ -123,6 +123,19 @@ const authGate = createAuthGate({
   openExternal: (url) => shell.openExternal(url),
 });
 
+/** ブラウザでのサインインが終わったら編集窓を前に戻す。Windows が前面化を許さないときはタスクバーで点滅させる */
+function bringEditorToFront(): void {
+  const w = editorWindow;
+  if (!w || w.isDestroyed()) return;
+  if (w.isMinimized()) w.restore();
+  w.show();
+  w.focus();
+  if (!w.isFocused()) {
+    w.flashFrame(true);
+    w.once("focus", () => w.flashFrame(false));
+  }
+}
+
 /** 画面へ返す資格情報の結果（値は含めない）。変わった状態は worker のキャッシュへも伝える */
 function secretResult(r: SecretResult): DesktopResult {
   if (!r.ok) return failResult(r.code ?? "INTERNAL", "資格情報を保存できませんでした");
@@ -186,7 +199,19 @@ function registerIpc(): void {
   ipcMain.handle(IPC.authSignIn, (e, opts: unknown): Promise<DesktopResult> | DesktopResult => {
     if (!isTrusted(e)) return failResult("UNAUTHORIZED_CONTEXT", "この画面からは実行できません");
     const newAccount = !!opts && typeof opts === "object" && (opts as { newAccount?: unknown }).newAccount === true;
-    return authGate.signIn({ newAccount });
+    return authGate.signIn({ newAccount }).then((r) => {
+      // 取り消しはアプリの画面から行うので、前に戻す必要はない
+      if (r.ok || r.code !== "AUTH_CANCELLED") bringEditorToFront();
+      return r;
+    });
+  });
+  ipcMain.handle(IPC.authCancel, (e): void => {
+    if (!isTrusted(e)) return;
+    authGate.cancel();
+  });
+  ipcMain.handle(IPC.authReopen, async (e): Promise<void> => {
+    if (!isTrusted(e)) return;
+    await authGate.reopen().catch(() => {});
   });
   // 更新：版は main が案内したものと一致するときだけ受け付ける（URL・path は受け取らない）
   ipcMain.handle(IPC.updateGetState, (e) => {

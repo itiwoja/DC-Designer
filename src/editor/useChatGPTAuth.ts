@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { api, AUTH_CHANNEL, AUTH_STARTED_EVENT, type Status } from "./api";
 import { modeEditorUrl, readModeParam } from "./mode";
-import { DESKTOP_ACCOUNT_CHANGED } from "./accountView";
+import type { DesktopResult } from "../../desktop/bridge";
+import { DESKTOP_ACCOUNT_CHANGED, isSignInCancelled, signInOutcome } from "./accountView";
+import { desktopBridge } from "./desktop";
 import { EDITOR_URL } from "./nav";
 import { readPref, writePref } from "./storage";
 import type { Notice } from "./Toasts";
@@ -68,8 +70,8 @@ export function useChatGPTAuth({ status, setStatus, refreshStatus, notify }: {
     announced.current = key;
     if (!st.chatgpt.signedIn) return;
     if (!st.chatgpt.planEnabled) { notify({ kind: "info", text: "サインインしました。ただしこのアカウントでは ChatGPT プランを他のアプリで使えないため、AI 機能は使えません" }); return; }
-    // 「ChatGPT プランを使用中」の案内は初回サインイン時だけ出す
-    if (!readPref(WELCOMED_KEY + st.chatgpt.subject)) setWelcome(true);
+    // 「ChatGPT プランを使用中」の案内は初回サインイン時だけ出す（画像生成の説明を含むので、画像生成の無い製品版では出さない）
+    if (!desktopBridge() && !readPref(WELCOMED_KEY + st.chatgpt.subject)) setWelcome(true);
     else notify({ kind: "success", text: "ChatGPT でサインインしました" });
   };
   // 成否だけを見て、中身（プランを使えるか）はサーバーの状態から判断する
@@ -96,9 +98,17 @@ export function useChatGPTAuth({ status, setStatus, refreshStatus, notify }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 製品版：画面内のサインイン操作が終わったら状態を取り直す
+  // 製品版：ブラウザでのサインインが終わったら結果をトーストで知らせ、状態を取り直す
   useEffect(() => {
-    const onChanged = () => { api.status().then(setStatus).catch(() => {}); };
+    const onChanged = (e: Event) => {
+      const res = (e as CustomEvent<DesktopResult | undefined>).detail;
+      const outcome = res && !isSignInCancelled(res) ? signInOutcome(res) : null;
+      if (outcome?.tone === "error") notify({ kind: "error", text: outcome.text });
+      if (!outcome || outcome.tone === "error") { api.status().then(setStatus).catch(() => {}); return; }
+      // 同じアカウントでサインインし直したときも知らせる
+      announced.current = undefined;
+      api.status().then(announce).catch(() => {});
+    };
     window.addEventListener(DESKTOP_ACCOUNT_CHANGED, onChanged);
     return () => window.removeEventListener(DESKTOP_ACCOUNT_CHANGED, onChanged);
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -1,4 +1,4 @@
-import type { DesktopResult } from "../../desktop/bridge";
+import type { DesktopBridge, DesktopResult } from "../../desktop/bridge";
 import type { Status } from "./api";
 
 /** 製品版の ChatGPT アカウント表示の状態 */
@@ -46,4 +46,27 @@ export function describeDesktopAccount(v: DesktopAccountView): string {
   }
 }
 
+/** サインインが終わったとき（detail に auth.signIn の結果）とログアウトしたときに window へ流すイベント */
 export const DESKTOP_ACCOUNT_CHANGED = "dc-designer:desktop-account-changed";
+/** サインインを始めたときに window へ流すイベント */
+export const DESKTOP_SIGN_IN_STARTED = "dc-designer:desktop-sign-in-started";
+
+/** 利用者が画面から取り消したときの auth.signIn の結果（知らせる必要はない） */
+export const isSignInCancelled = (res: DesktopResult) => !res.ok && res.code === "AUTH_CANCELLED";
+
+let signingIn = false;
+/** いまブラウザでのサインインを待っているか */
+export const isDesktopSigningIn = () => signingIn;
+
+/**
+ * 製品版のサインインを進め、始まりと結果をイベントで画面全体へ知らせる（結果の通知は useChatGPTAuth、表示は各画面）。
+ * main は同時のサインインを 1 本にまとめるので、待っているあいだに呼ばれても同じ結果になる
+ */
+export async function runDesktopSignIn(bridge: DesktopBridge, newAccount: boolean): Promise<DesktopResult> {
+  signingIn = true;
+  window.dispatchEvent(new Event(DESKTOP_SIGN_IN_STARTED));
+  const res = await bridge.auth.signIn({ newAccount }).catch((): DesktopResult => ({ ok: false, error: "ChatGPT でサインインできませんでした", code: "AUTH_FAILED" }));
+  signingIn = false;
+  window.dispatchEvent(new CustomEvent<DesktopResult>(DESKTOP_ACCOUNT_CHANGED, { detail: res }));
+  return res;
+}
