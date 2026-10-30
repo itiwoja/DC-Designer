@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Layer, PosterSpec } from "../src/schema";
-import { alignedPosition, aspectOf, diffLayers, insertAfter, moveLayerTo, patchAsset, prepareAsset, reorderLayer, safeFileName, toLayerRef } from "../src/editor/specOps";
+import { alignedPosition, aspectOf, coversCanvas, diffLayers, insertAfter, moveLayerTo, patchAsset, prepareAsset, reorderLayer, safeFileName, toLayerRef } from "../src/editor/specOps";
 
 const sample: PosterSpec = {
   version: 1, meta: { title: "テストのポスター", width: 1000, height: 1414 }, theme: "ocean",
@@ -128,5 +128,13 @@ describe("レイヤーの並べ替え・揃え", () => {
     // 90° 回転すると見た目は 50×100。左端に揃えると見た目の左端が 0 になる
     const r = img("r", { x: 0, y: 0, w: 100, h: 50, rotation: 90 });
     expect((alignedPosition(r, "left", 1000, 1000) as { x: number }).x).toBeCloseTo(-25);
+  });
+});
+
+describe("全面を覆うレイヤー", () => {
+  it("coversCanvas はほぼ全面を覆うものだけを見分ける", () => {
+    expect(coversCanvas(img("a", { w: 1000, h: 1414 }), 1000, 1414)).toBe(true);
+    expect(coversCanvas(img("a", { x: -50, y: -50, w: 1100, h: 1500 }), 1000, 1414)).toBe(true);
+    expect(coversCanvas(img("a", { w: 1000, h: 700 }), 1000, 1414)).toBe(false);
   });
 });

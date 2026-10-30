@@ -31,6 +31,13 @@ export function resizeSelection(layers: Layer[], handle: Handle, delta: { x: num
   return targets.map((l) => scale(l, ax, ay));
 }
 
+/** キャンバスのほぼ全面（9 割以上）を覆うレイヤーか。PPTX の全面画像など、背景代わりのものを見分ける */
+export function coversCanvas(l: Layer, width: number, height: number) {
+  const a = aabb(l);
+  const w = Math.min(a.x + a.w, width) - Math.max(a.x, 0), h = Math.min(a.y + a.h, height) - Math.max(a.y, 0);
+  return w > 0 && h > 0 && (w * h) / (width * height) >= 0.9;
+}
+
 export const uid = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 7)}`;
 
 export const aspectOf = (w: number, h: number): AssetRequest["aspect"] => (w / h > 1.2 ? "landscape" : w / h < 0.83 ? "portrait" : "square");

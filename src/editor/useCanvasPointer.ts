@@ -1,9 +1,9 @@
 import { useRef, useState, type PointerEvent as RPointerEvent, type RefObject } from "react";
 import { clampCrop, cropTarget, withCrop } from "../render/ImageBox";
 import type { ImageCrop, Layer, PosterSpec } from "../schema";
-import { aabb, angleFrom, intersects, resizeBox, snapMove, unionBox, type Guide, type Handle } from "./canvas";
+import { aabb, angleFrom, contains, intersects, resizeBox, snapMove, unionBox, type Guide, type Handle } from "./canvas";
 import { DEFAULT_CROP, type CropState } from "./CanvasOverlay";
-import { isVisibleOnCanvas, resizeSelection } from "./specOps";
+import { coversCanvas, isVisibleOnCanvas, resizeSelection } from "./specOps";
 
 /** イベントの対象を含むトップレベルのレイヤー ID（ネストしたコンポーネントの子ではなく、いちばん外側） */
 export function topLayerAt(target: EventTarget, topIds: Set<string>) {
@@ -118,8 +118,11 @@ export function useCanvasPointer({ svgRef, spec, topIds, cropWheel, crop, cropRa
       const p = toPoster(ev);
       const r = { x: Math.min(p0.x, p.x), y: Math.min(p0.y, p.y), w: Math.abs(p.x - p0.x), h: Math.abs(p.y - p0.y) };
       setMarquee(r);
-      // 枠に少しでも掛かったレイヤーを選ぶ
-      const hit = candidates.filter((l) => intersects(aabb(l), r)).map((l) => l.id);
+      // 枠に少しでも掛かったレイヤーを選ぶ。全面を覆うもの（PPTX の全面画像など）は枠に収めたときだけ
+      const hit = candidates.filter((l) => {
+        const b = aabb(l);
+        return coversCanvas(l, W, H) ? contains(r, b) : intersects(b, r);
+      }).map((l) => l.id);
       setSelectedIds([...new Set([...base, ...hit])]);
     }, () => {
       setMarquee(null);
@@ -174,8 +177,8 @@ export function useCanvasPointer({ svgRef, spec, topIds, cropWheel, crop, cropRa
       startTextEdit(layer.id, { x: e.clientX, y: e.clientY });
       return;
     }
-    // 背景・ロック中の要素の上からは範囲選択（クリックだけならその要素を選ぶ）
-    if (layer.locked || layer.type === "background") { startMarquee(e, () => setSelected(layer.id)); return; }
+    // 背景・ロック中の要素、まだ選んでいない全面のもの（PPTX の全面画像など）の上からは範囲選択（クリックだけならその要素を選ぶ）
+    if (layer.locked || layer.type === "background" || (coversCanvas(layer, W, H) && !selectedIds.includes(layer.id))) { startMarquee(e, () => setSelected(layer.id)); return; }
     if (e.shiftKey || e.ctrlKey || e.metaKey) { toggleSelect(layer.id); return; }
     // 複数選択中のどれかを掴んだら全体を動かす。クリックだけならそれ 1 つを選び直す
     if (multi && selectedIds.includes(layer.id)) {
