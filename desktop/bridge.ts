@@ -77,6 +77,10 @@ export type DesktopBridge = {
    */
   auth: {
     signIn(opts?: { newAccount?: boolean }): Promise<DesktopResult>;
+    /** 進行中のサインインをやめる（signIn は { ok: false, code: "AUTH_CANCELLED" } で終わる） */
+    cancel(): void;
+    /** 進行中のサインインの認可画面を、既定のブラウザでもう一度開く */
+    reopen(): void;
   };
   close: {
     /** 解除関数を返す */
@@ -108,6 +112,8 @@ export const IPC = {
   secretsSet: "dc:secrets-set",
   secretsRemove: "dc:secrets-remove",
   authSignIn: "dc:auth-sign-in",
+  authCancel: "dc:auth-cancel",
+  authReopen: "dc:auth-reopen",
   updateGetState: "dc:update-get-state",
   updateCheck: "dc:update-check",
   updateDownload: "dc:update-download",

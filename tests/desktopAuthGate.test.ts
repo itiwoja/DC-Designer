@@ -114,6 +114,34 @@ describe("authGate", () => {
     expect(await refused(portOf(calls))).toBe(true);
   });
 
+  it("取り消すと AUTH_CANCELLED で終わり、受け口を閉じる", async () => {
+    const { gate, calls, opened } = setup();
+    const p = gate.signIn();
+    await until(() => opened.length === 1);
+    gate.cancel();
+    expect(await p).toMatchObject({ ok: false, code: "AUTH_CANCELLED" });
+    expect(await refused(portOf(calls))).toBe(true);
+    gate.cancel(); // 進行中でなければ何もしない
+  });
+
+  it("開き直しは進行中の認可画面だけを開き、retry 後は新しい画面を開く", async () => {
+    const { gate, calls, opened } = setup({ complete: (q) => (q.state === "s1" ? { kind: "retry", url: authUrl("r1") } : { kind: "done", result: "signed-in" }) });
+    await gate.reopen();
+    expect(opened).toEqual([]);
+    const p = gate.signIn();
+    await until(() => opened.length === 1);
+    await gate.reopen();
+    expect(opened).toEqual([authUrl("s1"), authUrl("s1")]);
+    await get(portOf(calls), "/auth/callback?state=s1&code=x");
+    await until(() => opened.length === 3);
+    await gate.reopen();
+    expect(opened[3]).toBe(authUrl("r1"));
+    await get(portOf(calls), "/auth/callback?state=r1&code=y");
+    expect((await p).ok).toBe(true);
+    await gate.reopen();
+    expect(opened).toHaveLength(4);
+  });
+
   it("同時のサインインは同じ結果を待ち、終われば次を始められる", async () => {
     const { gate, calls, opened } = setup();
     const a = gate.signIn();

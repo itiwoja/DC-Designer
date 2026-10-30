@@ -44,6 +44,8 @@ const bridge: DesktopBridge = {
   },
   auth: {
     signIn: (opts) => ipcRenderer.invoke(IPC.authSignIn, { newAccount: opts?.newAccount === true }),
+    cancel: () => { void ipcRenderer.invoke(IPC.authCancel).catch(() => {}); },
+    reopen: () => { void ipcRenderer.invoke(IPC.authReopen).catch(() => {}); },
   },
   close: {
     onPrepare: (cb) => subscribe<PrepareCloseRequest>(IPC.prepareClose, cb),

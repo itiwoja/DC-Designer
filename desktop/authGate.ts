@@ -35,21 +35,27 @@ function allowedAuthUrl(url: unknown): URL | null {
   } catch { return null; }
 }
 
-const page = (message: string) =>
-  `<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>DC-Designer</title></head><body style="font-family:sans-serif;padding:2em"><p>${message}</p></body></html>`;
-const PAGE_OK = page("サインインが完了しました。DC-Designer に戻ってください。");
-const PAGE_FAIL = page("サインインを完了できませんでした。DC-Designer に戻ってもう一度お試しください。");
-const PAGE_RETRY = page("サインインを続けています。開き直したブラウザの画面で操作してください。");
+const page = (title: string, message: string) =>
+  `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"><title>DC-Designer</title>` +
+  `<style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,"Segoe UI","Yu Gothic UI",sans-serif;background:Canvas;color:CanvasText}` +
+  `main{max-width:28em;padding:2em;text-align:center}h1{font-size:1.25em;margin:0 0 .5em}p{margin:0;opacity:.75;line-height:1.6}</style></head>` +
+  `<body><main><h1>${title}</h1><p>${message}</p></main></body></html>`;
+const PAGE_OK = page("サインインが完了しました", "DC-Designer に戻ります。このタブは閉じて構いません。");
+const PAGE_FAIL = page("サインインを完了できませんでした", "DC-Designer に戻って、もう一度お試しください。このタブは閉じて構いません。");
+const PAGE_RETRY = page("サインインを続けています", "新しく開いたブラウザの画面で操作してください。このタブは閉じて構いません。");
 
 export function createAuthGate(deps: AuthGateDeps) {
   const timeoutMs = deps.timeoutMs ?? AUTH_TIMEOUT_MS;
   let running: Promise<DesktopResult> | null = null;
+  /** 進行中のサインイン（取り消しと、ブラウザの開き直しに使う） */
+  let active: { url: string; cancel: () => void } | null = null;
 
   async function run(newAccount: boolean): Promise<DesktopResult> {
     let expectedState: string | null = null;
     let retried = false;
     let settle!: (r: DesktopResult) => void;
     const done = new Promise<DesktopResult>((r) => { settle = r; });
+    const self = { url: "", cancel: () => settle(fail("AUTH_CANCELLED", "サインインを取り消しました")) };
 
     const server = http.createServer((req, res) => {
       void onRequest(req, res).catch(() => {
@@ -92,6 +98,7 @@ export function createAuthGate(deps: AuthGateDeps) {
         if (next && state) {
           retried = true;
           expectedState = state;
+          self.url = next.href;
           respond(res, 200, PAGE_RETRY);
           try { await deps.openExternal(next.href); } catch { return settle(fail("AUTH_OPEN_FAILED", "ブラウザを開けませんでした")); }
           return;
@@ -123,6 +130,8 @@ export function createAuthGate(deps: AuthGateDeps) {
       const state = url?.searchParams.get("state");
       if (!url || !state) return fail("AUTH_FAILED", "サインインを開始できませんでした");
       expectedState = state;
+      self.url = url.href;
+      active = self;
 
       timer = setTimeout(() => settle(fail("AUTH_TIMEOUT", "サインインがタイムアウトしました。もう一度お試しください")), timeoutMs);
       try { await deps.openExternal(url.href); } catch { return fail("AUTH_OPEN_FAILED", "ブラウザを開けませんでした"); }
@@ -130,6 +139,7 @@ export function createAuthGate(deps: AuthGateDeps) {
     } catch {
       return fail("AUTH_FAILED", "サインインに失敗しました");
     } finally {
+      if (active === self) active = null;
       close();
     }
   }
@@ -143,6 +153,14 @@ export function createAuthGate(deps: AuthGateDeps) {
       const clear = () => { if (running === p) running = null; };
       p.then(clear, clear);
       return p;
+    },
+    /** 進行中のサインインをやめる（待っている signIn は AUTH_CANCELLED で終わる） */
+    cancel(): void {
+      active?.cancel();
+    },
+    /** 認可画面を閉じてしまったときに、同じ画面をもう一度ブラウザで開く */
+    async reopen(): Promise<void> {
+      if (active?.url) await deps.openExternal(active.url);
     },
   };
 }
