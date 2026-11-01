@@ -2,6 +2,7 @@
 import "../styles/global.css";
 import fontUrl from "../assets/fonts/mochiy-pop-one-subset.woff2?url";
 import Shape from "../components/Shape.astro";
+import Icon from "../components/Icon.astro";
 import { getEntry } from "astro:content";
 import { getImage } from "astro:assets";
 import { REPO_URL } from "../lib/config";
@@ -81,7 +82,7 @@ const footerItems = [
         <nav class="nav-wide" aria-label="メイン">
           {navItems.map((n) => <a href={n.href} aria-current={isHere(n.href) ? "page" : undefined}>{n.label}</a>)}
         </nav>
-        <a class="btn btn--small" href={url("/download/")} aria-current={isHere(url("/download/")) ? "page" : undefined}>ダウンロード</a>
+        <a class="btn btn--small btn--ghost btn--icon" href={url("/download/")} aria-current={isHere(url("/download/")) ? "page" : undefined}><Icon name="download" />ダウンロード</a>
         <details class="nav-menu">
           <summary>メニュー</summary>
           <ul>

@@ -64,25 +64,34 @@ code { font-family: var(--font-mono); font-size: 0.92em; }
 .prose { max-width: 720px; margin-inline: auto; }
 
 /* CMP-002 ヘッダーとメニュー */
+/* 画面の上に貼り付く（UI-D-52）。下の縁は ● 朱・▲ 山吹・■ 群青の 3 色の帯 */
+html { scroll-padding-top: calc(var(--header-height) + var(--header-stripe) + var(--space-4)); }
 .site-header {
-  background: var(--color-surface); border-bottom: var(--border-width) solid var(--color-border);
-  position: relative; z-index: var(--z-header);
+  background: var(--color-surface);
+  border-bottom: var(--header-stripe) solid transparent;
+  border-image: linear-gradient(90deg,
+    var(--color-shape-circle) 0 33.34%, var(--color-shape-triangle) 33.34% 66.67%, var(--color-shape-square) 66.67% 100%) 1;
+  position: sticky; top: 0; z-index: var(--z-header);
 }
-.site-header__inner { display: flex; align-items: center; gap: var(--space-3); min-height: 64px; position: relative; }
+.site-header__inner { display: flex; align-items: center; gap: var(--space-3); min-height: var(--header-height); position: relative; }
 .logo {
   display: inline-flex; align-items: center; gap: var(--space-2); margin-right: auto;
   color: var(--color-text); font-family: var(--font-display); font-weight: var(--weight-display);
+  font-size: var(--text-lg); letter-spacing: 0;
   text-decoration: none; white-space: nowrap;
 }
 .logo:hover { color: var(--color-text); }
-.logo img { width: 28px; height: 28px; border-radius: var(--radius-sm); }
-.nav-wide { display: none; align-items: center; gap: var(--space-5); }
+.logo img { width: 32px; height: 32px; border-radius: var(--radius-sm); }
+.nav-wide { display: none; align-items: center; gap: var(--space-1); margin-right: var(--space-3); }
 .nav-wide a, .nav-menu a {
   display: inline-flex; align-items: center; min-height: 44px;
   font-family: var(--font-display); font-weight: var(--weight-display);
   color: var(--color-text); text-decoration: none; text-underline-offset: 0.4em;
 }
-.nav-wide a:hover, .nav-menu a:hover { color: var(--color-text); text-decoration: underline; text-decoration-thickness: 2px; }
+/* 横並びのナビは丸い色面で hover を見せる（色だけ。動きなし） */
+.nav-wide a { padding-inline: var(--space-4); border-radius: var(--radius-pill); transition: background-color var(--dur-hover) var(--ease-out); }
+.nav-wide a:hover { color: var(--color-text); background: var(--color-tint-square); }
+.nav-menu a:hover { color: var(--color-text); text-decoration: underline; text-decoration-thickness: 2px; }
 /* 現在地：3px の群青の下線＋aria-current="page" */
 .nav-wide a[aria-current="page"], .nav-menu a[aria-current="page"] {
   text-decoration: underline; text-decoration-thickness: 3px; text-decoration-color: var(--color-action);
@@ -92,7 +101,7 @@ code { font-family: var(--font-mono); font-size: 0.92em; }
   display: inline-flex; align-items: center; min-height: 44px; padding-inline: var(--space-4);
   cursor: pointer; list-style: none; white-space: nowrap;
   font-family: var(--font-display); font-weight: var(--weight-display);
-  border: var(--border-width) solid var(--color-border-control); border-radius: var(--radius-button);
+  border: var(--border-width-control) solid var(--color-border-control); border-radius: var(--radius-button);
 }
 .nav-menu summary::-webkit-details-marker { display: none; }
 /* 開いた板：動きなし */
@@ -110,6 +119,8 @@ code { font-family: var(--font-mono); font-size: 0.92em; }
   /* Mochiy Pop One は字幅が広いので、狭い画面ではロゴとメニューの字を一段小さくし、ロゴの字間を詰める */
   .logo, .nav-menu summary { font-size: var(--text-sm); }
   .logo { letter-spacing: 0; }
+  /* ヘッダーのボタンのアイコンは狭い画面では出さない（ロゴ・ダウンロード・メニューを 1 行に収める） */
+  .site-header .btn__icon { display: none; }
 }
 @media (min-width: 768px) {
   .nav-wide { display: flex; }

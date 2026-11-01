@@ -93,6 +93,8 @@
   --radius-pill: 999px;
   --border-width: 1px;
   --border-width-control: 2px; /* ボタン・メニューの縁（UI-D-52） */
+  --header-height: 64px;
+  --header-stripe: 4px; /* ヘッダー下の●▲■ 3 色の帯 */
   --focus-ring-width: 3px;
   --focus-ring-offset: 2px;
 
@@ -117,7 +119,7 @@
   --card-border: var(--color-border);
   --card-radius: var(--radius-card);
   --shape-size-hero: clamp(48px, 8vw, 120px); /* 404 だけ */
-  --hero-min-height: max(560px, calc(100svh - 64px)); /* ヒーロー帯の高さ（ヘッダー 64px を除く） */
+  --hero-min-height: max(560px, calc(100svh - var(--header-height) - var(--header-stripe))); /* ヒーロー帯の高さ（ヘッダーと 3 色の帯を除く） */
   --hero-form-size: clamp(120px, 14vw, 200px);
   --shape-size-mark: 12px;
 }
