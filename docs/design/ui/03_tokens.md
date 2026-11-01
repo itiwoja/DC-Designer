@@ -179,9 +179,9 @@ flowchart LR
 |---|---|
 | `--btn-bg` / `--btn-bg-hover` / `--btn-fg` | `--color-action` / `--color-action-hover` / `--color-on-action` |
 | `--btn-radius` | `--radius-button` |
-| `--header-bg` | `--color-surface` を 60% にした半透明（`color-mix`。UI-D-54） |
+| `--header-bg` | `--color-bg`（紙色）を 25% にした半透明（`color-mix`。UI-D-54・UI-D-55） |
 | `--header-bg-solid` | `--color-surface` 94%（`backdrop-filter` が効かないとき） |
-| `--header-blur` | 12px（ヘッダーの後ろのぼかし） |
+| `--header-blur` | 4px（ヘッダーの後ろのぼかし。UI-D-55） |
 | `--card-bg` / `--card-border` / `--card-radius` | `--color-surface` / `--color-border` / `--radius-card` |
 | `--shape-size-hero` | clamp(48px, 8vw, 120px)（404 の●▲■。トップでは使わなくなった） |
 | `--hero-min-height` | calc(100svh - `--header-height` - `--header-stripe`)。下限 560px（ヒーローの帯の高さ。ヘッダーと 3 色の帯を除いた画面いっぱい：UI-D-42） |
