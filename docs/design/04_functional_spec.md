@@ -1,5 +1,5 @@
 # 04. 機能仕様
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.3（2026-11-01） ／ インプット：[03_use_cases](03_use_cases.md)
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.3.1（2026-11-01） ／ インプット：[03_use_cases](03_use_cases.md)
 
 > **3行で**
 > 1. 機能は 10 件（SITE-FR-010 解析ビーコンは取り下げ）。閲覧時に動くのはコピーボタンだけで、ほかはすべて**ビルド時に HTML を生成**する。
@@ -70,11 +70,11 @@ flowchart TB
 | 項目 | 表示する内容 |
 |---|---|
 | OS | Windows 10 / 11（x64）。確認した版だけを書く（EXE-Q-03） |
-| AI でレイアウト生成・修正 | ChatGPT Plus / Pro などでサインイン、または OpenRouter の API キー。**ChatGPT 無料プランは非対応** |
-| 画像生成 | OpenAI か Gemini の API キー。無ければダミー画像 |
+| AI でレイアウト生成・修正 | ChatGPT Plus / Pro などでサインイン。**ChatGPT 無料プランは非対応**。Windows 版では OpenRouter は使えない（`server/ai.ts`） |
+| 画像生成 | Windows 版では使えない（OpenAI・Gemini・ComfyUI・Codex を止めている。`server/imagegen.ts`）。画像の枠はダミー画像になる |
 | サインイン不要で使えるもの | 白紙からの手動編集・保存・書き出し |
 
-正本は SITE-TBL-007 の `requirements`。README と食い違ったら README（アプリ側）に合わせる。
+正本は SITE-TBL-007 の `requirements`。README と食い違ったら README（アプリ側）に合わせる。ただし README は開発版（`npm run dev`）の説明も含むので、Windows 版で使えるものだけを書く（製品版は `DC_DESIGNER_DESKTOP=1` で AI を ChatGPT プランに固定し、外への通信を `server/egress.ts` の許可表に限っている）。
 
 ### <a id="site-fr-004"></a>SITE-FR-004：ダウンロード 〔SITE-UC-002〕
 - 入力：最新安定版（SITE-TBL-001）、exe の資産（SITE-TBL-002 `kind: installer`）
@@ -102,7 +102,7 @@ flowchart TB
 ### <a id="site-fr-007"></a>SITE-FR-007：ポリシー 〔SITE-UC-004〕
 - 入力：`docs/privacy.md`（新設）・`docs/code-signing-policy.md`（既存）（SITE-TBL-005）
 - 処理：Markdown を HTML にする。相対リンク（`./release-policy.md`、`../SECURITY.md` など）は `https://github.com/itiwoja/DC-Designer/blob/main/<path>` に書き換える。ただしサイトのページになっている文書（2 件）へのリンクはサイト内のページへ
-- `docs/privacy.md` に書くこと：アプリが送る先（AI 利用時の ChatGPT・OpenRouter・OpenAI・Gemini、フォント取得の Google Fonts、更新確認の GitHub Releases）と、**AI の操作は追加の確認なしで送信する**こと（今の動き、SITE-D-12）。サイト自体は Cookie を使わず、所有者は解析もしない（閲覧数を数えない）こと（SITE-D-27）。ただし、サイトの配信（GitHub Pages）と exe のダウンロード（GitHub Releases）では、GitHub が閲覧者の IP アドレスなどを GitHub のプライバシー方針に従って記録すること（「何も記録されない」とは書かない）
+- `docs/privacy.md` に書くこと：Windows 版のアプリが送る先（AI 利用時の ChatGPT プラン〔OpenAI の `auth.openai.com`・`api.openai.com`〕、フォント取得の Google Fonts、更新確認の GitHub Releases。製品版の許可表 `server/egress.ts` と一致させる。OpenRouter・Gemini・画像生成は Windows 版では使わないので書かない）と、**AI の操作は追加の確認なしで送信する**こと（今の動き、SITE-D-12）。サイト自体は Cookie を使わず、所有者は解析もしない（閲覧数を数えない）こと（SITE-D-27）。ただし、サイトの配信（GitHub Pages）と exe のダウンロード（GitHub Releases）では、GitHub が閲覧者の IP アドレスなどを GitHub のプライバシー方針に従って記録すること（「何も記録されない」とは書かない）
 - 署名ポリシーの古い文面は SITE-R-01（[11_tech_spec](11_tech_spec.md#12-リスクと対策)）。直すときに `docs/code-signing-policy.md` のプライバシー節は `docs/privacy.md` へのリンクだけにし、プライバシーの正本を 1 つにする（SITE-D-30）
 
 ### <a id="site-fr-008"></a>SITE-FR-008：リリース情報取得 〔SITE-UC-005, SITE-UC-006〕
