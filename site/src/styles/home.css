@@ -58,7 +58,10 @@
 }
 .feature-card h3 { margin-bottom: var(--space-2); }
 .feature-card__text p { margin-bottom: var(--space-2); }
-.feature-card__body .notice--weak { margin: var(--space-3) 0 0; }
+.note-mark { font-size: 0.6em; font-weight: var(--weight-regular); margin-left: 0.15em; vertical-align: super; line-height: 0; }
+.feature-notes { list-style: none; margin: var(--space-4) 0 0; padding: 0; font-size: var(--text-sm); color: var(--color-text-muted); }
+.feature-notes li { display: flex; gap: 0.25em; }
+.feature-notes__mark { flex: none; }
 
 /* 主要：画像の背面に薄い色面（余白付き）。● 朱 ▲ 山吹 ■ 群青の薄い色 */
 .feature-card--major { display: grid; }
@@ -106,12 +109,12 @@
 .media-frame img, .media-frame video { width: 100%; }
 
 /* ---------- SEC-001-06 群青の帯（CMP-014） ---------- */
+.cta-band .cta-band__shape { width: 56px; height: 56px; }
 .cta-band { background: var(--color-band); color: var(--color-on-action); padding-block: var(--section-y); }
 .cta-band__inner { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-5); }
 .cta-band__title { margin: 0; font-size: var(--text-2xl); }
-.cta-band .cta-band__shape { width: 56px; height: 56px; }
+  .cta-band .cta-band__shape { width: 72px; height: 72px; }
 @media (min-width: 768px) {
   .cta-band__inner { flex-direction: row; align-items: center; gap: var(--space-6); }
   .cta-band__title { flex: 1; }
-  .cta-band .cta-band__shape { width: 72px; height: 72px; }
 }

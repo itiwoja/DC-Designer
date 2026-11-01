@@ -21,6 +21,13 @@ const majors = majorOrder.flatMap(({ id, shape }) => {
   return feature ? [{ feature, shape }] : [];
 });
 const minors = features.filter((f) => !majorOrder.some((m) => m.id === f.id));
+// exeNote（AI 機能の注意）は、同じ文を 1 つの番号にまとめて ※1・※2… と注釈にする
+const notes = [...new Set(features.map((f) => f.data.exeNote).filter((n): n is string => !!n))];
+const markOf = (f: (typeof features)[number]) => (f.data.exeNote ? `※${notes.indexOf(f.data.exeNote) + 1}` : undefined);
+const notesIn = (list: (typeof features)[number][]) =>
+  notes.filter((n) => list.some((f) => f.data.exeNote === n)).map((n) => ({ mark: `※${notes.indexOf(n) + 1}`, text: n }));
+const majorNotes = notesIn(majors.map((m) => m.feature));
+const minorNotes = notesIn(minors);
 
 const home = await getEntry("pages", "home");
 // home.md の本文：最初の段落がキャッチ、残りが説明
@@ -46,9 +53,10 @@ const [catchCopy, ...rest] = (home?.body ?? "").trim().split(/\n\s*\n/);
       <h2 id="features-title" class="heading-mark"><Shape shape="circle" />下書きから仕上げまで</h2>
       <ul class="feature-list feature-list--major">
         {majors.map(({ feature, shape }) => (
-          <FeatureCard feature={feature} variant="major" shape={shape} sizes="(min-width: 1024px) 340px, (min-width: 768px) 360px, 100vw" />
+          <FeatureCard feature={feature} variant="major" shape={shape} noteMark={markOf(feature)} sizes="(min-width: 1024px) 340px, (min-width: 768px) 360px, 100vw" />
         ))}
       </ul>
+      {majorNotes.length > 0 && <ul class="feature-notes">{majorNotes.map((n) => <li><span class="feature-notes__mark">{n.mark}</span>{n.text}</li>)}</ul>}
     </section>
   </div>
 
@@ -56,8 +64,9 @@ const [catchCopy, ...rest] = (home?.body ?? "").trim().split(/\n\s*\n/);
     <div class="container section">
       <h2 id="more-title" class="heading-mark"><Shape shape="triangle" />ほかにもできること</h2>
       <ul class="feature-list feature-list--minor">
-        {minors.map((f) => <FeatureCard feature={f} variant="minor" sizes="(min-width: 768px) 160px, 112px" />)}
+        {minors.map((f) => <FeatureCard feature={f} variant="minor" noteMark={markOf(f)} sizes="(min-width: 768px) 160px, 112px" />)}
       </ul>
+      {minorNotes.length > 0 && <ul class="feature-notes">{minorNotes.map((n) => <li><span class="feature-notes__mark">{n.mark}</span>{n.text}</li>)}</ul>}
     </div>
   </section>
 
@@ -66,6 +75,7 @@ const [catchCopy, ...rest] = (home?.body ?? "").trim().split(/\n\s*\n/);
       <h2 id="demo-title" class="heading-mark"><Shape shape="square" />デモ</h2>
       <div class="media-frame"><Media mediaId="demo" kind="demo" sizes="(min-width: 1152px) 1056px, 100vw" /></div>
     </section>
+      <Shape shape="triangle" size="hero" class="cta-band__shape" />
 
     <section class="section home-section" aria-labelledby="req-title">
       <h2 id="req-title" class="heading-mark"><Shape shape="circle" />動作要件</h2>
@@ -75,7 +85,6 @@ const [catchCopy, ...rest] = (home?.body ?? "").trim().split(/\n\s*\n/);
 
   <section class="cta-band" aria-labelledby="band-title">
     <div class="container cta-band__inner">
-      <Shape shape="triangle" size="hero" class="cta-band__shape" />
       <h2 id="band-title" class="cta-band__title">ダサいスライドとはもうおさらば。</h2>
       <DownloadButton large variant="band" />
     </div>

@@ -10,8 +10,10 @@ interface Props {
   variant?: "major" | "minor";
   shape?: "circle" | "triangle" | "square";
   sizes?: string;
+  /** exeNote の注釈番号（例 "※1"）。本文はカードに出さず、ページ側の注釈にまとめる */
+  noteMark?: string;
 }
-const { feature, variant = "minor", shape, sizes } = Astro.props;
+const { feature, variant = "minor", shape, sizes, noteMark } = Astro.props;
 const { Content } = await render(feature);
 const major = variant === "major";
 ---
@@ -22,8 +24,7 @@ const major = variant === "major";
     </div>
   )}
   <div class="feature-card__body">
-    <h3 class:list={{ "heading-mark": major && !!shape }}>{major && shape && <Shape shape={shape} />}{feature.data.title}</h3>
+    <h3 class:list={{ "heading-mark": major && !!shape }}>{major && shape && <Shape shape={shape} />}<span>{feature.data.title}{noteMark && <sup class="note-mark">{noteMark}</sup>}</span></h3>
     <div class="feature-card__text"><Content /></div>
-    {feature.data.exeNote && <p class="notice notice--weak">{feature.data.exeNote}</p>}
   </div>
 </li>
