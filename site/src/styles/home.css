@@ -71,20 +71,7 @@
   .feature-card--major .feature-card__media { display: flex; align-items: center; }
 }
 @media (min-width: 1024px) {
-  .feature-list--major { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
-
-/* ほかの機能：白地の帯の上の白カードなので縁 1px 必須。図形なし */
-.home-band-white { background: var(--color-surface); }
-.feature-list--minor { gap: var(--space-4); }
-.feature-card--minor { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: var(--space-3); padding: var(--space-3); align-items: start; }
-.feature-card--minor .feature-card__media { aspect-ratio: 16 / 10; overflow: hidden; border-radius: var(--radius-sm); }
-.feature-card--minor .feature-card__media img { width: 100%; height: 100%; object-fit: cover; }
-.feature-card--minor h3 { font-size: 1.0625rem; }
-.feature-card--minor .feature-card__text { font-size: var(--text-sm); }
-@media (min-width: 768px) {
-  .feature-list--minor { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-5); }
-  .feature-card--minor { grid-template-columns: 160px minmax(0, 1fr); gap: var(--space-4); padding: var(--space-4); }
+  .feature-list--major { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* MOT-003 スクロールでカードが出る。隠すのは JS が付けた .is-pending のときだけ */

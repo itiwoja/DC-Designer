@@ -19,45 +19,15 @@
     "alt": "紹介画像は準備中です"
   },
   {
-    "id": "feature-ai-layout",
+    "id": "feature-poster",
     "type": "image",
     "status": "placeholder",
-    "alt": "「AI でレイアウトを作る」の画面の画像は準備中です"
+    "alt": "「ポスター作成」の画面の画像は準備中です"
   },
   {
-    "id": "feature-layer-editor",
+    "id": "feature-slides",
     "type": "image",
     "status": "placeholder",
-    "alt": "「レイヤーで編集できるエディタ」の画面の画像は準備中です"
-  },
-  {
-    "id": "feature-reference-recreate",
-    "type": "image",
-    "status": "placeholder",
-    "alt": "「参考画像の再現」の画面の画像は準備中です"
-  },
-  {
-    "id": "feature-pptx",
-    "type": "image",
-    "status": "placeholder",
-    "alt": "「PowerPoint の編集と書き出し」の画面の画像は準備中です"
-  },
-  {
-    "id": "feature-instagram",
-    "type": "image",
-    "status": "placeholder",
-    "alt": "「Instagram 投稿を作る」の画面の画像は準備中です"
-  },
-  {
-    "id": "feature-pdf-edit",
-    "type": "image",
-    "status": "placeholder",
-    "alt": "「PDF を開いて編集」の画面の画像は準備中です"
-  },
-  {
-    "id": "feature-export",
-    "type": "image",
-    "status": "placeholder",
-    "alt": "「SVG・PNG などで書き出し」の画面の画像は準備中です"
+    "alt": "「スライド作成」の画面の画像は準備中です"
   }
 ]
