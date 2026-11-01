@@ -9,7 +9,7 @@
 ## 🧭 判断してほしいこと
 | # | 種類 | 論点 | 選択肢 | おすすめ（理由） | 決まらないと止まるもの |
 |---|---|---|---|---|---|
-| UI-R-03 | リスク | 山吹は生成り地 1.77:1・白地 1.88:1。文字や意味のある印に使うと読めない | — | 飾りの図形と、墨の文字を載せる色面（バッジ・注意の地）だけに使う（[使い方の制約](#使い方の制約)） | CMP-006・008・013 |
+| UI-R-03 | リスク | 山吹は生成り地 1.77:1・白地 1.88:1。文字や意味のある印に使うと読めない | — | 飾りの図形と、墨の文字を載せる色面（バッジ・注意の地）だけに使う（[使い方の制約](#使い方の制約)） | CMP-008・013・粒（MOT-004） |
 
 ## 全体図
 ```mermaid
@@ -135,7 +135,7 @@ flowchart LR
 | `--text-lg` | 1.25rem（20px） | h3・小さな機能カードの見出し |
 | `--text-2xl` | clamp(1.5rem, 1rem + 2vw, 2rem) | h2 |
 | `--text-page` | clamp(1.75rem, 1.2rem + 2.5vw, 2.5rem) | 各ページの h1 |
-| `--text-hero` | clamp(2.25rem, 1.5rem + 3.5vw, 3.5rem) | トップの h1 |
+| `--text-hero` | clamp(2.5rem, 1.25rem + 3.75vw, 4.25rem)（375px で 40px・1440px で 68px） | トップの h1（中央・全画面のヒーロー。UI-D-43） |
 | `--weight-regular` / `--weight-bold` / `--weight-display` | 400 / 700 / 400 | 本文 / 本文中の強調 / Mochiy の見出し（400 しかないので太字を偽造させない） |
 | `--leading-body` / `--leading-heading` | 1.8 / 1.35 | — |
 | `--tracking-body` / `--tracking-heading` | 0.04em / 0.02em | 和文の字間（定石） |
@@ -165,7 +165,7 @@ flowchart LR
 | トークン | 値 | 使う所 |
 |---|---|---|
 | `--dur-hover` | 150ms | ホバー・押した反応 |
-| `--dur-enter` | 400ms | スクロールの出現・ヒーローの図形 |
+| `--dur-enter` | 400ms | スクロールの出現 |
 | `--stagger` | 80ms | 並んだものを順に出す間隔 |
 | `--ease-bounce` | cubic-bezier(0.34, 1.56, 0.64, 1) | 位置・大きさの動き（UI-D-16） |
 | `--ease-out` | cubic-bezier(0.2, 0, 0, 1) | 色の変化（UI-D-30） |
@@ -176,7 +176,9 @@ flowchart LR
 | `--btn-bg` / `--btn-bg-hover` / `--btn-fg` | `--color-action` / `--color-action-hover` / `--color-on-action` |
 | `--btn-radius` | `--radius-button` |
 | `--card-bg` / `--card-border` / `--card-radius` | `--color-surface` / `--color-border` / `--radius-card` |
-| `--shape-size-hero` | clamp(48px, 8vw, 120px) |
+| `--shape-size-hero` | clamp(48px, 8vw, 120px)（404 の●▲■。トップでは使わなくなった） |
+| `--hero-min-height` | calc(100svh - 64px)。下限 560px（ヒーローの帯の高さ。ヘッダー 64px を除いた画面いっぱい：UI-D-42） |
+| `--hero-form-size` | clamp(120px, 14vw, 200px)（MOT-005 で粒が作る●▲■の 1 つの大きさ。1024px 以上だけ使う。1024px で約 143px） |
 | `--shape-size-mark` | 12px（見出しの小さな印。墨の 1px 縁つき：UI-D-36） |
 
 ## このドキュメントで決まったこと
