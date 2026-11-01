@@ -1,0 +1,26 @@
+{
+  "name": "dc-designer-site-video",
+  "private": true,
+  "type": "module",
+  "description": "紹介サイトのデモ動画（demo.mp4 / demo.webm / demo-poster.png）とヒーロー画像（hero.png）を Remotion で作る。サイトとは依存を共有しない",
+  "scripts": {
+    "fonts": "bash scripts/fetch-fonts.sh",
+    "prestudio": "bash scripts/fetch-fonts.sh",
+    "studio": "remotion studio",
+    "prerender": "bash scripts/fetch-fonts.sh",
+    "render": "bash scripts/render.sh"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.539",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "remotion": "4.0.539"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.2",
+    "typescript": "5.9.3"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true
+  }
+}
