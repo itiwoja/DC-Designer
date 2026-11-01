@@ -1,0 +1,32 @@
+---
+// CMP-003 主ボタン（ダウンロード）。variant="band" は群青の帯（CMP-014）の上：版番号・補足文なし。
+// variant="hero" はヒーロー用：ボタン列（スロットにゴースト）と補足 1 行を別々に出す（外枠なし）。
+// ヒーローは版番号をボタンから補足の行へ出し、ボタンの文言を短くする（UI-D-52）。
+import Icon from "./Icon.astro";
+import { getReleaseData } from "../lib/releases";
+
+interface Props {
+  large?: boolean;
+  note?: boolean;
+  variant?: "default" | "band" | "hero";
+}
+const { large = false, note = true, variant = "default" } = Astro.props;
+const { latest } = await getReleaseData();
+const band = variant === "band";
+const hero = variant === "hero";
+const noteText = "無料・MIT ライセンス／Windows 10・11（x64）";
+---
+{hero ? (
+  <>
+    <div class="hero__actions" data-hero-actions>
+      <a class:list={["btn", "btn--icon", { "btn--large": large }]} href={latest.installer.browserDownloadUrl}><Icon name="download" />Windows 版をダウンロード</a>
+      <slot />
+    </div>
+    {note && <p class="hero__note">{`v${latest.version}・${noteText}`}</p>}
+  </>
+) : (
+  <div class:list={["download-cta", { "download-cta--band": band }]}>
+    <a class:list={["btn", "btn--icon", { "btn--large": large, "btn--on-band": band }]} href={latest.installer.browserDownloadUrl}><Icon name="download" />{band ? "Windows 版をダウンロード" : `Windows 版をダウンロード（v${latest.version}）`}</a>
+    {note && !band && <p class="download-cta__note">{noteText}</p>}
+  </div>
+)}

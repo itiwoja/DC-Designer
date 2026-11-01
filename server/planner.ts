@@ -4,7 +4,6 @@ import { CATALOG, ICON_NAMES } from "../src/components/catalog";
 import { THEMES } from "../src/themes";
 import { notesLength } from "../src/notes";
 import { FONT_CATALOG, FONT_ROLE_LABELS, FONT_SCRIPT_LABELS } from "../src/fonts";
-import { IG_MAX_IMAGES } from "../src/instagram";
 import { referenceSources, resolveReferenceSources, type PosterReference } from "./references";
 import { askAI } from "./ai";
 import { extractJson, type ImageRef, type Turn } from "./chatgpt";
@@ -134,54 +133,6 @@ export async function planPoster(opts: { brief: string; theme?: string; referenc
     opts.brief,
   ].filter(Boolean).join("\n\n");
   return generateJson({ role: "user", text, images: opts.references }, (j) => resolveReferenceSources(PosterSpecSchema.parse(j), opts.references), undefined, undefined, opts.signal);
-}
-
-// ---------- Instagram の投稿（カルーセル） ----------
-
-/** Instagram の画像のデザインの決まりごと（新規作成とチャットでの修正で共通） */
-const instagramRules = (w: number, h: number) => [
-  `- キャンバスは ${w}×${h}px（Instagram の投稿画像の実寸。A判の 1000×1414 ではない）。meta.width / meta.height は変えない。`,
-  "- スマホの画面で見られる前提。文字は大きく少なく: 見出しは 64px 以上、本文も 34px 以上。1 枚に詰め込まず、1 枚 1 メッセージにする。",
-  "- 重要な文字・顔は縁から 64px 以上内側に置く。",
-  h / w > 1.7
-    ? "- 縦長 9:16（ストーリーズ）は、上 250px と下 300px にアプリの表示が重なるので、そこに文字を置かない。"
-    : "- プロフィールの一覧では 3:4 に切り抜かれて表示されるので、表紙の見出しと主役ビジュアルは中央寄りに置く。",
-  "- QR コードは使わない（Instagram の画像からは読み取れない）。申込先などは「詳しくはプロフィールのリンクから」のように誘導する。",
-  "- notes（台本）と animation・transition は使わない。",
-].join("\n");
-
-/**
- * ブリーフ（＋参考画像）から Instagram のカルーセル投稿（同じ大きさの PosterSpec を 1〜20 枚）を作る。
- * count が無ければ枚数は内容から決めさせる
- */
-export async function planCarousel(opts: { brief: string; width: number; height: number; count?: number; references?: PosterReference[]; onProgress?: OnProgress; signal?: AbortSignal }): Promise<{ title: string; posts: PosterSpec[] }> {
-  const { width: w, height: h, count } = opts;
-  const text = [
-    "Instagram のフィードに載せる投稿を作ります。ポスターではなく SNS の投稿画像です。",
-    opts.references?.length ? "添付画像の使い方は依頼内容に従ってください。デザインの参考なら構図・情報の階層・装飾を参考にし、配置を頼まれたロゴや写真なら原画像をそのまま使ってください。" : "",
-    referenceSources(opts.references),
-    "# Instagram の投稿のルール",
-    count
-      ? `- 画像は ${count} 枚ちょうど（1 枚 = 1 つの PosterSpec）。`
-      : "- 画像の枚数は内容に合わせて 1〜8 枚で決める（1 枚 = 1 つの PosterSpec）。伝えることが少なければ 1 枚でよい。増やしすぎない。",
-    instagramRules(w, h),
-    "- 複数枚のときはカルーセル（スワイプで見る）: 1 枚目は表紙。フィードで流れてきても指が止まるよう、大きな見出しと主役ビジュアルで要点を一目で伝え、右下などに小さく「スワイプ →」のような続きの合図を入れる。2 枚目以降は 1 枚 1 トピックで詳しく、最後の 1 枚はまとめ・申込み・保存やフォローの呼びかけなど次の行動にする。",
-    "- 全枚で theme・meta.imageStyle・配色・フォント・余白・見出しの位置をそろえ、1 つの続きものに見えるようにする。必要ならページ番号（例: 2/5）を小さく入れる。",
-    "- 画像生成は全枚の合計で 2〜6 点程度に絞る（表紙の主役ビジュアルを優先）。",
-    "- meta.title は各画像の短い名前（「表紙」「日時と場所」など）。",
-    "# 投稿の依頼内容",
-    opts.brief,
-    "# 出力",
-    '{"title": 投稿全体の短い名前, "posts": [PosterSpec, ...]} の JSON のみを出力してください。',
-  ].filter(Boolean).join("\n\n");
-  return generateJson({ role: "user", text, images: opts.references }, (j) => {
-    const o = j as { title?: unknown; posts?: unknown };
-    if (!Array.isArray(o?.posts) || !o.posts.length) throw new Error('"posts" に PosterSpec の配列を入れてください');
-    if (o.posts.length > IG_MAX_IMAGES) throw new Error(`画像は ${IG_MAX_IMAGES} 枚までです`);
-    if (count && o.posts.length !== count) throw new Error(`画像はちょうど ${count} 枚にしてください（${o.posts.length} 枚でした）`);
-    const posts = o.posts.map((p) => resolveReferenceSources(fixSize(PosterSpecSchema.parse(p), w, h), opts.references));
-    return { title: typeof o.title === "string" && o.title.trim() ? o.title.trim() : posts[0].meta.title, posts };
-  }, '{"title", "posts"} の JSON ', opts.onProgress, opts.signal);
 }
 
 // ---------- 参考画像の再現（A4 モード） ----------
@@ -331,7 +282,7 @@ const fixSize = (spec: PosterSpec, width: number, height: number): PosterSpec =>
 
 /** 資料全体のスライド（PPTX エディターモード。現在のスライド以外も含む）。spec が無いものは文字（と台本）だけの参考 */
 type SlideRef = { number: number; title?: string; spec?: PosterSpec; texts?: string[]; notes?: string };
-export type DeckContext = { current: number; total: number; slides: SlideRef[]; instagram?: boolean };
+export type DeckContext = { current: number; total: number; slides: SlideRef[] };
 
 /**
  * チャットの文脈。会話は 1 本で無限に続くので、全文は渡さない:
@@ -349,10 +300,7 @@ type EditResult = { reply: string; spec?: PosterSpec; target?: number; remove?: 
  * guide は先に直したスライドで AI が返した方針（ほかのスライドでも同じ直し方にそろえるため）
  */
 export type AcrossDeck = { number: number; total: number; guide?: string };
-type EditOptions = { spec: PosterSpec; instruction: string; selectedIds?: string[]; deck?: DeckContext; across?: AcrossDeck; history?: ChatTurn[]; memory?: string; instagram?: boolean; references?: PosterReference[]; signal?: AbortSignal };
-
-/** Instagram の投稿画像を直すときの前置き */
-const instagramNote = (spec: PosterSpec) => `これは Instagram の投稿画像です（ポスターではない）。次の決まりを守ってください。\n${instagramRules(spec.meta.width, spec.meta.height)}`;
+type EditOptions = { spec: PosterSpec; instruction: string; selectedIds?: string[]; deck?: DeckContext; across?: AcrossDeck; history?: ChatTurn[]; memory?: string; references?: PosterReference[]; signal?: AbortSignal };
 
 const turnLine = (t: ChatTurn) => (t.role === "note" ? `（${t.text}）` : `${t.role === "user" ? "ユーザー" : "あなた"}: ${t.text}`);
 
@@ -425,7 +373,6 @@ async function editSpec(opts: EditOptions): Promise<EditResult> {
   if (opts.deck) return editDeckSlide({ ...opts, deck: opts.deck });
   const text = [
     "あなたはユーザーとチャットしながらポスターを仕上げています。次の PosterSpec をユーザーのメッセージに従って修正してください。指示と無関係なレイヤーは id・値ともにそのまま残してください。",
-    opts.instagram ? instagramNote(opts.spec) : "",
     opts.across ? acrossNote(opts.across) : "",
     "src が設定済みの画像は、内容を変える指示がない限り src と asset をそのまま残してください（再生成させたい場合は src を削除し asset.prompt を更新）。",
     referenceSources(opts.references),
@@ -457,9 +404,7 @@ async function editDeckSlide(opts: EditOptions & { deck: DeckContext }): Promise
   const editable = slides.filter((s): s is typeof s & { spec: PosterSpec } => !!s.spec);
   const numbers = editable.map((s) => s.number);
   const text = [
-    opts.deck.instagram
-      ? `これは ${total} 枚の画像からなる Instagram のカルーセル投稿です。以下では各画像を「スライド」と呼びます。各スライドは 1 つの PosterSpec です。ユーザーは今スライド ${current} を開いています。\n${instagramNote(opts.spec)}`
-      : `これは ${total} 枚のスライドからなるデッキです。各スライドは 1 つの PosterSpec です。ユーザーは今スライド ${current} を開いています。`,
+    `これは ${total} 枚のスライドからなるデッキです。各スライドは 1 つの PosterSpec です。ユーザーは今スライド ${current} を開いています。`,
     referenceSources(opts.references),
     "資料の構成や内容について相談されたら、渡された全スライドを参照して答えてください。相談や確認だけなら spec は null にし、スライドを変更しないでください。",
     "指示を読み、書き換えが必要なスライドだけを修正してください。「3枚目と5枚目を直して」「8〜10枚目の台本の整合性を取って」のように複数のスライドを指していれば、それぞれを書き換えます（台本どうしの整合性なら、話の流れ・用語・口調・つなぎの言葉がそろうように各スライドの notes を直します）。「AをBに反映」「Aに合わせてBを直す」なら書き換えるのは B、参照元の A は変更しません。書き換え先が読み取れなければ、今開いているスライドを書き換えます。",
@@ -514,24 +459,22 @@ export type OutlineSlide = { number: number; title?: string; texts: string[] };
  */
 export async function planSlide(opts: {
   instruction: string; position: number; total: number; deckTitle?: string; outline: OutlineSlide[]; samples: SlideRef[];
-  history?: ChatTurn[]; memory?: string; instagram?: boolean; references?: PosterReference[]; signal?: AbortSignal;
+  history?: ChatTurn[]; memory?: string; references?: PosterReference[]; signal?: AbortSignal;
 }): Promise<{ reply: string; spec: PosterSpec }> {
   const base = opts.samples[0]?.spec;
   if (!base) throw new Error("お手本のスライドがありません");
   const previous = { ...base, layers: opts.samples.flatMap((s) => s.spec?.layers ?? []) };
   const { width, height } = base.meta;
-  const unit = opts.instagram ? "画像" : "スライド";
+  const unit = "スライド";
   const text = [
-    opts.instagram
-      ? `これは ${opts.total} 枚の画像からなる Instagram のカルーセル投稿です。ここに新しい画像を 1 枚追加します。\n${instagramNote(base)}`
-      : `これは ${opts.total} 枚のスライドからなるデッキです。ここに新しいスライドを 1 枚追加します。既存のスライドは変更しません。`,
+    `これは ${opts.total} 枚のスライドからなるデッキです。ここに新しいスライドを 1 枚追加します。既存のスライドは変更しません。`,
     `新しい${unit}は追加後の${unit} ${opts.position} になります（${opts.position > opts.total ? "末尾" : `今の${unit} ${opts.position} の前`}）。ユーザーのメッセージに沿った内容の ${unit}を 1 枚、PosterSpec として新しく作ってください。`,
     referenceSources(opts.references),
     [
       `- サイズは ${width}x${height}（meta.width / meta.height はこのまま）。theme・配色・フォント・余白・見出しの位置と大きさ・ページ番号や装飾などの共通要素は、お手本のスライドと同じデザインにそろえる（デッキの一部に見えるように）。`,
       "- 文言はデッキの内容（タイトル・発表者・団体名など）に合わせる。デッキに無い事実（日時・URL・連絡先など）は作らない。",
       "- お手本の画像（src 付き）は、ロゴのように全スライド共通のものだけ src ごと持ち込んでよい。新しい画像が必要なら src を付けずに asset.prompt を書く。",
-      opts.instagram ? "" : "- アンケート・申込などの QR コードを求められたら component \"qr\" を大きめ（スライドの高さの 4〜5 割）に置く。URL がメッセージにあれば props.url に入れ、無ければ props.url は空文字 \"\" にする（画面では「QR の URL を入れてください」という空の枠になり、あとでユーザーが URL を入れる）。",
+      "- アンケート・申込などの QR コードを求められたら component \"qr\" を大きめ（スライドの高さの 4〜5 割）に置く。URL がメッセージにあれば props.url に入れ、無ければ props.url は空文字 \"\" にする（画面では「QR の URL を入れてください」という空の枠になり、あとでユーザーが URL を入れる）。",
       "- notes（台本）は、ほかのスライドに台本があれば同じ口調で短く書く。無ければ空でよい。",
     ].filter(Boolean).join("\n"),
     historyText(opts.history, opts.memory),

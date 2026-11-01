@@ -1,0 +1,152 @@
+/* デザイントークン（docs/design/ui/03_tokens.md が正本。値を変えるときは先に設計書を直す）。
+   primitive（--p-*）は部品から直接使わず、semantic（--color-* など）か component（--btn-* など）を通す。
+   ライト表示のみ（UI-D-05）。 */
+
+/* Mochiy Pop One（OFL 1.1、ライセンス文は public/fonts/OFL.txt で配る）。見出し・ロゴ・ボタン・ナビ用の手書き風ポップ体。
+   サイトの原稿に出る文字だけに絞った 1 ファイルを同じオリジンから配る（作り方は scripts/subset-display-font.py）。ウェイトは 400 のみ（UI-D-08・UI-R-01） */
+@font-face {
+  font-family: "Mochiy Pop One";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/mochiy-pop-one-subset.woff2") format("woff2");
+}
+
+:root {
+  color-scheme: light;
+
+  /* primitive */
+  --p-red-500: #E5432E;    /* 朱：飾り専用（文字に使わない） */
+  --p-red-700: #C93421;    /* 濃い朱：赤系の文字 */
+  --p-red-100: #FBE3DF;
+  --p-yellow-500: #F2B21B; /* 山吹：飾り・墨文字を載せる色面だけ */
+  --p-yellow-100: #FDF0C9;
+  --p-blue-500: #2F55D4;   /* 群青 */
+  --p-blue-700: #2443B0;
+  --p-blue-100: #E3E9FB;
+  --p-ink-900: #1B1B1F;    /* 墨 */
+  --p-ink-600: #5A5A63;
+  --p-ink-400: #8C877D;
+  --p-ink-200: #CFCBC2;
+  --p-paper: #FBF8F1;      /* 生成り */
+  --p-white: #FFFFFF;
+
+  /* semantic：色 */
+  --color-bg: var(--p-paper);
+  --color-surface: var(--p-white);
+  --color-text: var(--p-ink-900);
+  --color-text-muted: var(--p-ink-600);
+  --color-action: var(--p-blue-500);
+  --color-action-hover: var(--p-blue-700);
+  --color-on-action: var(--p-white);
+  --color-focus: var(--p-blue-500);
+  --color-focus-on-band: var(--p-yellow-500);
+  --color-border: var(--p-ink-200);          /* 飾りの縁（1.53:1）。操作部品には使わない */
+  --color-border-control: var(--p-ink-400);  /* 操作部品の縁（3:1 以上） */
+  --color-band: var(--p-blue-500);
+  --color-notice-bg: var(--p-yellow-100);
+  --color-danger-text: var(--p-red-700);
+  --color-badge-bg: var(--p-yellow-500);
+  --color-tint-circle: var(--p-red-100);
+  --color-tint-triangle: var(--p-yellow-100);
+  --color-tint-square: var(--p-blue-100);
+  --color-shape-circle: var(--p-red-500);
+  --color-shape-triangle: var(--p-yellow-500);
+  --color-shape-square: var(--p-blue-500);
+  --color-code-bg: var(--p-paper);
+
+  /* semantic：文字 */
+  --font-body: "Yu Gothic UI", "Meiryo UI", Meiryo, "Hiragino Sans", "Noto Sans CJK JP", "Noto Sans JP", system-ui, sans-serif;
+  --font-display: "Mochiy Pop One", var(--font-body);
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "Noto Sans Mono CJK JP", monospace;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.25rem;
+  --text-2xl: clamp(1.5rem, 1rem + 2vw, 2rem);
+  --text-page: clamp(1.75rem, 1.2rem + 2.5vw, 2.5rem);
+  --text-hero: clamp(2.5rem, 1.25rem + 3.75vw, 4.25rem);
+  --weight-regular: 400;
+  --weight-bold: 700;
+  /* Mochiy Pop One は 400 しかない。太くすると偽の太字になるので 400 のまま使う */
+  --weight-display: 400;
+  --leading-body: 1.8;
+  --leading-heading: 1.35;
+  --tracking-body: 0.04em;
+  --tracking-heading: 0.02em;
+  --measure: 40em;
+
+  /* semantic：余白・角丸・縁 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --section-y: 64px;
+  --gutter: 16px;
+  --container: 1120px;
+  --radius-sm: 4px;
+  --radius-button: 999px; /* ボタン・メニューは丸い形（ポップ体に合わせる：UI-D-52） */
+  --radius-card: 12px;
+  --radius-pill: 999px;
+  --border-width: 1px;
+  --border-width-control: 2px; /* ボタン・メニューの縁（UI-D-52） */
+  --header-height: 64px;
+  --header-stripe: 4px; /* ヘッダー下の●▲■ 3 色の帯 */
+  --focus-ring-width: 3px;
+  --focus-ring-offset: 2px;
+
+  /* その他 */
+  --z-header: 10;
+  --z-menu: 30;
+  --z-skip: 40;
+
+  /* 動き */
+  --dur-hover: 150ms;
+  --dur-enter: 400ms;
+  --stagger: 80ms;
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1); /* 位置・大きさ（UI-D-16） */
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);           /* 色（UI-D-30） */
+  --dur-stripe: 24s; /* ヘッダー下の 3 色の帯が 1 画面幅流れる時間（MOT-006） */
+
+  /* component */
+  --btn-bg: var(--color-action);
+  --btn-bg-hover: var(--color-action-hover);
+  --btn-fg: var(--color-on-action);
+  --btn-radius: var(--radius-button);
+  /* ヘッダーのすりガラス（UI-D-54） */
+  --header-bg: color-mix(in srgb, var(--color-bg) 25%, transparent);
+  --header-bg-solid: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  --header-blur: 4px;
+  --card-bg: var(--color-surface);
+  --card-border: var(--color-border);
+  --card-radius: var(--radius-card);
+  --shape-size-hero: clamp(48px, 8vw, 120px); /* 404 だけ */
+  --hero-min-height: max(560px, calc(100svh - var(--header-height) - var(--header-stripe))); /* ヒーロー帯の高さ（ヘッダーと 3 色の帯を除く） */
+  --hero-form-size: clamp(120px, 14vw, 200px);
+  --shape-size-mark: 12px;
+}
+
+/* ブレークポイント 375 / 768 / 1024 / 1440px（UI-D-22） */
+@media (min-width: 768px) {
+  :root {
+    --section-y: 112px;
+    --gutter: 24px;
+  }
+}
+@media (min-width: 1024px) {
+  :root {
+    --gutter: 32px;
+  }
+}
+
+/* CMP-005 図形の印（Shape.astro が出す SVG）。● 朱・▲ 山吹・■ 群青に固定。飾りなので aria-hidden */
+.shape { display: inline-block; flex: none; vertical-align: middle; overflow: visible; }
+.shape--circle { fill: var(--color-shape-circle); }
+.shape--triangle { fill: var(--color-shape-triangle); }
+.shape--square { fill: var(--color-shape-square); }
+/* 見出しの小さな印：墨の 1px 縁（UI-D-36。山吹の▲が白・生成りの上でも形が見える） */
+.shape--mark { width: var(--shape-size-mark); height: var(--shape-size-mark); stroke: var(--color-text); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.shape--hero { width: var(--shape-size-hero); height: var(--shape-size-hero); }

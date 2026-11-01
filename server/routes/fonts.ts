@@ -10,7 +10,7 @@ export function registerFontRoutes(app: Router, { route }: RouteHandlers) {
   app.post("/api/fonts/suggest", route(async (req, signal) => {
     const subject = parseSubject(req.body?.subject);
     const { kind, mood, title, texts, current } = req.body ?? {};
-    return runWithAiSubject(subject, async () => ({ proposals: await suggestFonts({ kind: kind === "poster" || kind === "instagram" ? kind : "slides", mood, title, texts: strings(texts, 200), current, signal }) }));
+    return runWithAiSubject(subject, async () => ({ proposals: await suggestFonts({ kind: kind === "poster" ? kind : "slides", mood, title, texts: strings(texts, 200), current, signal }) }));
   }));
   app.post("/api/fonts/status", route((req) => fontStatus(families(req.body?.families))));
   app.post("/api/fonts/files", route((req) => fontFiles(parseFaces(req.body?.faces))));

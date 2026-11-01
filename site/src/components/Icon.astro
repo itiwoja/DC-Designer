@@ -1,0 +1,21 @@
+---
+// ボタンの中の小さなアイコン（CMP-003）。飾りなので aria-hidden。色は文字色（currentColor）に従う
+interface Props {
+  name: "download" | "arrow-down";
+}
+const { name } = Astro.props;
+---
+<svg class="btn__icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+  {name === "download" ? (
+    <>
+      <path d="M12 4v11" />
+      <path d="M7 10.5l5 5 5-5" />
+      <path d="M5 20h14" />
+    </>
+  ) : (
+    <>
+      <path d="M12 5v14" />
+      <path d="M6 13l6 6 6-6" />
+    </>
+  )}
+</svg>

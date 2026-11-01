@@ -58,7 +58,6 @@ export const DESKTOP_OPERATIONS = {
 
   // AI 操作（送信の確認は worker の askChatGPT が送る直前に main へ依頼する）
   "ai.plan": { method: "POST", route: "/api/plan", maxBody: 40 * MB, chatgpt: true },
-  "ai.planInstagram": { method: "POST", route: "/api/plan/instagram", maxBody: 40 * MB, stream: true, chatgpt: true },
   "ai.reproduce": { method: "POST", route: "/api/reproduce", maxBody: 40 * MB, stream: true, chatgpt: true },
   "ai.reproduceRefine": { method: "POST", route: "/api/reproduce/refine", maxBody: 40 * MB, stream: true, chatgpt: true },
   "ai.edit": { method: "POST", route: "/api/edit", maxBody: 40 * MB, chatgpt: true },

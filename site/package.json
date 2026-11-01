@@ -1,0 +1,33 @@
+{
+  "name": "dc-designer-site",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "description": "DC-Designer の紹介・ダウンロード用サイト（GitHub Pages）。アプリとは依存を共有しない",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "test": "vitest run",
+    "test:dist": "node scripts/check-dist.mjs"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "astro": "7.3.8",
+    "rehype-sanitize": "6.0.0",
+    "rehype-stringify": "10.0.1",
+    "remark-gfm": "4.0.1",
+    "remark-parse": "11.0.0",
+    "remark-rehype": "11.1.2",
+    "unified": "11.0.5"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.10",
+    "@types/node": "24.19.2",
+    "typescript": "6.0.3",
+    "vitest": "4.1.12"
+  }
+}

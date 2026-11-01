@@ -18,7 +18,7 @@ export function parseDeckContext(v: any): DeckContext | undefined {
     texts: Array.isArray(s?.texts) ? s.texts.filter((t: unknown): t is string => typeof t === "string").slice(0, 30) : undefined,
     notes: typeof s?.notes === "string" ? s.notes.slice(0, 1000) : undefined,
   }));
-  return { current, total, slides: slides.filter((s: { number: number; spec?: unknown; texts?: unknown }) => Number.isInteger(s.number) && (s.spec || s.texts)), instagram: v.instagram === true };
+  return { current, total, slides: slides.filter((s: { number: number; spec?: unknown; texts?: unknown }) => Number.isInteger(s.number) && (s.spec || s.texts)) };
 }
 
 export function parseAcross(v: any): AcrossDeck | undefined {

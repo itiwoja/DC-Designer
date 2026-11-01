@@ -1,11 +1,12 @@
 # DC-Designer
 
-ポスターを「1枚の生成画像」ではなく、**レイヤーを重ねた設計図（JSON）**として AI に組み立てさせるツール。
+ポスターとスライドを「1枚の生成画像」ではなく、**レイヤーを重ねた設計図（JSON）**として AI に組み立てさせるツール。
+機能は 2 つ: **ポスター作成**（PDF・PNG で書き出し）と **スライド作成**（PowerPoint の PPTX で書き出し）。
 文字・図形・装飾は事前に用意したコンポーネントで描画し、写真やイラストだけを画像生成モデルに 1 点ずつ依頼する。
 Illustrator / PowerPoint のように、あとからレイヤー単位で編集できる。
 
 ```
-ブリーフ(+参考画像) ──ChatGPT──▶ PosterSpec(JSON) ──▶ 画像アセットを1点ずつ生成 ──▶ エディタで調整 ──▶ SVG / PNG / PPTX
+ブリーフ(+参考画像) ──ChatGPT──▶ PosterSpec(JSON) ──▶ 画像アセットを1点ずつ生成 ──▶ エディタで調整 ──▶ ポスターは PDF / PNG、スライドは PPTX
 ```
 
 ## セットアップ
@@ -48,7 +49,7 @@ npm run dev            # http://localhost:5173
 
 | URL | 画面 |
 | --- | --- |
-| `/` | **ホーム**。ブリーフを書いて AI に作らせる／白紙・PowerPoint・Instagram 投稿・JSON から始める／「続きから編集」／最近の成果物。.pptx / .json はドロップでも開ける |
+| `/` | **ホーム**。ブリーフを書いて AI に作らせる／白紙・PowerPoint・JSON から始める（作るものは「ポスター」か「スライド」の 2 つから選ぶ）／「続きから編集」／最近の成果物。.pptx / .json はドロップでも開ける |
 | `?view=editor` | エディタ（左上の DC-Designer メニュー → 「ホーム」「成果物」で移動） |
 | `?view=library` | 成果物の管理 |
 | `?view=render` | 描画のみ（サムネイル・確認用） |
@@ -68,7 +69,7 @@ npm run dev            # http://localhost:5173
 | `src/components/index.tsx` | 各コンポーネントの SVG 実装（ピル、QR、吹き出し、付箋、PC/スマホモック、ポラロイド、キラキラ…） |
 | `src/render/` | SVG レンダラ、テキスト（縁取り・自動縮小）、書き出し |
 | `src/render/offscreen.ts` | サムネイル・PNG・PPTX で共用する画面外描画。SVG 定義 ID の隔離・フォント待機・後始末 |
-| `src/render/svg.ts` / `src/render/export.ts` | SVG・PNG の書き出し / PPTX の書き出し（PowerPoint ライブラリは書き出し時に読み込む） |
+| `src/render/svg.ts` / `src/render/pdf.ts` / `src/render/export.ts` | SVG・PNG の書き出し / ポスターの PDF の書き出し / PPTX の書き出し（PowerPoint ライブラリは書き出し時に読み込む） |
 | `src/editor/` | エディタ UI |
 | `server/app.ts` | API の組み立て、アクセス制御、終了時の書き込み待機 |
 | `server/routes/` | 認証・AI 生成/編集・画像・フォント・成果物管理・設定の API |
@@ -84,8 +85,7 @@ npm run dev            # http://localhost:5173
 | `src/editor/Library.tsx` | 成果物の管理画面（`?view=library`） |
 | `server/imagegen.ts` | 画像生成（OpenAI gpt-image-2.5-flare（透過PNG対応）／Gemini Interactions API／ローカルの ComfyUI／実験的に Codex CLI 経由）。リクエストごとにプロバイダ指定可。同じプロンプトはキャッシュ |
 | `src/import/pptx.ts` | PPTX の読み込み（JSZip + DOMParser でスライド → PosterSpec。テーマ色・プレースホルダーの継承を解決） |
-| `src/editor/DeckStrip.tsx` | PPTX エディターモードのスライド一覧（Instagram 投稿モードでは画像の一覧） |
-| `src/instagram.ts` | Instagram 投稿の比率・白紙の画像・比率を変えるときのレイヤーの並べ直し |
+| `src/editor/DeckStrip.tsx` | PPTX エディターモードのスライド一覧 |
 | `src/fonts.ts` / `server/fonts.ts` | フォントのカタログと全スライドへの適用 / ChatGPT による提案と OS へのインストール |
 | `src/editor/FontDialog.tsx` | フォントの提案・選択ダイアログ |
 
@@ -161,29 +161,17 @@ npm run dev            # http://localhost:5173
 | `POST /api/fonts/suggest` | フォントの提案（`{ mood, title, texts }` → 3 案） |
 | `POST /api/fonts/status` / `POST /api/fonts/install` | インストール状況の確認 / 未インストールのものをインストール（`{ families }`、カタログのフォントのみ） |
 
-## Instagram 投稿モード
+## 以前の Instagram 投稿モード
 
-Instagram のフィードやストーリーズに載せる画像を作る。1 投稿 = 画像 1〜20 枚（カルーセル）で、PPTX エディターモードと同じ仕組み（画像 1 枚 = 成果物 1 件、並び順はデッキ `kind: "instagram"`）で編集する。
-
-- ホームの「Instagram でスタート」で比率を選んで白紙の投稿を作る。エディタ左の「新規作成」で「Instagram 投稿」を選び、比率・枚数（おまかせ / 1〜10 枚）とブリーフを入れて「投稿を生成」すると、ChatGPT がカルーセル全体を設計して新しい投稿として開く（前の成果物は残り、通知から戻れる）。未生成の画像素材は各画像を順に開いて続けて生成する
-- 比率（座標は書き出しの実寸）: 正方形 1:1（1080×1080）／縦長 4:5（1080×1350）／縦長 3:4（1080×1440、プロフィールの一覧と同じ）／縦長 9:16（1080×1920、ストーリーズ・リール）／横長 1.91:1（1080×566）。`src/instagram.ts`
-- カルーセルは全枚が同じ比率になる。画像一覧の比率の切り替えで全枚の大きさを変えると、背景と全面のレイヤーはキャンバスいっぱいに伸ばし、ほかは中心の位置を縦横の比で移して、縮む向きの比で大きさ・文字も縮める（大きくはしない）。崩れたらチャットで「レイアウトを整えて」と頼む。通知の「元に戻す」で全枚戻せる
-- AI には「スマホで読める文字の大きさ・1 枚 1 メッセージ・表紙で要点・最後に次の行動・全枚で見た目をそろえる・縁の余白・QR コードは使わない（9:16 なら上下の UI の領域を避ける）」を指示している。チャットでの修正でも同じ決まりを渡す
-- 画像一覧で追加・複製・削除・並べ替え（20 枚まで）。台本・アニメーション・スライドショーは出ない
-- 「PNG で書き出し」で全画像を幅 1080px の PNG にする。1 枚なら PNG、複数なら `<名前>_01.png` のように番号を付けて ZIP にまとめる（投稿するときはこの順に選ぶ）
-- 成果物画面では「プロジェクト」タブに 1 件として出る
-
-| API | 内容 |
-| --- | --- |
-| `POST /api/plan/instagram` | ブリーフ → カルーセル（`{ brief, width, height, count?, references }` → `{ title, posts: [spec…] }`。進み具合を NDJSON で流す） |
-| `POST /api/decks` | `kind: "instagram"` を付けると Instagram の投稿として作る（複製しても引き継ぐ） |
+Instagram 投稿モードは廃止した（機能をポスター作成とスライド作成の 2 つに絞ったため）。以前の版で作った投稿（デッキ `kind: "instagram"`）は `data/` に残したまま消さないが、ホーム・成果物の一覧には出さない（`src/editor/mode.ts` の `isShownDeck`）。
 
 ## 書き出し
 
 | 形式 | 内容 |
 | --- | --- |
 | SVG | トップレベルの各レイヤーを名前付きグループ（Inkscape/Affinity のレイヤー属性付き）で出力。画像は埋め込み、フォントは、カタログ（`src/fonts.ts`）内のものを Google Fonts から取得できた場合に**使用文字だけのサブセット**として埋め込む。カタログ外や取得に失敗した場合は警告のみで書き出しを続け、閲覧環境のフォントに依存する |
-| PNG | キャンバス寸法の 2.48 倍（各辺を四捨五入）。標準 1000×1414 では 2480×3507px、A4 300dpi 相当 |
+| PDF | ポスターのみ。PNG と同じ A4 300dpi（2480×3508px）の画像を白地に合成し、可逆圧縮で 1 ページに埋め込む（`src/render/pdf.ts`。依存ライブラリなし）。A4 との差が 0.5mm 以内なら A4 ちょうど（210×297mm）のページにする。文字は画像になるので PDF の中では選択・検索できない |
+| PNG | A4 なら A4 300dpi ちょうど（縦 2480×3508px）、そうでなければ幅を A4 300dpi に合わせる。解像度（pHYs）を書き込み、書き出し後に実寸が A4 かを知らせる |
 | PPTX | 可視のトップレベルのレイヤーが 1 レイヤー = 1 オブジェクトとして、重なり順を保って配置される。可視のトップレベルの text レイヤーのうち、縁取りがなく、`skewX` がなく、fill が文字列（グラデーションでない）のものは編集可能なテキストボックス。それ以外（コンポーネント・グループ内の文字も含む）はレイヤー単位で切り抜いた透過 PNG |
 | JSON | 設計図そのもの。読み込みも可 |
 

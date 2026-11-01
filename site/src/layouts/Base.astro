@@ -1,0 +1,115 @@
+---
+import "../styles/global.css";
+import fontUrl from "../assets/fonts/mochiy-pop-one-subset.woff2?url";
+import Shape from "../components/Shape.astro";
+import Icon from "../components/Icon.astro";
+import { getEntry } from "astro:content";
+import { getImage } from "astro:assets";
+import { AUTHOR_URL, REPO_URL, SITE_CONFIG } from "../lib/config";
+import { url } from "./paths";
+
+interface Props {
+  title: string;
+  description: string;
+}
+const { title, description } = Astro.props;
+
+const siteName = "DC-Designer";
+const fullTitle = Astro.url.pathname === url("/") ? `${siteName} - ${title}` : `${title} | ${siteName}`;
+const site = Astro.site!;
+const canonical = new URL(Astro.url.pathname, site).href;
+
+// OGP 画像：ogp 媒体が ready ならその画像、placeholder の間はアプリのアイコン（絶対 URL）
+const ogp = await getEntry("media", "ogp");
+const ogpFiles = import.meta.glob<{ default: ImageMetadata }>("/src/assets/media/*.{png,jpg,jpeg,webp}", { eager: true });
+let ogImage = new URL(url("/icon.png"), site).href;
+if (ogp?.data.status === "ready" && ogp.data.src) {
+  const meta = ogpFiles[`/src/assets/media/${ogp.data.src}`]?.default;
+  if (meta) ogImage = new URL((await getImage({ src: meta, format: "png", width: 1200, height: 630 })).src, site).href;
+}
+
+const csp = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "connect-src 'self'",
+  "img-src 'self' data:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'none'",
+].join("; ");
+const isTop = Astro.url.pathname === url("/");
+// 現在地（CMP-002）：同じページのナビ項目だけ aria-current="page"。「機能」(/#features)・外部の GitHub には付けない
+const here = Astro.url.pathname.replace(/\/?$/, "/");
+const isHere = (href: string) => !href.includes("#") && !href.startsWith("http") && href === here;
+const navItems = [
+  { href: url("/#features"), label: "機能" },
+  { href: url("/changelog/"), label: "更新履歴" },
+  { href: REPO_URL, label: "GitHub" },
+];
+const footerItems = [
+  { href: url("/privacy/"), label: "プライバシー" },
+  { href: url("/code-signing/"), label: "コード署名ポリシー" },
+  { href: `${REPO_URL}/blob/main/SECURITY.md`, label: "SECURITY" },
+  { href: `${REPO_URL}/blob/main/LICENSE`, label: "MIT ライセンス" },
+  { href: `${REPO_URL}/issues`, label: "GitHub Issues" },
+];
+---
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {/* 開発サーバーは CSS を <style> で埋め込むので、CSP は本番のビルドだけに付ける */}
+    {import.meta.env.PROD && <meta http-equiv="Content-Security-Policy" content={csp} />}
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/png" href={url("/icon.png")} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={siteName} />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:locale" content="ja_JP" />
+    <meta name="twitter:card" content="summary" />
+    {isTop && <link rel="preload" href={fontUrl} as="font" type="font/woff2" crossorigin />}
+  </head>
+  <body>
+    <a class="skip-link" href="#main">本文へ移動</a>
+    <header class="site-header">
+      <div class="container site-header__inner">
+        <a class="logo" href={url("/")}><img src={url("/icon.png")} width="28" height="28" alt="" />DC-Designer</a>
+        <nav class="nav-wide" aria-label="メイン">
+          {navItems.map((n) => <a href={n.href} aria-current={isHere(n.href) ? "page" : undefined}>{n.label}</a>)}
+        </nav>
+        <a class="btn btn--small btn--ghost btn--icon" href={url("/download/")} aria-current={isHere(url("/download/")) ? "page" : undefined}><Icon name="download" />ダウンロード</a>
+        <details class="nav-menu">
+          <summary>メニュー</summary>
+          <ul>
+            {navItems.map((n) => <li><a href={n.href} aria-current={isHere(n.href) ? "page" : undefined}>{n.label}</a></li>)}
+          </ul>
+        </details>
+      </div>
+      <span class="site-header__stripe" aria-hidden="true"></span>
+    </header>
+    <main id="main">
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <div class="container">
+        <div class="site-footer__row">
+          <ul>
+            {footerItems.map((n) => <li><a href={n.href}>{n.label}</a></li>)}
+          </ul>
+          <div class="site-footer__marks">
+            <Shape shape="circle" size="mark" />
+            <Shape shape="triangle" size="mark" />
+            <Shape shape="square" size="mark" />
+          </div>
+        </div>
+        <small>DC-Designer は MIT ライセンスのオープンソースです。作成：<a href={AUTHOR_URL}>@{SITE_CONFIG.author}</a>（GitHub）</small>
+      </div>
+    </footer>
+  </body>
+</html>

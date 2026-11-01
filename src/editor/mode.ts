@@ -2,25 +2,27 @@ import type { Deck } from "./api";
 import { readPref, writePref } from "./storage";
 
 /**
- * 作るものの種類（モード）。ポスター・PowerPoint のスライド・Instagram の投稿は、
+ * 作るものの種類（モード）。ポスターと PowerPoint のスライドは、
  * ホーム・成果物の一覧・エディタをそれぞれ別に持ち、互いの成果物を作ったり開いたりしない。
- * - poster: デッキに入っていない単体のポスター
- * - slides: Instagram でないデッキ（PowerPoint のスライド）
- * - instagram: kind が "instagram" のデッキ（カルーセルの画像）
+ * - poster: デッキに入っていない単体のポスター（PDF・PNG で書き出す）
+ * - slides: デッキ（PowerPoint のスライド。PPTX で書き出す）
+ * 以前の版で作った Instagram の投稿（kind が "instagram" のデッキ）はデータとして残し、画面には出さない（isShownDeck）
  */
-export type AppMode = "poster" | "slides" | "instagram";
+export type AppMode = "poster" | "slides";
 
-export const MODES: Record<AppMode, { label: string; item: string; icon: "file" | "slides" | "carousel"; note: string }> = {
-  poster: { label: "ポスター", item: "ポスター", icon: "file", note: "A4 縦（1000×1414）のポスターを 1 枚ずつ作る" },
-  slides: { label: "PPTX", item: "プレゼンテーション", icon: "slides", note: "16:9 のスライドを作り、PowerPoint で書き出す・投影する" },
-  instagram: { label: "Instagram", item: "投稿", icon: "carousel", note: "投稿画像（1〜20 枚のカルーセル）を比率を選んで作る" },
+export const MODES: Record<AppMode, { label: string; item: string; icon: "file" | "slides"; note: string }> = {
+  poster: { label: "ポスター", item: "ポスター", icon: "file", note: "A4 縦（1000×1414）のポスターを作り、PDF・PNG で書き出す" },
+  slides: { label: "スライド", item: "プレゼンテーション", icon: "slides", note: "16:9 のスライドを作り、PowerPoint（PPTX）で書き出す・投影する" },
 };
-export const MODE_KEYS: AppMode[] = ["poster", "slides", "instagram"];
+export const MODE_KEYS: AppMode[] = ["poster", "slides"];
 
-export const isMode = (v: unknown): v is AppMode => v === "poster" || v === "slides" || v === "instagram";
+export const isMode = (v: unknown): v is AppMode => v === "poster" || v === "slides";
 
 /** デッキの種類からモードを決める（デッキに入っていなければポスター） */
-export const modeOfDeck = (d: Pick<Deck, "kind"> | null | undefined): AppMode => (!d ? "poster" : d.kind === "instagram" ? "instagram" : "slides");
+export const modeOfDeck = (d: Pick<Deck, "kind"> | null | undefined): AppMode => (d ? "slides" : "poster");
+
+/** 画面に出すデッキか（以前の版の Instagram の投稿は出さない。データは消さずに残す） */
+export const isShownDeck = (d: Pick<Deck, "kind">) => d.kind !== "instagram";
 
 /** URL の ?mode=（無い・不正なら null） */
 export const readModeParam = (): AppMode | null => {

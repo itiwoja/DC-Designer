@@ -1,0 +1,119 @@
+---
+import "../styles/home.css";
+import Base from "../layouts/Base.astro";
+import Media from "../components/Media.astro";
+import Shape from "../components/Shape.astro";
+import DownloadButton from "../components/DownloadButton.astro";
+import FeatureCard from "../components/FeatureCard.astro";
+import HeroParticles from "../components/HeroParticles.astro";
+import Icon from "../components/Icon.astro";
+import Reveal from "../components/Reveal.astro";
+import Requirements from "../components/Requirements.astro";
+import { getCollection, getEntry } from "astro:content";
+
+const features = (await getCollection("features")).filter((f) => f.data.exeAvailable).sort((a, b) => a.data.order - b.data.order);
+// SEC-001-02 機能 2 枚（● 朱 ポスター作成 → ▲ 山吹 スライド作成）。図形の無い機能は order 順に続ける
+const shapeOf: Record<string, "circle" | "triangle" | "square"> = { poster: "circle", slides: "triangle" };
+const majorOrder = features.map((f) => ({ id: f.id, shape: shapeOf[f.id] ?? "square" }));
+const majors = majorOrder.flatMap(({ id, shape }) => {
+  const feature = features.find((f) => f.id === id);
+  return feature ? [{ feature, shape }] : [];
+});
+// exeNote（AI 機能の注意）は、同じ文を 1 つの番号にまとめて ※1・※2… と注釈にする
+const notes = [...new Set(features.map((f) => f.data.exeNote).filter((n): n is string => !!n))];
+const markOf = (f: (typeof features)[number]) => (f.data.exeNote ? `※${notes.indexOf(f.data.exeNote) + 1}` : undefined);
+const notesIn = (list: (typeof features)[number][]) =>
+  notes.filter((n) => list.some((f) => f.data.exeNote === n)).map((n) => ({ mark: `※${notes.indexOf(n) + 1}`, text: n }));
+const majorNotes = notesIn(majors.map((m) => m.feature));
+
+// SEC-001-07 DC-Designer とは：AI につなぐ → 下書き → 仕上げ の 3 ステップ
+const steps: { shape: "circle" | "triangle" | "square"; title: string; text: string; note?: string }[] = [
+  {
+    shape: "circle",
+    title: "AI につなぐ",
+    text: "「ChatGPT でサインイン」を押すだけ。ChatGPT Plus / Pro のプランの枠で動くので、API キーの発行はいりません。",
+    note: "ソースから動かす場合は、自分で発行した API キー（OpenRouter など）でも使えます。",
+  },
+  {
+    shape: "triangle",
+    title: "AI が下書きを作る",
+    text: "作りたいものを文章で伝えると、AI がポスターやスライドを、文字・図形・画像のレイヤーに分けて組み立てます。",
+  },
+  {
+    shape: "square",
+    title: "自分の手で仕上げる",
+    text: "気になるところだけ、ドラッグやチャットで直します。できあがりは PDF・PNG・PPTX で書き出せます。",
+  },
+];
+
+const home = await getEntry("pages", "home");
+// home.md の本文：最初の段落がキャッチ、残りが説明
+const [catchCopy, ...rest] = (home?.body ?? "").trim().split(/\n\s*\n/);
+// 見出しは「、」と「から」の後で改行（区切りが無ければ 1 行のまま）
+const titleLines = (catchCopy ?? "").split(/(?<=、|から)/).filter(Boolean);
+---
+<Base title="ポスターもスライドも、AIの下書きからレイヤーで仕上げる" description="DC-Designer は、生成 AI でポスターやスライドを効率よく作るアプリ（Windows 版）です。ChatGPT でサインインするだけで AI が下書きを作り、レイヤーで自分の手で仕上げて PDF・PNG・PPTX で書き出せます。無料・MIT ライセンス。">
+  <div class="hero-band">
+    <HeroParticles />
+    <div class="container">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero__text" data-hero-text>
+          <h1 id="hero-title">{titleLines.map((line) => <span class="hero__line">{line}</span>)}</h1>
+          {rest.length > 0 && <p class="hero__lead">{rest.join(" ")}</p>}
+          <DownloadButton large variant="hero"><a class="btn btn--large btn--ghost btn--icon btn--icon-down" href="#features"><Icon name="arrow-down" />機能を見る</a></DownloadButton>
+        </div>
+      </section>
+    </div>
+  </div>
+  <div class="container hero-media">
+    <div class="media-frame"><Media mediaId="hero" kind="hero" loading="lazy" sizes="(min-width: 1024px) 960px, 100vw" /></div>
+  </div>
+
+  <div class="container">
+    <section class="section home-section" id="about" aria-labelledby="about-title">
+      <h2 id="about-title" class="heading-mark"><Shape shape="triangle" />DC-Designer とは</h2>
+      <ol class="steps">
+        {steps.map((step, i) => (
+          <li class:list={["step", `step--${step.shape}`]} data-reveal>
+            <p class="step__num"><Shape shape={step.shape} /><span>STEP {i + 1}</span></p>
+            <h3 class="step__title">{step.title}</h3>
+            <p class="step__text">{step.text}</p>
+            {step.note && <p class="step__note">{step.note}</p>}
+          </li>
+        ))}
+      </ol>
+    </section>
+  </div>
+
+  <div class="container">
+    <section class="section home-section" id="features" aria-labelledby="features-title">
+      <h2 id="features-title" class="heading-mark"><Shape shape="circle" />ポスターとスライドを作る</h2>
+      <ul class="feature-list feature-list--major">
+        {majors.map(({ feature, shape }) => (
+          <FeatureCard feature={feature} variant="major" shape={shape} noteMark={markOf(feature)} sizes="(min-width: 1024px) 520px, (min-width: 768px) 360px, 100vw" />
+        ))}
+      </ul>
+      {majorNotes.length > 0 && <ul class="feature-notes">{majorNotes.map((n) => <li><span class="feature-notes__mark">{n.mark}</span>{n.text}</li>)}</ul>}
+    </section>
+  </div>
+
+  <div class="container">
+    <section class="section home-section" aria-labelledby="demo-title">
+      <h2 id="demo-title" class="heading-mark"><Shape shape="square" />デモ</h2>
+      <div class="media-frame"><Media mediaId="demo" kind="demo" sizes="(min-width: 1152px) 1056px, 100vw" /></div>
+    </section>
+
+    <section class="section home-section" aria-labelledby="req-title">
+      <h2 id="req-title" class="heading-mark"><Shape shape="circle" />動作要件</h2>
+      <Requirements />
+    </section>
+  </div>
+
+  <section class="cta-band" aria-labelledby="band-title">
+    <div class="container cta-band__inner">
+      <h2 id="band-title" class="cta-band__title">ダサいスライドとはもうおさらば。</h2>
+      <DownloadButton large variant="band" />
+    </div>
+  </section>
+  <Reveal />
+</Base>

@@ -29,9 +29,7 @@ describe("pickHomeDrop", () => {
     expect(pickHomeDrop([png], "poster")).toMatchObject({ error: expect.stringContaining("PDF") });
     expect(pickHomeDrop([], "slides")).toBeNull();
   });
-  it("Instagram のホームでは何もしない", () => {
-    expect(pickHomeDrop([pdf], "instagram")).toBeNull();
-    expect(homeDropLabel("instagram")).toBeNull();
+  it("ドロップ先の案内はモードで変わる", () => {
     expect(homeDropLabel("poster")).toBe("PDF をドロップして開く");
     expect(homeDropLabel(undefined)).toContain("PowerPoint");
   });

@@ -64,8 +64,8 @@ flowchart TB
 ### <a id="site-fr-002"></a>SITE-FR-002：機能紹介 〔SITE-UC-001〕
 - 入力：機能（SITE-TBL-003）を `order` 順に、各機能の媒体（SITE-TBL-004）、デモ動画（SITE-TBL-004 の `demo`。機能カードの下に 1 本）
 - 処理：`exeAvailable: false` の機能は出さない。`exeNote` があればカードに注記として出す（SITE-D-33）。媒体の `status` が `ready` なら画像/動画、`placeholder` なら枠の寸法に合わせた共通の仮の画像（「画面は準備中」と入った、実際の画面と誤解されない画像。[06 媒体の枠](06_ux_design.md#媒体の枠)）を出す（ビルドは止めない）。素材が揃う前でも公開してよい（SITE-D-26）。動画は `muted` `loop` `playsinline`、`prefers-reduced-motion` のときは自動再生せずポスター画像を出す
-- 初期の機能（`exeAvailable: true`）：AI でレイアウトを作る／レイヤーで編集できるエディタ／参考画像の再現／PowerPoint の読み込み・編集・書き出し（アニメーション・台本・発表者ビュー）／Instagram 投稿／PDF を開いて編集／SVG・PNG・PPTX・JSON の書き出し
-- 初期の注記（`exeNote`）：「AI でレイアウトを作る」「参考画像の再現」に「ChatGPT Plus / Pro などのサインインが必要です。Windows 版では写真・イラストは生成せず、仮の画像が入るので、自分の画像に差し替えてください」
+- 機能（`exeAvailable: true`）：2026-11-01 から 2 つに絞った。ポスター作成（AI の下書き・白紙・PDF から作り、PDF・PNG で書き出し）／スライド作成（PowerPoint の読み込み・編集、アニメーション・台本・発表者ビュー、PPTX で書き出し）。Instagram 投稿はアプリから外した
+- 注記（`exeNote`）：「ポスター作成」に「AI の下書きには ChatGPT Plus / Pro のサインインが必要です。写真・イラストは仮の画像になります」
 
 ### <a id="site-fr-003"></a>SITE-FR-003：動作要件 〔SITE-UC-001, SITE-UC-002〕
 | 項目 | 表示する内容 |

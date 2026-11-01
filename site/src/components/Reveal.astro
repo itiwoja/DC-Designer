@@ -1,0 +1,31 @@
+---
+// MOT-003 スクロールでカードが出る。対象は [data-reveal]。ページに 1 回だけ置く。
+// JS が動かない・動きを減らす設定・IntersectionObserver が無いときは何もせず、最初から全部見える。
+---
+<script>
+  const targets = Array.from(document.querySelectorAll<HTMLElement>("[data-reveal]"));
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!reduce && "IntersectionObserver" in window && targets.length > 0) {
+    // すでに画面に入っている（上端が画面の下端より上）カードは隠さない。下にあるカードだけ隠す
+    const pending = targets.filter((el) => el.getBoundingClientRect().top >= window.innerHeight);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // 同時に入ったカードは DOM の順に --stagger（80ms）ずつ遅らせる
+        const entered = entries
+          .filter((e) => e.isIntersecting)
+          .map((e) => e.target as HTMLElement)
+          .sort((a, b) => targets.indexOf(a) - targets.indexOf(b));
+        entered.forEach((el, i) => {
+          if (i > 0) el.classList.add(`reveal-delay-${Math.min(i, 3)}`);
+          el.classList.remove("is-pending");
+          observer.unobserve(el);
+        });
+      },
+      { rootMargin: "0px 0px -10% 0px" },
+    );
+    pending.forEach((el) => {
+      el.classList.add("reveal", "is-pending");
+      observer.observe(el);
+    });
+  }
+</script>

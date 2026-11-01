@@ -4,7 +4,7 @@ import { modeEditorUrl, modeOfDeck, readLastId, writeLastId, type AppMode } from
 import { STORAGE_KEY, writeCurrentId, writeSynced } from "./storage";
 
 /**
- * 画面の URL。`/` がモード（ポスター・PPTX・Instagram）を選ぶ画面、`?mode=<モード>` がそのモードのホーム、
+ * 画面の URL。`/` がモード（ポスター・スライド）を選ぶ画面、`?mode=<モード>` がそのモードのホーム、
  * エディタは `?view=editor&mode=<モード>`、成果物一覧は `?view=library&mode=<モード>`（mode.ts）。
  * Sign in with ChatGPT の戻り先（?chatgpt=...）はエディタが処理するので、戻り先もエディタにする
  */

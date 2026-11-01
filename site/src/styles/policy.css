@@ -1,0 +1,45 @@
+/* PG-004 / PG-005 ポリシー 2 ページ（読み物）。docs/design/ui/05_screens.md、04_components.md CMP-005・CMP-009。
+   幅は .prose（720px）、上下は .section。本文は markdown をサニタイズした HTML（set:html）なので、
+   Shape.astro の SVG は差し込めない。h2 の左の印は ::before で描く（UI-D-36：墨の 1px 縁）。 */
+
+.policy__updated { color: var(--color-text-muted); font-size: var(--text-sm); margin: 0 0 var(--space-6); }
+
+/* 本文の文字（段落・リスト）。行の長さは .prose の 720px で抑える */
+.policy__body { font-size: var(--text-base); }
+.policy__body p, .policy__body ul, .policy__body ol { margin: 0 0 var(--space-4); }
+.policy__body ul, .policy__body ol { padding-left: 1.5em; }
+.policy__body li { margin-bottom: var(--space-2); }
+.policy__body li > ul, .policy__body li > ol { margin-top: var(--space-2); margin-bottom: 0; }
+.policy__body blockquote {
+  margin: 0 0 var(--space-4); padding: var(--space-2) var(--space-4);
+  border-left: var(--border-width) solid var(--color-border);
+}
+.policy__body blockquote > :last-child { margin-bottom: 0; }
+
+/* 見出し：h2 は節の区切りとして上を広く、h3 は一段小さく */
+.policy__body h2 { margin: var(--space-7) 0 var(--space-4); }
+.policy__body h2:first-child { margin-top: 0; }
+.policy__body h3 { margin: var(--space-5) 0 var(--space-3); }
+
+/* h2 の印：●→▲→■ の順で回す。h2 は本文の包み（.policy__body）の直下に並ぶので nth-of-type で数えられる */
+.policy__body h2 { display: flex; align-items: baseline; gap: var(--space-3); }
+.policy__body h2::before {
+  content: ""; flex: none; box-sizing: border-box;
+  width: var(--shape-size-mark); height: var(--shape-size-mark);
+}
+.policy__body h2:nth-of-type(3n+1)::before {
+  background: var(--color-shape-circle); border: 1px solid var(--color-text); border-radius: 50%;
+}
+.policy__body h2:nth-of-type(3n)::before {
+  background: var(--color-shape-square); border: 1px solid var(--color-text);
+}
+/* ▲は clip-path では縁が描けないので、縁つきの三角の SVG を背景に敷く。
+   色は data: URI の中なのでトークンが使えない：地＝山吹 #F2B21B（--p-yellow-500＝--color-shape-triangle）、縁＝墨 #1B1B1F（--p-ink-900＝--color-text）。
+   形は Shape.astro の polygon と同じ。CSP は img-src 'self' data: なので許される。 */
+.policy__body h2:nth-of-type(3n+2)::before {
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpolygon points='6,0.6 11.5,11.4 0.5,11.4' fill='%23F2B21B' stroke='%231B1B1F' stroke-width='1'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+}
+
+/* 表：本文の HTML は包めないので、table 自体を横スクロールにする（狭い画面で溢れさせない） */
+.policy__body table { display: block; overflow-x: auto; max-width: 100%; margin: 0 0 var(--space-5); font-size: var(--text-sm); }
+.policy__body th, .policy__body td { min-width: 6em; }

@@ -34,7 +34,7 @@ export type SavedPoster = { id: string; createdAt: string; updatedAt: string; sp
 export type GeneratedFile = { name: string; src: string; size: number; mtime: string; uploaded: boolean; usedBy: string[] };
 
 export type DeckSlide = { id: string; title: string; updatedAt: string; spec?: PosterSpec };
-/** slides: PPTX エディターモード（無ければこれ）／ instagram: Instagram の投稿（カルーセル） */
+/** slides: スライドのデッキ（無ければこれ）／ instagram: 以前の版で作った Instagram の投稿（画面には出さない。データは残す） */
 export type DeckKind = "slides" | "instagram";
 export type Deck = { id: string; name: string; kind?: DeckKind; createdAt: string; updatedAt: string; slides: DeckSlide[] };
 
@@ -48,7 +48,7 @@ export type ChatContext = { memory?: string; history: ChatTurn[] };
 
 /** AI 修正の資料全体のスライド（番号は 1 始まり） */
 /** spec があるスライドは書き換え・統合の対象、texts だけのスライドは参考（文字の要約） */
-export type DeckEditContext = { current: number; total: number; slides: { number: number; title?: string; spec?: PosterSpec; texts?: string[]; notes?: string }[]; instagram?: boolean };
+export type DeckEditContext = { current: number; total: number; slides: { number: number; title?: string; spec?: PosterSpec; texts?: string[]; notes?: string }[] };
 
 export type FontProposal = { name: string; reason: string; display: string; body: string };
 export type FontStatus = { target: "windows" | "mac" | "linux"; installed: Record<string, boolean> };
@@ -116,9 +116,6 @@ export const api = {
   setOpenRouterModel: (model: string) => put<{ model: string }>("/api/openrouter/model", { model }),
   plan: (brief: string, theme: string | undefined, references: RefImage[], signal?: AbortSignal) =>
     post<{ spec: PosterSpec }>("/api/plan", { brief, theme, references }, signal),
-  /** Instagram のカルーセル投稿（同じ大きさの spec を 1〜20 枚）。count が無ければ枚数は AI に任せる */
-  planInstagram: (body: { brief: string; width: number; height: number; count?: number; references: RefImage[] }, onProgress?: (p: AIProgress) => void, signal?: AbortSignal) =>
-    postWithProgress<{ title: string; posts: PosterSpec[] }>("/api/plan/instagram", body, onProgress, signal),
   /** 参考画像をそのまま写し取った spec（A4 モードの「参考画像を再現」）。reference はポスターの大きさに縮めたもの */
   reproduce: (reference: RefImage, width: number, height: number, brief: string, onProgress?: (p: AIProgress) => void, signal?: AbortSignal) =>
     postWithProgress<{ spec: PosterSpec }>("/api/reproduce", { reference, width, height, brief }, onProgress, signal),
@@ -127,10 +124,10 @@ export const api = {
     postWithProgress<{ reply: string; spec?: PosterSpec }>("/api/reproduce/refine", withSubject({ reference, render, spec }, subject), onProgress, signal),
   /** チャットでの修正。spec が無ければ変更なし（質問への回答など） */
   /** across はデッキの全スライドへの指示を 1 枚ずつ当てるときの、そのスライドの位置と先に直したスライドの方針 */
-  edit: (spec: PosterSpec, instruction: string, selectedIds: string[] | undefined, signal?: AbortSignal, deck?: DeckEditContext, chat?: ChatContext, instagram?: boolean, across?: { number: number; total: number; guide?: string }, references?: RefImage[], subject?: AiSubject) =>
-    post<{ reply: string; spec?: PosterSpec; target?: number; remove?: number[]; others?: { target: number; spec: PosterSpec }[] }>("/api/edit", withSubject({ spec, instruction, selectedIds, deck, across, history: chat?.history, memory: chat?.memory, instagram, references }, subject), signal),
+  edit: (spec: PosterSpec, instruction: string, selectedIds: string[] | undefined, signal?: AbortSignal, deck?: DeckEditContext, chat?: ChatContext, across?: { number: number; total: number; guide?: string }, references?: RefImage[], subject?: AiSubject) =>
+    post<{ reply: string; spec?: PosterSpec; target?: number; remove?: number[]; others?: { target: number; spec: PosterSpec }[] }>("/api/edit", withSubject({ spec, instruction, selectedIds, deck, across, history: chat?.history, memory: chat?.memory, references }, subject), signal),
   /** デッキの並び（文字）とお手本のスライドから、position 番目に追加する新しいスライドを 1 枚作る（追加はしない） */
-  planSlide: (body: { instruction: string; position: number; total: number; title?: string; outline: { number: number; title?: string; texts: string[] }[]; samples: { number: number; title?: string; spec: PosterSpec }[]; instagram?: boolean; references?: RefImage[]; subject?: AiSubject }, chat?: ChatContext, signal?: AbortSignal) =>
+  planSlide: (body: { instruction: string; position: number; total: number; title?: string; outline: { number: number; title?: string; texts: string[] }[]; samples: { number: number; title?: string; spec: PosterSpec }[]; references?: RefImage[]; subject?: AiSubject }, chat?: ChatContext, signal?: AbortSignal) =>
     post<{ reply: string; spec: PosterSpec }>("/api/slide", { ...body, history: chat?.history, memory: chat?.memory }, signal),
   /** デッキの全スライドの文字・画像の説明（＋既存の台本）から、targets の番号のスライドの台本を書く */
   writeNotes: (body: { title?: string; slides: { number: number; title?: string; texts: string[]; images?: string[]; notes?: string }[]; targets: number[]; request?: string; subject?: AiSubject }, signal?: AbortSignal) =>
@@ -183,7 +180,7 @@ export const api = {
   uploadBlob: async (blob: Blob, mediaType: string) =>
     post<{ src: string }>("/api/upload", { mediaType, data: (await readDataUrl(blob)).split(",")[1] }),
   // ---------- フォント ----------
-  suggestFonts: (body: { kind?: "slides" | "poster" | "instagram"; mood: string; title?: string; texts: string[]; current?: { display?: string; body?: string }; subject?: AiSubject }, signal?: AbortSignal) =>
+  suggestFonts: (body: { kind?: "slides" | "poster"; mood: string; title?: string; texts: string[]; current?: { display?: string; body?: string }; subject?: AiSubject }, signal?: AbortSignal) =>
     post<{ proposals: FontProposal[] }>("/api/fonts/suggest", body, signal),
   fontStatus: (families: string[]) => post<FontStatus>("/api/fonts/status", { families }),
   installFonts: (families: string[]) => post<{ target: FontStatus["target"]; installed: string[]; already: string[] }>("/api/fonts/install", { families }),

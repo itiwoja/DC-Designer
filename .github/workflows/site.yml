@@ -1,0 +1,69 @@
+# 紹介サイトの公開：main の変更、または配信 CI（release-windows）の成功で、ビルド → 検査 → GitHub Pages へ。
+# 仕様は docs/design/07_architecture.md（デプロイ構成）、docs/design/04_functional_spec.md（SITE-FR-009）。
+# 事前設定：リポジトリの Settings → Pages → Source を「GitHub Actions」にする。
+name: site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "docs/privacy.md"
+      - "docs/code-signing-policy.md"
+      - ".github/workflows/site.yml"
+  workflow_run:
+    workflows: ["release-windows"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同時に走ったら後のものだけ残す。実行中のものは取り消さない
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # workflow_run のときは、配信 CI が成功したときだけ
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      # ポリシーの最終更新日を git log で取るため、履歴をすべて取得する（既定の 1 だと HEAD の日付になる）
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: npm run test:dist
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
