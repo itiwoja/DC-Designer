@@ -31,7 +31,7 @@ flowchart LR
 
 ## 要点
 - 主ボタン・リンク・フォーカスは群青に統一（[色](#色)）。
-- 文字：見出しの欧文・数字は Outfit、和文と本文はシステムフォント（[文字](#文字)）。
+- 文字：見出し・ボタン・ロゴ・ナビは手書き風ポップ体 Mochiy Pop One（和文・欧文とも）、本文はシステムフォント（[文字](#文字)、UI-D-38）。
 - 余白は 4px 刻み、セクション余白は 64px／112px（[余白](#余白・角丸・縁)）。
 - 影のトークンは作らない（影なし：UI-D-14）。
 - 動き：150ms／400ms、位置の動きは弾む、色は減速（[動き](#動き)）。
@@ -127,7 +127,7 @@ flowchart LR
 ### 文字
 | トークン | 値 | 使う所 |
 |---|---|---|
-| `--font-display` | `"Outfit", var(--font-body)` | ロゴの文字・見出し・版番号（欧文と数字だけ Outfit、和文はシステムに落ちる） |
+| `--font-display` | `"Mochiy Pop One", var(--font-body)` | ロゴの文字・見出し・ボタン・ナビ・版番号（使う文字だけに絞ったファイル。無い字は本文の書体に落ちる） |
 | `--font-body` | `"Yu Gothic UI", "Meiryo UI", Meiryo, "Hiragino Sans", "Noto Sans CJK JP", "Noto Sans JP", system-ui, sans-serif` | 本文（今と同じ） |
 | `--font-mono` | `ui-monospace, "Cascadia Mono", Consolas, "Noto Sans Mono CJK JP", monospace` | SHA-256・コマンド |
 | `--text-sm` | 0.875rem（14px） | 補足・バッジ・メタ |
@@ -136,7 +136,7 @@ flowchart LR
 | `--text-2xl` | clamp(1.5rem, 1rem + 2vw, 2rem) | h2 |
 | `--text-page` | clamp(1.75rem, 1.2rem + 2.5vw, 2.5rem) | 各ページの h1 |
 | `--text-hero` | clamp(2.25rem, 1.5rem + 3.5vw, 3.5rem) | トップの h1 |
-| `--weight-regular` / `--weight-bold` / `--weight-display` | 400 / 700 / 800 | 本文 / 見出し・ボタン / Outfit の見出し |
+| `--weight-regular` / `--weight-bold` / `--weight-display` | 400 / 700 / 400 | 本文 / 本文中の強調 / Mochiy の見出し（400 しかないので太字を偽造させない） |
 | `--leading-body` / `--leading-heading` | 1.8 / 1.35 | — |
 | `--tracking-body` / `--tracking-heading` | 0.04em / 0.02em | 和文の字間（定石） |
 | `--measure` | 40em | 読み物の 1 行の上限（約 40 字） |
