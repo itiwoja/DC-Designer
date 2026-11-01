@@ -2,24 +2,14 @@
    primitive（--p-*）は部品から直接使わず、semantic（--color-* など）か component（--btn-* など）を通す。
    ライト表示のみ（UI-D-05）。 */
 
-/* Outfit（OFL 1.1、ライセンス文は public/fonts/OFL.txt で配る）。基本ラテンだけの可変フォント 1 ファイルを同じオリジンから配る（UI-D-08・UI-R-01） */
+/* Mochiy Pop One（OFL 1.1、ライセンス文は public/fonts/OFL.txt で配る）。見出し・ロゴ・ボタン・ナビ用の手書き風ポップ体。
+   サイトの原稿に出る文字だけに絞った 1 ファイルを同じオリジンから配る（作り方は scripts/subset-display-font.py）。ウェイトは 400 のみ（UI-D-08・UI-R-01） */
 @font-face {
-  font-family: "Outfit";
+  font-family: "Mochiy Pop One";
   font-style: normal;
-  font-weight: 100 900;
+  font-weight: 400;
   font-display: swap;
-  src: url("../assets/fonts/outfit-latin-wght.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-/* 読み込み前の代わりの欧文。幅・高さを Outfit に寄せて、差し替わるときのずれを抑える（近似値） */
-@font-face {
-  font-family: "Outfit Fallback";
-  src: local("Arial"), local("Segoe UI"), local("Helvetica");
-  size-adjust: 100%;
-  ascent-override: 100%;
-  descent-override: 26%;
-  line-gap-override: 0%;
-  unicode-range: U+0000-00FF;
+  src: url("../assets/fonts/mochiy-pop-one-subset.woff2") format("woff2");
 }
 
 :root {
@@ -67,7 +57,7 @@
 
   /* semantic：文字 */
   --font-body: "Yu Gothic UI", "Meiryo UI", Meiryo, "Hiragino Sans", "Noto Sans CJK JP", "Noto Sans JP", system-ui, sans-serif;
-  --font-display: "Outfit", "Outfit Fallback", var(--font-body);
+  --font-display: "Mochiy Pop One", var(--font-body);
   --font-mono: ui-monospace, "Cascadia Mono", Consolas, "Noto Sans Mono CJK JP", monospace;
   --text-sm: 0.875rem;
   --text-base: 1rem;
@@ -77,7 +67,8 @@
   --text-hero: clamp(2.25rem, 1.5rem + 3.5vw, 3.5rem);
   --weight-regular: 400;
   --weight-bold: 700;
-  --weight-display: 800;
+  /* Mochiy Pop One は 400 しかない。太くすると偽の太字になるので 400 のまま使う */
+  --weight-display: 400;
   --leading-body: 1.8;
   --leading-heading: 1.35;
   --tracking-body: 0.04em;

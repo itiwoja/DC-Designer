@@ -18,10 +18,11 @@ body {
 img, video { max-width: 100%; height: auto; display: block; }
 p { margin: 0 0 1em; }
 
-/* 見出し（03_tokens）：欧文・数字だけ Outfit、和文はシステムフォントに落ちる */
+/* 見出し（03_tokens）：Mochiy Pop One（欧文・かなの一部）、字が無いものは本文の書体に落ちる。太さは 400 のまま（偽の太字を出さない） */
 h1, h2, h3 {
   font-family: var(--font-display);
-  font-weight: var(--weight-bold);
+  font-weight: var(--weight-display);
+  font-synthesis: none;
   line-height: var(--leading-heading);
   letter-spacing: var(--tracking-heading);
   margin: 0 0 0.6em;
@@ -78,6 +79,7 @@ code { font-family: var(--font-mono); font-size: 0.92em; }
 .nav-wide { display: none; align-items: center; gap: var(--space-5); }
 .nav-wide a, .nav-menu a {
   display: inline-flex; align-items: center; min-height: 44px;
+  font-family: var(--font-display); font-weight: var(--weight-display);
   color: var(--color-text); text-decoration: none; text-underline-offset: 0.4em;
 }
 .nav-wide a:hover, .nav-menu a:hover { color: var(--color-text); text-decoration: underline; text-decoration-thickness: 2px; }
@@ -89,6 +91,7 @@ code { font-family: var(--font-mono); font-size: 0.92em; }
 .nav-menu summary {
   display: inline-flex; align-items: center; min-height: 44px; padding-inline: var(--space-4);
   cursor: pointer; list-style: none; white-space: nowrap;
+  font-family: var(--font-display); font-weight: var(--weight-display);
   border: var(--border-width) solid var(--color-border-control); border-radius: var(--radius-button);
 }
 .nav-menu summary::-webkit-details-marker { display: none; }
@@ -103,7 +106,10 @@ code { font-family: var(--font-mono); font-size: 0.92em; }
 .site-header .btn--small { white-space: nowrap; }
 @media (max-width: 767px) {
   .site-header__inner { gap: var(--space-2); }
-  .site-header .btn--small, .nav-menu summary { padding-inline: var(--space-3); }
+  .site-header .btn--small, .nav-menu summary { padding-inline: var(--space-2); }
+  /* Mochiy Pop One は字幅が広いので、狭い画面ではロゴとメニューの字を一段小さくし、ロゴの字間を詰める */
+  .logo, .nav-menu summary { font-size: var(--text-sm); }
+  .logo { letter-spacing: 0; }
 }
 @media (min-width: 768px) {
   .nav-wide { display: flex; }
@@ -116,7 +122,7 @@ code { font-family: var(--font-mono); font-size: 0.92em; }
   min-height: 48px; padding-inline: var(--space-5);
   background: var(--btn-bg); color: var(--btn-fg);
   border: 0; border-radius: var(--btn-radius);
-  font: inherit; font-size: var(--text-base); font-weight: var(--weight-bold); letter-spacing: inherit; line-height: 1.4;
+  font: inherit; font-family: var(--font-display); font-size: var(--text-base); font-weight: var(--weight-display); letter-spacing: inherit; line-height: 1.4;
   text-decoration: none; text-align: center; cursor: pointer;
   /* 単語の途中で折り返さない（狭い画面では空白の所で 2 行になる） */
   overflow-wrap: normal; word-break: keep-all; padding-block: var(--space-2);
