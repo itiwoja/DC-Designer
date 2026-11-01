@@ -17,7 +17,7 @@
 | EXE-Q-01 | 決定 | 公開GitHub Releases（ユーザー回答 2026-10-26）。リポジトリは公開・MITのため、利用者側にトークンは不要。[EXE-D-10](./desktop-release-spec.md#決定事項ログ) | — |
 | EXE-Q-02 | 決定（申請は段階3） | [SignPath Foundation](https://signpath.org/)による無料のOSS向け署名（ユーザー回答 2026-10-26）。期待する発行者は「SignPath Foundation」。申請は段階3のビルドが揃ってから行い、審査が通るまで正式配信しない。[EXE-D-11・12](./desktop-release-spec.md#決定事項ログ) | 審査の合否 |
 | EXE-Q-03 | 一部決定 | Windowsのみ（ユーザー回答 2026-10-26）。macOS・Linuxは対象外。版・CPUはWindows 10 / 11のx64を推奨するが実機確認待ちで、確認した版だけ対応と表示する | 配布対象・実機試験の確定 |
-| EXE-R-01 | リスク | 通信制御・最終配布物の検査は未実装（Windowsの子孫プロセス回収は段階4。段階1〜3はCodex無効で孫プロセスを常駐させない）。試験に失敗・検査不能なら配信しない | releaseの合格判定 |
+| EXE-R-01 | リスク | 通信制御・最終配布物の検査は未実装（Windowsの子孫プロセス回収は段階4。画像生成のCodex CLIは2026-11-01に有効化。中断はtaskkill /Tで、Job Objectによる回収は段階4）。試験に失敗・検査不能なら配信しない | releaseの合格判定 |
 
 ## 全体図
 
@@ -49,6 +49,6 @@ flowchart LR
 - 製品用接続とWindows終了処理は推奨構成を採用（ユーザー委任・AI設計判断）。[ADR-003](./adr/ADR-003-desktop-runtime.md)
 - フォント取得を維持し、作品文字を含む取得を廃止（取得維持はユーザー指定、取得方式は安全性のための設計判断）。[ADR-004](./adr/ADR-004-font-acquisition.md)
 - 許可リストによる隔離ビルドと最終配布物検査を必須化（安全性のための設計判断）。[ADR-005](./adr/ADR-005-release-artifact-boundary.md)
-- 対応OSはWindowsのみ。API実行は`utilityProcess`、Codex・ComfyUIは段階1〜3で無効、native supervisorは段階4。AI送信の確認は専用の確認窓1回、フォントは段階2で全文字埋め込み（ユーザーが改善案の適用を承認、2026-10-26）。[段階分け](./desktop-release-spec.md#phases)、[改訂レポート](./changes/2026-10-26-desktop-phased-plan.md)
+- 対応OSはWindowsのみ。API実行は`utilityProcess`、Codex・ComfyUIは画像生成の経路だけ2026-11-01に有効化（[変更記録](./changes/2026-11-01-desktop-imagegen.md)）、native supervisorは段階4。AI送信の確認は専用の確認窓1回、フォントは段階2で全文字埋め込み（ユーザーが改善案の適用を承認、2026-10-26）。[段階分け](./desktop-release-spec.md#phases)、[改訂レポート](./changes/2026-10-26-desktop-phased-plan.md)
 - 配信先は公開GitHub Releases、コード署名はSignPath Foundation（ユーザー回答、2026-10-26）。[EXE-D-10・11](./desktop-release-spec.md#決定事項ログ)
 - 変更の範囲・既存設計への影響：[今回の変更レポート](./changes/2026-10-25-desktop-release-design.md)。実装・依存追加・CI設定・権限変更・公開は行っていない。

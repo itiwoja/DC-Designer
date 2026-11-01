@@ -1,5 +1,8 @@
 /** 生成の進み具合（サーバーの Progress と同じ形） */
 export type AIProgress = { phase: "thinking" | "writing"; attempt: number; chars?: number; items?: number };
+/** Codex CLI の準備の進み具合（サーバーの SetupProgress と同じ形）。download の done / total はバイト */
+export type SetupProgress = { phase: "setup"; step: "download" | "verify" | "install" | "login"; done?: number; total?: number; url?: string };
+type AnyProgress = AIProgress | SetupProgress;
 
 import { matchDesktopOperation, type DesktopRequest } from "../../desktop/operations";
 import type { DesktopCallOptions, DesktopResult } from "../../desktop/bridge";
@@ -18,7 +21,7 @@ function unwrapDesktop<T>(res: DesktopResult): T {
 }
 
 /** 製品版：限定 IPC で呼ぶ。signal が中断されたら main へ取り消しを伝えて AbortError を投げる */
-async function desktopCall<T>(bridge: NonNullable<ReturnType<typeof desktopBridge>>, match: DesktopRequest, signal?: AbortSignal, onProgress?: (p: AIProgress) => void): Promise<T> {
+async function desktopCall<T>(bridge: NonNullable<ReturnType<typeof desktopBridge>>, match: DesktopRequest, signal?: AbortSignal, onProgress?: (p: AnyProgress) => void): Promise<T> {
   if (signal?.aborted) throw abortError();
   const callId = signal || onProgress ? crypto.randomUUID() : undefined;
   const opts: DesktopCallOptions | undefined = callId ? { callId, ...(onProgress ? { onProgress } : {}) } : undefined;
@@ -35,7 +38,7 @@ async function desktopCall<T>(bridge: NonNullable<ReturnType<typeof desktopBridg
   }
 }
 
-async function desktopRequest<T>(bridge: NonNullable<ReturnType<typeof desktopBridge>>, method: string, url: string, body: unknown, signal?: AbortSignal, onProgress?: (p: AIProgress) => void): Promise<T> {
+async function desktopRequest<T>(bridge: NonNullable<ReturnType<typeof desktopBridge>>, method: string, url: string, body: unknown, signal?: AbortSignal, onProgress?: (p: AnyProgress) => void): Promise<T> {
   if (signal?.aborted) throw abortError();
   const match = matchDesktopOperation(method, url);
   if (!match) throw unavailable();
@@ -56,9 +59,9 @@ export async function request<T>(method: string, url: string, body?: unknown, si
  * 進み具合を流してくる API（NDJSON: {"progress"} が何行か続いて、最後に {"result"} か {"error"}）を呼ぶ。
  * 失敗時は request と同じく error / code / status を持つ Error を投げる
  */
-export async function postWithProgress<T>(url: string, body: unknown, onProgress?: (p: AIProgress) => void, signal?: AbortSignal): Promise<T> {
+export async function postWithProgress<T, P extends AnyProgress = AIProgress>(url: string, body: unknown, onProgress?: (p: P) => void, signal?: AbortSignal): Promise<T> {
   const bridge = desktopBridge();
-  if (bridge) return desktopRequest<T>(bridge, "POST", url, body, signal, onProgress);
+  if (bridge) return desktopRequest<T>(bridge, "POST", url, body, signal, onProgress as ((p: AnyProgress) => void) | undefined);
   const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
   const fail = (o: { error?: string; code?: string; status?: number }) =>
     Object.assign(new Error(o.error ?? `HTTP ${o.status ?? res.status}`), { code: o.code, status: o.status ?? res.status });

@@ -72,6 +72,7 @@ const BAD_STREAM: DesktopResult = { ok: false, error: "応答の形式が正し�
 function sanitizeProgress(v: unknown): DesktopProgress | null {
   if (!v || typeof v !== "object") return null;
   const o = v as Record<string, unknown>;
+  if (o.phase === "setup") return sanitizeSetupProgress(o);
   if (o.phase !== "thinking" && o.phase !== "writing") return null;
   if (typeof o.attempt !== "number" || !Number.isInteger(o.attempt)) return null;
   return {
@@ -79,6 +80,25 @@ function sanitizeProgress(v: unknown): DesktopProgress | null {
     attempt: o.attempt,
     ...(typeof o.chars === "number" && Number.isFinite(o.chars) ? { chars: o.chars } : {}),
     ...(typeof o.items === "number" && Number.isFinite(o.items) ? { items: o.items } : {}),
+  };
+}
+
+const SETUP_STEPS = ["download", "verify", "install", "login"] as const;
+/** `codex login` の認可 URL だけを画面へ渡す（画面はこれを既定のブラウザで開く） */
+const CODEX_AUTH_URL_PREFIX = "https://auth.openai.com/oauth/authorize?";
+const isCount = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n >= 0;
+
+/** Codex CLI の準備の進み具合を検証する。形が違えば null */
+function sanitizeSetupProgress(o: Record<string, unknown>): DesktopProgress | null {
+  const step = SETUP_STEPS.find((s) => s === o.step);
+  if (!step) return null;
+  const url = typeof o.url === "string" && o.url.startsWith(CODEX_AUTH_URL_PREFIX) && o.url.length <= 4096 && !/\s/.test(o.url) ? o.url : undefined;
+  return {
+    phase: "setup",
+    step,
+    ...(isCount(o.done) ? { done: o.done } : {}),
+    ...(isCount(o.total) ? { total: o.total } : {}),
+    ...(url && step === "login" ? { url } : {}),
   };
 }
 
@@ -192,6 +212,8 @@ export function createRuntime(deps: RuntimeDeps) {
   let retrying = false;
   /** 実行中の ChatGPT 操作（operations の chatgpt）の件数。0 のとき worker に資格情報を渡さない */
   let chatgptActive = 0;
+  /** 実行中の操作が読み出しを許した資格情報（operations の readSecrets）ごとの件数 */
+  const readActive = new Map<string, number>();
 
   const snapshot = (): RuntimeSnapshot => ({
     state: model.state, appVersion: deps.appVersion, ...(model.error ? { error: model.error } : {}),
@@ -279,8 +301,12 @@ export function createRuntime(deps: RuntimeDeps) {
     if (!deps.secrets || typeof requestId !== "string" || !requestId || requestId.length > 100) return;
     if (typeof providerId !== "string" || typeof kind !== "string") return;
     if (m.type === "secret-set" && typeof m.value !== "string") return;
-    // worker が読み書きしてよいのは ChatGPT の資格情報だけ、かつ ChatGPT を使う操作の実行中だけ（API キーは画面の設定からだけ）
-    if (secretRefOf(providerId, kind) !== CHATGPT_OAUTH || chatgptActive <= 0) {
+    // worker が読み書きしてよいのは ChatGPT の資格情報だけ、かつ ChatGPT を使う操作の実行中だけ。
+    // ほかは、実行中の操作が readSecrets で許したものを読むだけ（API キーの保存・削除は画面の設定からだけ）
+    const ref = secretRefOf(providerId, kind);
+    const chatgptOk = ref === CHATGPT_OAUTH && chatgptActive > 0;
+    const readOk = m.type === "secret-get" && (readActive.get(ref) ?? 0) > 0;
+    if (!chatgptOk && !readOk) {
       if (m.type !== "secret-get" && m.type !== "secret-set" && m.type !== "secret-remove") return;
       if (!inst.exited) inst.child.postMessage({ type: "secret-result", requestId, ok: false, state: "unset", code: "SECRET_DENIED" });
       return;
@@ -409,14 +435,23 @@ export function createRuntime(deps: RuntimeDeps) {
     // 閉じる途中は新しい処理を受け付けないが、閉じる前の確定保存だけは通す（drain はその後に送る）
     const accepting = model.state === "ready" || (model.state === "closing" && op.closeSave === true);
     if (!accepting || !alive(inst) || !inst.port) return { ok: false, error: "APIの準備ができていません", code: "INVALID_STATE" };
-    // ChatGPT を使う操作の間だけ worker に資格情報を渡す。中断では worker の後始末の分だけ少し遅らせて閉じる
-    if (!op.chatgpt) return send(inst, op, p, body, opts);
-    chatgptActive++;
+    // ChatGPT を使う操作・readSecrets のある操作の間だけ worker に資格情報を渡す。中断では worker の後始末の分だけ少し遅らせて閉じる
+    const reads = op.readSecrets ?? [];
+    if (!op.chatgpt && !reads.length) return send(inst, op, p, body, opts);
+    if (op.chatgpt) chatgptActive++;
+    for (const r of reads) readActive.set(r, (readActive.get(r) ?? 0) + 1);
+    const close = () => {
+      if (op.chatgpt) chatgptActive--;
+      for (const r of reads) {
+        const n = (readActive.get(r) ?? 0) - 1;
+        if (n > 0) readActive.set(r, n); else readActive.delete(r);
+      }
+    };
     try {
       return await send(inst, op, p, body, opts);
     } finally {
-      if (signal?.aborted && (deps.chatgptGraceMs ?? CHATGPT_GRACE_MS) > 0) setTimeout(() => { chatgptActive--; }, deps.chatgptGraceMs ?? CHATGPT_GRACE_MS).unref?.();
-      else chatgptActive--;
+      if (signal?.aborted && (deps.chatgptGraceMs ?? CHATGPT_GRACE_MS) > 0) setTimeout(close, deps.chatgptGraceMs ?? CHATGPT_GRACE_MS).unref?.();
+      else close();
     }
   }
 

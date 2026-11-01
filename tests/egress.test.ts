@@ -120,3 +120,77 @@ describe("installEgress", () => {
     await denied(fetch("https://example.com/"));
   });
 });
+
+describe("egress ゲート：画像生成", () => {
+  it("Gemini：interactions への POST だけ通る（once なし）", async () => {
+    const { gate, real } = setup();
+    const url = "https://generativelanguage.googleapis.com/v1beta/interactions";
+    await gate.fetch(url, { method: "POST" });
+    await gate.fetch(url, { method: "POST" });
+    expect(real).toHaveBeenCalledTimes(2);
+    for (const [u, m] of [
+      [url, "GET"], [`${url}?key=x`, "POST"], [`${url}/x`, "POST"],
+      ["https://generativelanguage.googleapis.com/v1beta/models", "POST"],
+      ["https://generativelanguage.googleapis.com/v1/interactions", "POST"],
+      ["http://generativelanguage.googleapis.com/v1beta/interactions", "POST"],
+      ["https://generativelanguage.googleapis.com:8443/v1beta/interactions", "POST"],
+      ["https://generativelanguage.googleapis.com.evil.test/v1beta/interactions", "POST"],
+    ]) await denied(gate.fetch(u, { method: m }));
+    expect(real).toHaveBeenCalledTimes(2);
+  });
+
+  it("ComfyUI：ループバックの http・https と任意ポートで許可した path だけ通る", async () => {
+    const { gate, real } = setup();
+    let n = 0;
+    for (const base of ["http://127.0.0.1:8188", "http://localhost:8188", "http://[::1]:8188", "http://127.0.0.1", "https://localhost:9000"]) {
+      await gate.fetch(`${base}/object_info/CheckpointLoaderSimple`);
+      await gate.fetch(`${base}/history/abc-123`);
+      await gate.fetch(`${base}/view?filename=a.png&type=output`);
+      await gate.fetch(`${base}/prompt`, { method: "POST", body: "{}" });
+      n += 4;
+    }
+    expect(real).toHaveBeenCalledTimes(n);
+  });
+
+  it("ComfyUI：ループバック以外・資格情報つき・許可外 path/method は送らずに拒否する", async () => {
+    const { gate, real } = setup();
+    for (const u of [
+      "http://192.168.0.5:8188/prompt", "http://example.com/prompt", "http://0.0.0.0:8188/prompt", "http://127.0.0.2:8188/prompt",
+      "http://127.0.0.1.evil.com/prompt", "http://127.0.0.1.evil.com:8188/prompt", "http://localhost.evil.com/prompt",
+      "http://user:pw@127.0.0.1:8188/prompt", "http://:pw@localhost:8188/prompt", "http://user@[::1]:8188/prompt",
+      "http://127.0.0.1:8188/", "http://127.0.0.1:8188/queue", "http://127.0.0.1:8188/upload/image", "http://127.0.0.1:8188/object_info",
+      "http://127.0.0.1:8188/history", "http://127.0.0.1:8188/prompt?x=1", "http://127.0.0.1:8188/object_info/CheckpointLoaderSimple?x=1",
+      "ws://127.0.0.1:8188/ws", "ftp://127.0.0.1/prompt",
+    ]) await denied(gate.fetch(u, { method: u.endsWith("/prompt") ? "POST" : "GET" }));
+    await denied(gate.fetch("http://127.0.0.1:8188/prompt")); // GET
+    await denied(gate.fetch("http://127.0.0.1:8188/view", { method: "POST" }));
+    await denied(gate.fetch("http://127.0.0.1:8188/history/abc", { method: "DELETE" }));
+    expect(real).not.toHaveBeenCalled();
+  });
+
+  it("Codex CLI の取得：固定版のファイルと、github の転送先（署名つき query）の GET だけ通す", async () => {
+    const { gate, real } = setup();
+    await gate.fetch("https://github.com/openai/codex/releases/download/rust-v0.166.0/codex-x86_64-pc-windows-msvc.exe.tar.gz", { redirect: "manual" });
+    await gate.fetch("https://github.com/openai/codex/releases/download/rust-v0.166.0/codex-aarch64-pc-windows-msvc.exe.tar.gz");
+    await gate.fetch("https://release-assets.githubusercontent.com/github-production-release-asset/965415649/a622?sig=x&exp=1");
+    await gate.fetch("https://objects.githubusercontent.com/github-production-release-asset/1/2?sig=x");
+    expect(real).toHaveBeenCalledTimes(4);
+    expect(real.mock.calls[0][1]?.redirect).toBe("manual");
+    for (const u of [
+      "https://github.com/openai/codex/releases/download/rust-v0.1.0/codex-x86_64-pc-windows-msvc.exe.tar.gz", // 別の版
+      "https://github.com/openai/codex/releases/download/rust-v0.166.0/codex-x86_64-pc-windows-msvc.exe", // 別のファイル
+      "https://github.com/openai/codex/releases/download/rust-v0.166.0/codex-x86_64-pc-windows-msvc.exe.tar.gz?x=1", // query つき
+      "https://github.com/evil/repo/releases/download/x/codex.tar.gz",
+      "https://release-assets.githubusercontent.com/other/path",
+      "https://api.github.com/repos/openai/codex/releases/latest",
+    ]) await denied(gate.fetch(u));
+    await denied(gate.fetch("https://github.com/openai/codex/releases/download/rust-v0.166.0/codex-x86_64-pc-windows-msvc.exe.tar.gz", { method: "POST" }));
+    expect(real).toHaveBeenCalledTimes(4);
+  });
+
+  it("既存の規則はループバックの緩和を受けない（http・任意ポートは拒否のまま）", async () => {
+    const { gate, real } = setup();
+    for (const u of ["http://fonts.googleapis.com/css2", "https://fonts.googleapis.com:8443/css2", "http://api.openai.com/v1/models"]) await denied(gate.fetch(u));
+    expect(real).not.toHaveBeenCalled();
+  });
+});

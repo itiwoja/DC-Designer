@@ -27,7 +27,7 @@ flowchart LR
   M --> B[外部既定ブラウザ・OAuth]
 ```
 
-見てほしいところ：段階1〜3はCodexを製品版で無効にするため、APIは孫プロセスを常駐させない。残る子プロセスはフォント登録の短時間PowerShellだけ。utilityProcessは外部送信を防ぐsandboxではない。段階の全体順は[親仕様](./desktop-release-spec.md)を正本とする。
+見てほしいところ：2026-11-01にCodex（ChatGPT）連携を製品版で有効にした。Codexは生成の間だけ起動する子プロセスで、Job Objectは使わず中断時は`taskkill /T`で止める（子孫回収の保証は未達）。残る子プロセスはフォント登録の短時間PowerShellだけ。utilityProcessは外部送信を防ぐsandboxではない。段階の全体順は[親仕様](./desktop-release-spec.md)を正本とする。
 
 ## 要点
 
@@ -264,7 +264,23 @@ sequenceDiagram
 
 ### 任意Codex連携の製品条件
 
-**段階1〜3では製品版で無効。段階4で以下を満たす場合に有効化する。** 無効の間、現行`server/imagegen.ts`のCodex起動・taskkill経路は製品APIへ含めず、ComfyUI連携も無効とする。
+**2026-11-01：Codex連携・ComfyUI連携を製品版で有効にした（段階1〜3の「無効」から変更）。** 以下の条件のうち、満たしたものと満たしていないものを分けて書く。Windows実機での確認は2026-11-01に一部実施（Codexは生成・中止・`auth.json`の写しと削除、ComfyUIは偽サーバーでの流れと外部URLの拒否、Geminiは無効なキーでGoogleに届くところまで。記録は[変更記録](./changes/2026-11-01-desktop-imagegen.md)）。
+
+満たした条件（実装済み。実機で確かめた範囲は上記）：
+
+- 任意機能。`codex.exe`を`shell:false`・`windowsHide:true`で直接起動する（利用者がパスを指定でき、既定は自動検出：PATH → npmのグローバル配置 → Codexデスクトップアプリ同梱（`%LOCALAPPDATA%\OpenAI\Codex\bin`）→ アプリが入れたもの）。未導入・未ログインは`not_found`／`signed_out`として画面に出し、選択肢に出さない。
+- （2026-11-01追加）設定画面の「Codex CLI を入れる」：固定版（`server/codex-pinned.ts`、0.166.0）の公式GitHubリリースのtar.gzをworkerが取得し（外部通信ゲートに`github.com`の固定パスと転送先`release-assets.githubusercontent.com`・`objects.githubusercontent.com`を追加。転送先のホストは呼び出し側でも検証）、大きさとsha256が一致したときだけ`<userRoot>\tools\codex\<版>\codex.exe`に置く。npm・winget・PowerShellは使わない。続けて「Codex にサインイン」で`codex login`を同じく直接起動し、利用者の既定の`CODEX_HOME`に`auth.json`を作る（認可URLは`auth.openai.com`のものだけ画面へ渡す）。
+- アプリ私有領域の専用`CODEX_HOME`（`%LOCALAPPDATA%\DC-Designer\cache\codex-home`）を使い、実行の間だけ利用者の`auth.json`を写して終了後に削除する。トークンが更新されたら利用者の`auth.json`へ書き戻す。
+- 結果は当該実行のスレッドのフォルダの画像だけを採用し、`~/.codex/generated_images`は読まない。参考画像は渡さず、文字のプロンプトだけを送る。
+- ComfyUIの送り先は`127.0.0.1`・`localhost`・`[::1]`に限る。Geminiは利用者のAPIキーを`safeStorage`に保存して使う。
+
+満たしていない条件（残る差分）：
+
+- Windows Jobオブジェクト内での起動（[付録](#windows-job)）はしていない。中断は`taskkill /T`で、子孫回収の保証は無い。
+- Codexのバージョン検証は、アプリが入れた固定版（sha256照合済み）についてだけ満たす。利用者が入れた・Codexアプリ同梱のCLIの版・必要機能は検証していない。
+- Codexは子プロセスのためworkerの外部通信ゲートを通らず、OpenAIへ直接通信する。未知のegressを制御・検証できていない（参考画像を渡さないことで代える）。
+- ComfyUIのworkflow・custom nodeがさらに外へ送るかは、アプリでは制御できない。
+- アプリのChatGPTログインのトークンでの直接生成は、OpenAIが`subscription_sharing_unsupported_capability`で拒否するため使わない。
 
 - Codexは任意機能。検証済みWindows native exeだけを許可し、`shell:false`・`windowsHide:true`で[付録](#windows-job)のJob内のAPIから直接起動する。npm shim・`.cmd`・PowerShell・WSL経由に逃がさない。
 - バージョン・必要機能・認証状態を確認してから利用可能にする。現行コードの特定版での開発確認を、製品版・nested Jobの検証済み根拠にはしない。
@@ -277,7 +293,7 @@ sequenceDiagram
 
 - 起動：Node・npm・WSLなし、日本語／空白パス、二重起動、開発port占有、偽API・古い個体・版不一致でも誤接続しない。
 - 所有権・排他：main強制終了・API異常終了直後に新mainを起動しても、名前付きパイプleaseを取れるまで新APIが書き込まない。leaseが使用中（`EADDRINUSE`）の待機表示と期限超過の`failed`、別利用者・別保存先でパイプ名が衝突しないこと、main死亡でutilityProcessが終了しパイプが解放されることを確認する。フォント登録のPowerShellが残る場合もタイムアウトで終了し、次回起動を妨げない。
-- 接続・通信：不正Origin／Host、無認証の画像GET、外部窓・iframeのIPC、任意URL／path／redirect、rendererの直接外部通信を拒否する。描画snapshotに置き換えたサムネイルにscript・親DOM・`parent`経由bridge・偽postMessageが残らず、特権操作へ到達しない。Codex・ComfyUIが製品版で無効であることを確認する。
+- 接続・通信：不正Origin／Host、無認証の画像GET、外部窓・iframeのIPC、任意URL／path／redirect、rendererの直接外部通信を拒否する。描画snapshotに置き換えたサムネイルにscript・親DOM・`parent`経由bridge・偽postMessageが残らず、特権操作へ到達しない。Codex・Gemini・ComfyUIの通信先が上記の範囲に限られ、参考画像が渡らないことを確認する（2026-11-01に有効化。実機では、Gemini の生成時の接続先が`generativelanguage.googleapis.com`であること、ComfyUIの要求が`127.0.0.1`だけに向くことを確かめた。Codexの通信先と、網羅的な通信検査は未実施）。
 - 保存・更新：全窓・IME・別スライド・notes・settings、容量不足・保存遅延・worker crash・drain不足・停止ハングで保存不足の終了／更新を0件にする。utilityProcessのexitとフォント登録子プロセスの完了前にinstallerが動かない。
 - 受付停止とbusy確認の間の新規生成・別窓作成・設定／フォント書込を試験する。API停止後のinstaller権限拒否ではruntimeの復旧完了前に編集・保存可能と表示せず、再適用も全保存からやり直す。
 - OAuth：動的port登録、外部browser、キャンセル・期限切れ・state不一致・再送・提供元仕様を確認し、秘密値がURL／HTML／ログ／rendererへ漏れない。

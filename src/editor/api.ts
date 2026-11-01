@@ -1,9 +1,9 @@
 import type { AssetContext, AssetRequest, PosterSpec } from "../schema";
-import { postWithProgress, request, type AIProgress } from "./apiTransport";
+import { postWithProgress, request, type AIProgress, type SetupProgress } from "./apiTransport";
 import { withSubject, type AiSubject } from "./aiSubject";
 import { runDesktopSignIn } from "./accountView";
 import { desktopBridge } from "./desktop";
-export type { AIProgress } from "./apiTransport";
+export type { AIProgress, SetupProgress } from "./apiTransport";
 /** 画像生成 1 回の待ち時間の上限（ミリ秒） */
 const ASSET_TIMEOUT_MS = 16 * 60_000;
 const get = <T>(url: string) => request<T>("GET", url);
@@ -63,7 +63,17 @@ export type AIStatus = { provider?: AIProvider; choice: AIProvider | ""; explici
 export type OpenRouterStatus = { model: string; models?: { slug: string; display_name: string }[]; modelsError?: string; modelChoice: string; autoModel: string };
 
 /** ai は再起動前の古い API サーバーからは届かない（そのあいだは従来どおり ChatGPT プランが使えれば使える扱い） */
-export type Status = { imageProvider: string; imageProviders: string[]; chatgpt: ChatGPTStatus; ai?: AIStatus };
+export type Status = { imageProvider: string; imageProviders: string[]; chatgpt: ChatGPTStatus; ai?: AIStatus; imageSettings?: ImageSettings; codex?: CodexStatus };
+/** 画像生成の設定（空文字は既定）。製品版のみ */
+export type ImageSettings = { comfyuiUrl: string; codexPath: string };
+/** Codex CLI の状態（製品版のみ） */
+export type CodexStatus = {
+  state: "ready" | "not_found" | "signed_out"; path?: string;
+  /** 見つけた場所：設定で指定／PATH／npm／Codex アプリ同梱／このアプリが入れたもの */
+  source?: "configured" | "path" | "npm" | "codex-app" | "app";
+  /** この PC にアプリから入れられるか（古い API からは届かない）と、入れる版 */
+  canInstall?: boolean; installVersion?: string;
+};
 
 /** サインイン用タブから元のタブへ結果を渡すチャンネル名 */
 export const AUTH_CHANNEL = "dc-designer:chatgpt-auth";
@@ -94,6 +104,13 @@ export const api = {
   /** レイアウト生成・AI 修正に使うモデルを選ぶ（"" で自動） */
   setChatGPTModel: (model: string) => put<{ model: string }>("/api/chatgpt/model", { model }),
   /** レイアウト生成・AI 修正に使う AI を選ぶ（"" で自動） */
+  setImageSettings: (body: Partial<ImageSettings>) => put<ImageSettings>("/api/image/settings", body),
+  /** 製品版：固定版の Codex CLI を入れる（進み具合を onProgress へ） */
+  installCodex: (onProgress?: (p: SetupProgress) => void, signal?: AbortSignal) =>
+    postWithProgress<{ path: string; version: string; signedIn: boolean }, SetupProgress>("/api/codex/install", {}, onProgress, signal),
+  /** 製品版：`codex login` でサインインする（ブラウザでのサインインが済むまで待つ） */
+  loginCodex: (onProgress?: (p: SetupProgress) => void, signal?: AbortSignal) =>
+    postWithProgress<{ signedIn: true }, SetupProgress>("/api/codex/login", {}, onProgress, signal),
   setAIProvider: (provider: AIProvider | "") => put<AIStatus>("/api/ai/provider", { provider }),
   /** OpenRouter で使うモデルを選ぶ（"" で自動） */
   setOpenRouterModel: (model: string) => put<{ model: string }>("/api/openrouter/model", { model }),

@@ -28,7 +28,7 @@ export function ModelSelect({ label, models, choice, autoModel, onChange, disabl
   );
 }
 
-export function AccountBar({ status, imageChoices, imageProvider, onImageProvider, autoImages, onAutoImages, onChatGPTModel, onOpenRouterModel, onAIProvider, onSignOut }: {
+export function AccountBar({ status, imageChoices, imageProvider, onImageProvider, autoImages, onAutoImages, onChatGPTModel, onOpenRouterModel, onAIProvider, onSignOut, onStatusChanged }: {
   status: Status | null;
   imageChoices: string[];
   imageProvider: string | undefined;
@@ -39,10 +39,12 @@ export function AccountBar({ status, imageChoices, imageProvider, onImageProvide
   onOpenRouterModel: (model: string) => void;
   onAIProvider: (provider: AIProvider | "") => void;
   onSignOut: () => void;
+  /** 製品版の画像生成の設定を保存・削除したあと、状態を取り直す */
+  onStatusChanged?: () => void;
 }) {
   // 製品版はサインイン状態だけを扱う別の表示（開発版の表示は下のまま）
   const bridge = desktopBridge();
-  if (bridge) return <DesktopAccountBar bridge={bridge} status={status} onSignOut={onSignOut} />;
+  if (bridge) return <DesktopAccountBar bridge={bridge} status={status} onSignOut={onSignOut} imageChoices={imageChoices} imageProvider={imageProvider} onImageProvider={onImageProvider} onStatusChanged={onStatusChanged} />;
   const gpt = status?.chatgpt;
   const ready = !!(gpt?.signedIn && gpt.planEnabled);
   const ai = status?.ai;

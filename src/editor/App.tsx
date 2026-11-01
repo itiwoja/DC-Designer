@@ -58,6 +58,7 @@ import { useZoom } from "./useZoom";
 import { MAX_REFERENCES, MAX_REFERENCE_DATA_BYTES } from "../referenceLimits";
 import { REFERENCE_FILE_ACCEPT, readReferenceFile, toReferenceImages, type ReferencePage } from "./referenceFiles";
 import { ImageAttach } from "./ImageAttach";
+import { failureReason } from "./imageErrors";
 import { ReferenceAttachments } from "./ReferenceAttachments";
 
 const IMAGE_PROVIDER_KEY = "dc-designer:image-provider";
@@ -722,20 +723,22 @@ export function App() {
     const queue = findPendingAssets(target).map((p) => ({ ref: toLayerRef(target, p.path), asset: p.asset }));
     const total = queue.length;
     let done = 0, failed = 0;
+    /** 最初に失敗した理由（サーバーが返す、利用者が直し方の分かる文言） */
+    let reason: string | undefined;
     setBusy((b) => b && { ...b, label: opts.label ?? "画像を生成中", progress: [0, total], step: undefined, detail: undefined, stepStartedAt: undefined });
     // 同時 2 並列で 1 点ずつ依頼する。1 点の失敗で全体を止めない
     const worker = async () => {
       for (let j = queue.shift(); j && !signal.aborted; j = queue.shift()) {
-        try { await generateOne(j.ref, j.asset, signal, target); } catch (e) { if (signal.aborted) throw e; failed++; }
+        try { await generateOne(j.ref, j.asset, signal, target); } catch (e) { if (signal.aborted) throw e; failed++; reason ??= failureReason(e); }
         setBusyProgress(++done, total);
       }
     };
     await Promise.all([worker(), worker()]);
     if (signal.aborted) throw new Error("aborted");
-    if (opts.quiet) return { total, failed };
-    if (failed) notify({ kind: "error", text: `${failed} 点の画像生成に失敗しました。レイヤーを選んで「再生成」できます` });
+    if (opts.quiet) return { total, failed, reason };
+    if (failed) notify({ kind: "error", text: `${failed} 点の画像生成に失敗しました。${reason ? `${reason}。` : ""}レイヤーを選んで「再生成」できます` });
     else notify({ kind: "success", text: `画像を ${total} 点生成しました` });
-    return { total, failed };
+    return { total, failed, reason };
   };
   /**
    * デッキの ids の各スライドを順に開いて、未生成の画像素材を生成する（画像は開いているものにしか当てられないため）。
@@ -745,6 +748,7 @@ export function App() {
     const start = posterIdRef.current;
     const targets = ids.filter((id) => { const sp = specOf(id); return sp && findPendingAssets(sp).length; });
     let total = 0, failed = 0;
+    let reason: string | undefined;
     for (const [i, id] of targets.entries()) {
       const opened = await openSlide(id);
       // ids はデッキの並び順（作った直後は deck の state がまだ古いので、ids から数える）
@@ -752,9 +756,10 @@ export function App() {
       const r = await generatePending(opened, signal, { quiet: true, label });
       total += r.total;
       failed += r.failed;
+      reason ??= r.reason;
     }
     if (start && start !== posterIdRef.current && ids.includes(start)) await openSlide(start);
-    if (failed) notify({ kind: "error", text: `${failed} 点の画像生成に失敗しました。そのスライドを開き、レイヤーを選んで「再生成」できます` });
+    if (failed) notify({ kind: "error", text: `${failed} 点の画像生成に失敗しました。${reason ? `${reason}。` : ""}そのスライドを開き、レイヤーを選んで「再生成」できます` });
     else if (total) notify({ kind: "success", text: `${targets.length} 枚のスライドに、画像素材を ${total} 点生成しました` });
   };
   /** 未生成の画像をまとめて生成 */
@@ -1480,6 +1485,7 @@ export function App() {
           onOpenRouterModel={chooseOpenRouterModel}
           onAIProvider={chooseAIProvider}
           onSignOut={signOut}
+          onStatusChanged={refreshStatus}
         />
         </div>
       </aside>

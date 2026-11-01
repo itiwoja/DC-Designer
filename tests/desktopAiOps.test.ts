@@ -28,8 +28,30 @@ describe("AI 操作の操作表", () => {
     expect(DESKTOP_OPERATIONS["chatgpt.model"]).toMatchObject({ method: "PUT", route: "/api/chatgpt/model", maxBody: 1024 });
     expect(matchDesktopOperation("PUT", "/api/chatgpt/model")).toEqual({ operation: "chatgpt.model" });
   });
-  it("/api/asset は解決できない", () => {
-    expect(matchDesktopOperation("POST", "/api/asset")).toBeNull();
+  it("Codex CLI の準備の操作（codex.install・codex.login）は stream で、本文は小さいものだけ", () => {
+    expect(DESKTOP_OPERATIONS["codex.install"]).toEqual({ method: "POST", route: "/api/codex/install", maxBody: 1024, stream: true });
+    expect(DESKTOP_OPERATIONS["codex.login"]).toEqual({ method: "POST", route: "/api/codex/login", maxBody: 1024, stream: true });
+    expect(matchDesktopOperation("POST", "/api/codex/install")).toEqual({ operation: "codex.install" });
+    expect(matchDesktopOperation("POST", "/api/codex/login")).toEqual({ operation: "codex.login" });
+    expect(resolveDesktopRequest({ operation: "codex.install", body: {} })?.path).toBe("/api/codex/install");
+    // 資格情報は渡さない
+    expect("chatgpt" in DESKTOP_OPERATIONS["codex.login"]).toBe(false);
+    expect("readSecrets" in DESKTOP_OPERATIONS["codex.login"]).toBe(false);
+  });
+
+  it("画像生成の操作（images.asset・images.settings）が約束どおりで、解決できる", () => {
+    expect(DESKTOP_OPERATIONS["images.asset"]).toEqual({ method: "POST", route: "/api/asset", maxBody: 1024 * 1024, readSecrets: ["gemini/apiKey"] });
+    expect(DESKTOP_OPERATIONS["images.settings"]).toEqual({ method: "PUT", route: "/api/image/settings", maxBody: 1024 });
+    expect(matchDesktopOperation("POST", "/api/asset")).toEqual({ operation: "images.asset" });
+    expect(matchDesktopOperation("PUT", "/api/image/settings")).toEqual({ operation: "images.settings" });
+    expect(resolveDesktopRequest({ operation: "images.asset", body: {} })?.path).toBe("/api/asset");
+    expect(resolveDesktopRequest({ operation: "images.settings", body: { comfyuiUrl: "" } })?.path).toBe("/api/image/settings");
+    // method 違い・query・params は通らない
+    expect(matchDesktopOperation("GET", "/api/asset")).toBeNull();
+    expect(matchDesktopOperation("POST", "/api/image/settings")).toBeNull();
+    expect(resolveDesktopRequest({ operation: "images.asset", query: { a: "1" } })).toBeNull();
+    expect(resolveDesktopRequest({ operation: "images.settings", params: { id: "abcdefghijkl" } })).toBeNull();
+    // 一覧に無い名前は引き続き解決できない
     expect(resolveDesktopRequest({ operation: "ai.asset" })).toBeNull();
     expect(resolveDesktopRequest({ operation: "asset.create" })).toBeNull();
   });
@@ -104,6 +126,28 @@ describe("runtime.request の stream", () => {
     const r = await rt.request(streamOp, "/api/reproduce", {}, { onProgress: (p) => got.push(p) });
     expect(r).toEqual({ ok: true, data: { a: 1 } });
     expect(got).toEqual([{ phase: "thinking", attempt: 1 }, { phase: "writing", attempt: 2, chars: 10 }]);
+  });
+  it("Codex の準備の progress は決まった段階・数値だけ通し、url は auth.openai.com の認可 URL だけ渡す", async () => {
+    const lines = [
+      { phase: "setup", step: "download", done: 10, total: 100, extra: 1 },
+      { phase: "setup", step: "verify", url: "https://auth.openai.com/oauth/authorize?a=1" }, // login 以外の url は落とす
+      { phase: "setup", step: "login", url: "https://auth.openai.com/oauth/authorize?a=1" },
+      { phase: "setup", step: "login", url: "https://evil.example.com/oauth/authorize?a=1" },
+      { phase: "setup", step: "login", url: "https://auth.openai.com/oauth/authorize?a=1 b" },
+      { phase: "setup", step: "download", done: -1, total: "x" },
+      { phase: "setup", step: "delete-everything" },
+    ].map((p) => JSON.stringify({ progress: p }) + "\n");
+    const rt = await ready(() => streamOf([...lines, '{"result":{"ok":1}}\n']));
+    const got: DesktopProgress[] = [];
+    await rt.request(DESKTOP_OPERATIONS["codex.install"], "/api/codex/install", {}, { onProgress: (p) => got.push(p) });
+    expect(got).toEqual([
+      { phase: "setup", step: "download", done: 10, total: 100 },
+      { phase: "setup", step: "verify" },
+      { phase: "setup", step: "login", url: "https://auth.openai.com/oauth/authorize?a=1" },
+      { phase: "setup", step: "login" },
+      { phase: "setup", step: "login" },
+      { phase: "setup", step: "download" },
+    ]);
   });
   it("error 行は error・code・status を渡す（error は500文字まで、型違いの項目は落とす）", async () => {
     let rt = await ready(() => streamOf([`{"error":"${"あ".repeat(600)}","code":"X","status":429}\n`]));

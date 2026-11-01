@@ -1,12 +1,15 @@
 import { createHash } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import type { AssetContext, AssetRequest } from "../src/schema";
 import { httpError } from "./http-error";
+import { ImageGenError } from "./imagegen-error";
+import { appCodexExe, codexExeName, comfyBaseUrl, dataDir, readImageSettings } from "./image-settings";
 import { getSecret, hasSecret } from "./secrets";
+import { PINNED_CODEX, pinnedCodexAsset } from "./codex-pinned";
 
 /** 生成・取り込んだ画像の置き場所（/generated/<ファイル名> で配信。テストでは GENERATED_DIR で差し替える） */
 export const GENERATED_DIR = process.env.GENERATED_DIR || fileURLToPath(new URL("../public/generated/", import.meta.url));
@@ -51,15 +54,18 @@ type ImageProvider = "openai" | "gemini" | "comfyui" | "codex" | "placeholder";
 /** 透過背景を出せないプロバイダ。透過アセットは OpenAI が使えればそちらに回し、無ければ白背景で生成する */
 const NO_TRANSPARENCY: ImageProvider[] = ["gemini", "comfyui"];
 
+const isDesktop = () => process.env.DC_DESIGNER_DESKTOP === "1";
+
 /** キーが揃っていて今すぐ使えるプロバイダ（placeholder は常に使える）。
  *  ComfyUI はキー不要なので常に選択肢に出す（起動していなければ生成時に接続エラーを返す） */
 export function availableProviders(): ImageProvider[] {
   const list: ImageProvider[] = [];
-  const desktop = process.env.DC_DESIGNER_DESKTOP === "1"; // 製品版は画像生成（OpenAI・Gemini）・Codex・ComfyUI を使わない
+  const desktop = isDesktop(); // 製品版は OpenAI（API キー）を使わない。Gemini・ComfyUI・Codex CLI は使える
   if (!desktop && hasSecret("openai", "apiKey")) list.push("openai");
-  if (!desktop && hasSecret("gemini", "apiKey")) list.push("gemini");
-  if (!desktop) list.push("comfyui");
-  if (!desktop && (process.env.IMAGE_PROVIDER || "").toLowerCase() === "codex") list.push("codex");
+  if (hasSecret("gemini", "apiKey")) list.push("gemini");
+  list.push("comfyui");
+  // 製品版は Codex CLI が見つかりサインイン済みなら出す（画面が provider で選ぶ）。開発版は IMAGE_PROVIDER=codex のときだけ
+  if (desktop ? codexStatus().state === "ready" : (process.env.IMAGE_PROVIDER || "").toLowerCase() === "codex") list.push("codex");
   list.push("placeholder");
   return list;
 }
@@ -69,8 +75,10 @@ function provider(requested?: string): ImageProvider {
   const avail = availableProviders();
   const p = (requested || process.env.IMAGE_PROVIDER || "openai").toLowerCase() as ImageProvider;
   if (avail.includes(p)) return p;
-  // 自動フォールバックでは、起動しているか分からない ComfyUI は選ばない（URL を明示したときだけ）
-  return avail.find((a) => a !== "comfyui" || process.env.COMFYUI_URL)!;
+  // 自動フォールバックでは、起動しているか分からない ComfyUI は選ばない（URL を明示したときだけ）。
+  // ChatGPT のプラン枠を使う Codex も、明示的に選ばれたときだけ使う
+  const comfyExplicit = isDesktop() ? !!readImageSettings().comfyuiUrl : !!process.env.COMFYUI_URL;
+  return avail.find((a) => a !== "codex" && (a !== "comfyui" || comfyExplicit))!;
 }
 
 // openai SDK は読み込みに時間がかかる（/mnt/c 上だと 10 秒以上）ので、起動を遅くしないよう使うときに読み込む
@@ -107,10 +115,42 @@ function findImageData(node: unknown): string | undefined {
   }
 }
 
+/** Gemini の失敗の応答（HTTP ステータスと Google のエラー本文）を、利用者が直し方の分かる ImageGenError にする */
+export function geminiHttpError(status: number, err: { message?: string; status?: string; details?: { reason?: string }[] } | undefined): ImageGenError {
+  const detail = `HTTP ${status}${err?.message ? `: ${err.message.slice(0, 300)}` : ""}`;
+  const reasons = (err?.details ?? []).map((d) => d?.reason).filter(Boolean);
+  if (reasons.includes("API_KEY_INVALID") || /api key not valid|api_key_invalid/i.test(err?.message ?? ""))
+    return new ImageGenError("gemini_key_invalid", "Gemini の API キーが正しくありません。設定画面でキーを確かめて、保存し直してください", detail, 400);
+  if (status === 401 || status === 403)
+    return new ImageGenError("gemini_forbidden", "この API キーでは Gemini の画像生成を使えません。Google AI Studio で、キーの権限と Gemini API が有効かを確かめてください", detail, 403);
+  if (status === 429)
+    return new ImageGenError("gemini_quota", "Gemini の利用上限に達しました。しばらく待ってからやり直すか、Google AI Studio で利用枠・お支払いの設定を確かめてください", detail, 429);
+  if (status >= 500)
+    return new ImageGenError("gemini_server", "Gemini 側で一時的なエラーが起きました。少し待ってからやり直してください", detail);
+  return new ImageGenError("gemini_rejected", `Gemini が依頼を受け付けませんでした（HTTP ${status}）。内容を変えてやり直してください`, detail);
+}
+
 async function generateGemini(prompt: string, asset: AssetRequest, signal?: AbortSignal): Promise<Buffer> {
-  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+  const key = await getSecret("gemini", "apiKey");
+  if (!key) throw new ImageGenError("gemini_no_key", "Gemini の API キーが設定されていません。設定画面でキーを保存してください", undefined, 400);
+  let res: Response;
+  try {
+    res = await geminiFetch(key, prompt, asset, signal);
+  } catch (e: any) {
+    if (signal?.aborted) throw e;
+    throw new ImageGenError("gemini_network", "Gemini に接続できませんでした。インターネットに接続できているか確かめてください", e?.cause?.message ?? e?.message);
+  }
+  const json: any = await res.json().catch(() => ({}));
+  if (!res.ok) throw geminiHttpError(res.status, (Array.isArray(json) ? json[0] : json)?.error);
+  const b64 = findImageData(json);
+  if (!b64) throw new ImageGenError("gemini_no_image", "Gemini が画像を返しませんでした。安全フィルタで止められた可能性があります。内容を変えてやり直してください");
+  return Buffer.from(b64, "base64");
+}
+
+function geminiFetch(key: string, prompt: string, asset: AssetRequest, signal?: AbortSignal): Promise<Response> {
+  return fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
     method: "POST",
-    headers: { "x-goog-api-key": (await getSecret("gemini", "apiKey")) ?? "", "Content-Type": "application/json" },
+    headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image",
       input: [{ type: "text", text: prompt }],
@@ -123,15 +163,9 @@ async function generateGemini(prompt: string, asset: AssetRequest, signal?: Abor
       },
     }),
     signal,
+    // 製品版はリダイレクトを自動で追わない（キーを別の送信先へ転送させない）
+    ...(isDesktop() ? { redirect: "error" as const } : {}),
   });
-  const json: any = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const err = (Array.isArray(json) ? json[0] : json)?.error;
-    throw new Error(`Gemini 画像生成 API エラー (${res.status}): ${err?.message ?? JSON.stringify(json).slice(0, 300)}`);
-  }
-  const b64 = findImageData(json);
-  if (!b64) throw new Error("Gemini が画像を返しませんでした（安全フィルタでブロックされた可能性があります）");
-  return Buffer.from(b64, "base64");
 }
 
 // ---------- ComfyUI（ローカル GPU）----------
@@ -141,31 +175,35 @@ async function generateGemini(prompt: string, asset: AssetRequest, signal?: Abor
 const COMFY_SIZES = { square: [1024, 1024], landscape: [1216, 832], portrait: [832, 1216] } as const;
 const COMFY_NEGATIVE = "text, letters, watermark, logo, signature, lowres, blurry, jpeg artifacts, deformed, extra fingers";
 
-const COMFY_BASE = (process.env.COMFYUI_URL || "http://127.0.0.1:8188").replace(/\/?$/, "/");
-const comfyUrl = (path: string) => new URL(path, COMFY_BASE).toString();
+const comfyUrl = (path: string) => new URL(path, comfyBaseUrl()).toString();
 
 async function comfyFetch(path: string, init?: RequestInit, signal?: AbortSignal): Promise<Response> {
   let res: Response;
   try {
-    res = await fetch(comfyUrl(path), { ...init, signal });
+    res = await fetch(comfyUrl(path), { ...init, signal, ...(isDesktop() ? { redirect: "error" as const } : {}) });
   } catch (e: any) {
     // 中断はそのまま上へ（接続エラーの案内に差し替えない）
     if (signal?.aborted) throw e;
-    throw new Error(`ComfyUI に接続できません（${COMFY_BASE} で ComfyUI が起動しているか確認。別の場所なら COMFYUI_URL を設定）: ${e.cause?.message ?? e.message}`);
+    // 接続先はこの PC（ループバック）だけなので、URL は画面に出してよい
+    const where = isDesktop() ? "URL は設定画面で変えられます" : "別の場所なら COMFYUI_URL を設定";
+    throw new ImageGenError("comfyui_unreachable", `ComfyUI に接続できません。${comfyBaseUrl()} で ComfyUI が起動しているか確かめてください（${where}）`, e.cause?.message ?? e.message);
   }
-  if (!res.ok) throw new Error(`ComfyUI エラー (${res.status}) ${path}: ${(await res.text()).slice(0, 500)}`);
+  if (!res.ok) throw new ImageGenError("comfyui_http", `ComfyUI がエラーを返しました（HTTP ${res.status}）。ComfyUI の画面やログを確かめてください`, `${path}: ${(await res.text()).slice(0, 500)}`);
   return res;
 }
 
 /** COMFYUI_CHECKPOINT が未指定なら、ComfyUI に入っている最初のチェックポイントを使う */
 let comfyCheckpoint: Promise<string> | undefined;
+let comfyCheckpointBase = "";
 function resolveCheckpoint(): Promise<string> {
   if (process.env.COMFYUI_CHECKPOINT) return Promise.resolve(process.env.COMFYUI_CHECKPOINT);
+  // 接続先が変わったら取り直す
+  if (comfyCheckpointBase !== comfyBaseUrl()) { comfyCheckpoint = undefined; comfyCheckpointBase = comfyBaseUrl(); }
   comfyCheckpoint ??= comfyFetch("object_info/CheckpointLoaderSimple")
     .then((r) => r.json())
     .then((info: any) => {
       const names: string[] = info?.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0] ?? [];
-      if (!names.length) throw new Error("ComfyUI の models/checkpoints にモデルがありません（COMFYUI_CHECKPOINT も未指定）");
+      if (!names.length) throw new ImageGenError("comfyui_no_model", "ComfyUI にモデルが入っていません。models/checkpoints にチェックポイントを入れて、ComfyUI を再起動してください", "COMFYUI_CHECKPOINT も未指定");
       return names[0];
     })
     .catch((e) => { comfyCheckpoint = undefined; throw e; });
@@ -231,7 +269,7 @@ async function generateComfyUI(prompt: string, asset: AssetRequest, signal?: Abo
     body: JSON.stringify({ prompt: fillPlaceholders(template, vars), client_id: "dc-designer" }),
   }, signal).then((r) => r.json());
   const id: string = queued.prompt_id;
-  if (!id) throw new Error(`ComfyUI がジョブを受け付けませんでした: ${JSON.stringify(queued).slice(0, 300)}`);
+  if (!id) throw new ImageGenError("comfyui_rejected", "ComfyUI がジョブを受け付けませんでした。ワークフローとモデルを確かめてください", JSON.stringify(queued).slice(0, 300));
 
   // 完了は /history/{id} に出てくるまでポーリングで待つ（WebSocket を張らずに済ませる）
   const deadline = Date.now() + Number(process.env.COMFYUI_TIMEOUT_MS || 600_000);
@@ -242,18 +280,18 @@ async function generateComfyUI(prompt: string, asset: AssetRequest, signal?: Abo
     if (!entry) continue;
     if (entry.status?.status_str === "error") {
       const msg = entry.status.messages?.find((m: any) => m[0] === "execution_error")?.[1];
-      throw new Error(`ComfyUI の実行に失敗しました: ${msg?.exception_message ?? "不明なエラー"}`);
+      throw new ImageGenError("comfyui_failed", "ComfyUI の実行中にエラーが起きました。ComfyUI の画面やログを確かめてください", msg?.exception_message ?? "不明なエラー");
     }
     const images = Object.values<any>(entry.outputs ?? {}).flatMap((o) => o.images ?? []);
     const img = images.find((i: any) => i.type === "output") ?? images[0];
     if (!img) {
-      if (entry.status?.completed) throw new Error("ComfyUI のワークフローが画像を出力しませんでした（SaveImage ノードがあるか確認）");
+      if (entry.status?.completed) throw new ImageGenError("comfyui_no_output", "ComfyUI のワークフローが画像を出力しませんでした。SaveImage ノードがあるか確かめてください");
       continue;
     }
     const q = new URLSearchParams({ filename: img.filename, subfolder: img.subfolder ?? "", type: img.type ?? "output" });
     return Buffer.from(await (await comfyFetch(`view?${q}`, undefined, signal)).arrayBuffer());
   }
-  throw new Error("ComfyUI の画像生成がタイムアウトしました（COMFYUI_TIMEOUT_MS）");
+  throw new ImageGenError("comfyui_timeout", "ComfyUI の生成が時間内に終わりませんでした。ComfyUI が動いているか確かめて、やり直してください", "COMFYUI_TIMEOUT_MS");
 }
 
 // ---------- Codex CLI（ChatGPT プラン枠）----------
@@ -274,12 +312,29 @@ function listPngs(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-export type CodexErrorCode = "timeout" | "deadline" | "canceled" | "spawn" | "exit" | "auth" | "unavailable" | "no_image";
+export type CodexErrorCode = "timeout" | "deadline" | "canceled" | "spawn" | "not_found" | "exit" | "auth" | "quota" | "unavailable" | "no_image";
 
-/** Codex 経由の生成で起きた失敗。code で原因を区別できる */
-export class CodexError extends Error {
-  constructor(public code: CodexErrorCode, message: string) {
-    super(message);
+/** 製品版の画面に出す文言（stderr などパスを含みうるものは入れない）と HTTP ステータス */
+const CODEX_USER_MESSAGES: Record<CodexErrorCode, [string, number]> = {
+  timeout: ["Codex での生成が時間内に終わりませんでした。もう一度試してください", 504],
+  deadline: ["画像生成が時間内に終わりませんでした（順番待ちを含む）。もう一度試してください", 504],
+  canceled: ["画像生成をキャンセルしました", 499],
+  spawn: ["Codex CLI を起動できませんでした。設定画面で Codex の状態を確かめ、必要なら入れ直してください", 502],
+  not_found: ["Codex CLI が見つかりません。設定画面の「Codex CLI を入れる」から入れてください", 400],
+  exit: ["Codex CLI が途中で失敗しました。少し待ってからもう一度試してください", 502],
+  auth: ["Codex にサインインしていません。設定画面の「Codex にサインイン」からサインインしてください", 401],
+  quota: ["ChatGPT プランの利用上限に達しました。時間をおいてから試してください", 429],
+  unavailable: ["Codex の画像生成ツールが使えませんでした。設定画面から Codex CLI を入れ直してください", 502],
+  no_image: ["Codex が画像を作りませんでした。内容を変えてもう一度試してください", 502],
+};
+
+/** Codex 経由の生成で起きた失敗。code で原因を区別できる。message は詳細（開発版・ログ用）、userMessage は製品版の画面用 */
+export class CodexError extends ImageGenError {
+  declare code: CodexErrorCode;
+  constructor(code: CodexErrorCode, message: string) {
+    const [user, status] = CODEX_USER_MESSAGES[code];
+    super(code, user, undefined, status);
+    this.message = message;
     this.name = "CodexError";
   }
 }
@@ -295,7 +350,7 @@ function keepTail(buf: Buffer, chunk: Buffer): Buffer {
 const envMs = (name: string, fallback: number) => Number(process.env[name]) || fallback;
 
 /** 子プロセス（POSIX ではプロセスグループごと）に終了シグナルを送る。例外は外に出さない */
-function killTree(child: ChildProcess, sig: NodeJS.Signals): void {
+export function killTree(child: ChildProcess, sig: NodeJS.Signals): void {
   try {
     if (!child.pid) {
       child.kill(sig);
@@ -336,15 +391,37 @@ function abortedError(reason: unknown): CodexError {
 
 /** codex exec を 1 回実行し、成功時は stdout の末尾を返す。止めるときは子プロセスを止めてから確定させる */
 export function runCodex(prompt: string, signal?: AbortSignal): Promise<string> {
+  return execCodex({
+    bin: process.env.CODEX_BIN || "codex",
+    args: ["exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only", prompt],
+    spawnOptions: { cwd: tmpdir() },
+    spawnHint: "CODEX_BIN を確認",
+    signal,
+  });
+}
+
+interface ExecCodexOptions {
+  bin: string;
+  args: string[];
+  /** cwd・env・shell など。stdio と detached は execCodex が決める */
+  spawnOptions: { cwd: string; env?: NodeJS.ProcessEnv; shell?: boolean; windowsHide?: boolean };
+  /** 起動できなかったときの案内（括弧の中に入る） */
+  spawnHint: string;
+  /** stdout を受け取る（末尾 8KB とは別に、先頭の行を読みたいとき） */
+  onStdout?: (chunk: Buffer) => void;
+  signal?: AbortSignal;
+}
+
+function execCodex({ bin, args, spawnOptions, spawnHint, onStdout, signal }: ExecCodexOptions): Promise<string> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(abortedError(signal.reason));
     const timeoutMs = envMs("CODEX_TIMEOUT_MS", 300_000);
     const graceMs = envMs("CODEX_KILL_GRACE_MS", 5000);
     const child = spawn(
-      process.env.CODEX_BIN || "codex",
-      ["exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only", prompt],
+      bin,
+      args,
       // POSIX ではプロセスグループを分けて、子孫ごと止められるようにする
-      { cwd: tmpdir(), stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" },
+      { ...spawnOptions, stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" },
     );
     if (child.pid && process.platform !== "win32") {
       hookExit();
@@ -353,7 +430,7 @@ export function runCodex(prompt: string, signal?: AbortSignal): Promise<string> 
     }
     let out: Buffer = Buffer.alloc(0);
     let err: Buffer = Buffer.alloc(0);
-    child.stdout.on("data", (d: Buffer) => (out = keepTail(out, d)));
+    child.stdout.on("data", (d: Buffer) => { out = keepTail(out, d); onStdout?.(d); });
     child.stderr.on("data", (d: Buffer) => (err = keepTail(err, d)));
 
     let settled = false;
@@ -387,13 +464,15 @@ export function runCodex(prompt: string, signal?: AbortSignal): Promise<string> 
     );
     signal?.addEventListener("abort", onAbort, { once: true });
     child.on("error", (e) =>
-      finish(() => reject(stopErr ?? new CodexError("spawn", `codex を起動できません（CODEX_BIN を確認）: ${e.message}`))),
+      finish(() => reject(stopErr ?? new CodexError("spawn", `codex を起動できません（${spawnHint}）: ${e.message}`))),
     );
     child.on("close", (code) =>
       finish(() => {
         const errText = err.toString();
         if (stopErr) return reject(stopErr);
         if (code === 0) return resolve(out.toString());
+        if (/usage limit|rate limit|too many requests|\b429\b/i.test(`${out}${errText}`))
+          return reject(new CodexError("quota", `ChatGPT プランの利用上限に達しました: ${errText.slice(-300)}`));
         if (/not logged in|codex login|unauthorized|\b401\b/i.test(`${out}${errText}`))
           return reject(new CodexError("auth", `Codex CLI にサインインしていません（\`codex login\` を実行してください）: ${errText.slice(-300)}`));
         reject(new CodexError("exit", `codex exec が失敗しました (exit ${code}): ${errText.slice(-500)}`));
@@ -402,10 +481,189 @@ export function runCodex(prompt: string, signal?: AbortSignal): Promise<string> 
   });
 }
 
+// ---------- Codex CLI（製品版）----------
+// 利用者の ~/.codex には触れず、アプリ専用の CODEX_HOME に auth.json だけを写して実行する。
+// 画像は stdout の thread.started の thread_id のフォルダ（generated_images/<thread_id>）にある PNG だけを採用する
+
+export const isFile = (p: string) => { try { return statSync(p).isFile(); } catch { return false; } };
+
+/** dir の下を深さ maxDepth まで探して、名前が name のファイルを返す */
+function findFile(dir: string, name: string, maxDepth: number): string | undefined {
+  let entries;
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return undefined; }
+  for (const e of entries) if (e.isFile() && e.name.toLowerCase() === name) return join(dir, e.name);
+  if (maxDepth <= 0) return undefined;
+  for (const e of entries) {
+    if (!e.isDirectory()) continue;
+    const found = findFile(join(dir, e.name), name, maxDepth - 1);
+    if (found) return found;
+  }
+}
+
+/** Codex の見つかった場所の種類：設定で指定／PATH・npm（利用者が入れた CLI）／Codex デスクトップアプリ同梱／このアプリが入れたもの */
+export type CodexSource = "configured" | "path" | "npm" | "codex-app" | "app";
+
+/** 探索に時間のかかる場所（npm のグローバル配置・Codex アプリ）の結果を覚えておく。見つけた場所が消えたら探し直す */
+const SCAN_TTL_MS = 30_000;
+const scanCache = new Map<string, { at: number; found?: string }>();
+function cachedScan(key: string, scan: () => string | undefined): string | undefined {
+  const hit = scanCache.get(key);
+  if (hit && (hit.found ? isFile(hit.found) : Date.now() - hit.at < SCAN_TTL_MS)) return hit.found;
+  const found = scan();
+  scanCache.set(key, { at: Date.now(), found });
+  return found;
+}
+
+/**
+ * Codex の実行ファイルと見つけた場所。設定のパスがあればそれだけを見る。無ければ自動検出：
+ * PATH → npm のグローバル配置（Windows）→ Codex デスクトップアプリ同梱（Windows）→ このアプリが入れたもの
+ */
+export function locateCodexExe(): { path: string; source: CodexSource } | undefined {
+  const configured = readImageSettings().codexPath;
+  if (configured) return isFile(configured) ? { path: configured, source: "configured" } : undefined;
+  const name = codexExeName();
+  for (const d of (process.env.PATH || "").split(delimiter)) {
+    if (d && isFile(join(d, name))) return { path: join(d, name), source: "path" };
+  }
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA;
+    const localAppData = process.env.LOCALAPPDATA;
+    // npm i -g @openai/codex の配置。.cmd シムや PowerShell は使わず、実体の codex.exe を探す
+    const npm = appData && cachedScan(`npm:${appData}`, () => findFile(join(appData, "npm", "node_modules", "@openai", "codex"), name, 6));
+    if (npm) return { path: npm, source: "npm" };
+    // Codex デスクトップアプリ同梱（%LOCALAPPDATA%\OpenAI\Codex\bin\<版>\codex.exe）
+    const codexApp = localAppData && cachedScan(`codex-app:${localAppData}`, () => findFile(join(localAppData, "OpenAI", "Codex", "bin"), name, 3));
+    if (codexApp) return { path: codexApp, source: "codex-app" };
+  }
+  const own = appCodexExe();
+  if (own && isFile(own)) return { path: own, source: "app" };
+}
+
+/** Codex の実行ファイル（locateCodexExe のパスだけ） */
+export function resolveCodexExe(): string | undefined {
+  return locateCodexExe()?.path;
+}
+
+/** 利用者の Codex のサインイン情報（auth.json）の場所 */
+export const userAuthFile = () => join(process.env.CODEX_HOME || join(homedir(), ".codex"), "auth.json");
+
+export type CodexStatus = { state: "ready" | "not_found" | "signed_out"; path?: string; source?: CodexSource; canInstall: boolean; installVersion: string };
+
+/**
+ * 製品版の Codex の状態。実行ファイルが無ければ not_found、サインイン情報が無ければ signed_out。
+ * canInstall はこの PC にアプリから入れられるか（Windows の x64 / arm64）、installVersion は入れる版
+ */
+export function codexStatus(): CodexStatus {
+  const install = { canInstall: !!pinnedCodexAsset(), installVersion: PINNED_CODEX.version };
+  const found = locateCodexExe();
+  if (!found) return { state: "not_found", ...install };
+  return { state: isFile(userAuthFile()) ? "ready" : "signed_out", path: found.path, source: found.source, ...install };
+}
+
+/** アプリ専用の CODEX_HOME（と空の作業フォルダ） */
+function appCodexDirs(): { home: string; work: string } {
+  const userRoot = process.env.DC_DESIGNER_USER_ROOT;
+  const home = userRoot ? join(userRoot, "cache", "codex-home") : join(dirname(dataDir()), "codex-home");
+  return { home, work: `${home}-work` };
+}
+
+/** thread.started の行から thread_id を取り出す（stdout の先頭から数行以内にある） */
+function threadIdFinder() {
+  let buf = "";
+  let id: string | undefined;
+  return {
+    feed(chunk: Buffer) {
+      if (id || buf.length > 256 * 1024) return;
+      buf += chunk.toString();
+      let nl: number;
+      while (!id && (nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        try {
+          const j = JSON.parse(line);
+          if (j?.type === "thread.started" && typeof j.thread_id === "string") id = j.thread_id;
+        } catch { /* JSON でない行は読み飛ばす */ }
+      }
+    },
+    get id() { return id; },
+  };
+}
+
+/** 専用側の auth.json が元と違う（トークン更新など）なら、利用者の auth.json へ書き戻す。利用者側が実行中に変わっていたら触らない */
+function writeBackAuth(appAuth: string, userAuth: string, original: Buffer): void {
+  try {
+    if (!isFile(appAuth)) return;
+    const now = readFileSync(appAuth);
+    if (now.equals(original) || !now.length) return;
+    JSON.parse(now.toString()); // 壊れた途中書きのファイルは戻さない
+    if (!isFile(userAuth) || !readFileSync(userAuth).equals(original)) return;
+    const tmp = `${userAuth}.${process.pid}.tmp`;
+    writeFileSync(tmp, now, { mode: 0o600 });
+    renameSync(tmp, userAuth);
+  } catch { /* 書き戻せなくても生成結果は返す（中身はログに出さない） */ }
+}
+
+export const CODEX_ENV_KEYS = ["PATH", "SystemRoot", "WINDIR", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "HOME"];
+
+/** 製品版：専用 CODEX_HOME で codex exec を 1 回実行し、生成された PNG を返す */
+async function runCodexDesktop(prompt: string, signal: AbortSignal, log: (msg: string) => void): Promise<Buffer> {
+  const exe = resolveCodexExe();
+  if (!exe) throw new CodexError("not_found", "Codex CLI が見つかりません（設定で Codex CLI を入れるか、codex の場所を指定してください）");
+  const userAuth = userAuthFile();
+  if (!isFile(userAuth)) throw new CodexError("auth", "Codex CLI にサインインしていません（`codex login` を実行してください）");
+
+  const { home, work } = appCodexDirs();
+  mkdirSync(home, { recursive: true, mode: 0o700 });
+  mkdirSync(work, { recursive: true, mode: 0o700 });
+  const appAuth = join(home, "auth.json");
+  const genDir = join(home, "generated_images");
+  const original = readFileSync(userAuth);
+  const env: NodeJS.ProcessEnv = {};
+  for (const k of CODEX_ENV_KEYS) if (process.env[k] !== undefined) env[k] = process.env[k];
+  env.CODEX_HOME = home;
+  const thread = threadIdFinder();
+  try {
+    rmSync(genDir, { recursive: true, force: true });
+    writeFileSync(appAuth, original, { mode: 0o600 });
+    const startedAt = Date.now();
+    const stdout = await execCodex({
+      bin: exe,
+      args: ["exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only", "--json", prompt],
+      spawnOptions: { cwd: work, env, shell: false, windowsHide: true },
+      spawnHint: "設定で Codex の場所を確認",
+      onStdout: (c) => thread.feed(c),
+      signal,
+    });
+    log(`終了 (${Date.now() - startedAt} ms)`);
+    const id = thread.id;
+    if (id && /^[A-Za-z0-9_-]{1,100}$/.test(id)) {
+      const pngs = listPngs(join(genDir, id)).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
+      if (pngs.length) return readFileSync(pngs[0]);
+    }
+    if (stdout.includes("IMAGE_GEN_UNAVAILABLE"))
+      throw new CodexError("unavailable", "Codex の image_gen ツールが使えませんでした（Codex CLI を最新版に更新してください）");
+    throw new CodexError("no_image", "Codex の image_gen で画像が生成されませんでした");
+  } finally {
+    // 成功・失敗・中断のどれでも：トークン更新を書き戻し、専用側の auth.json と生成物を消す
+    writeBackAuth(appAuth, userAuth, original);
+    rmSync(appAuth, { force: true });
+    rmSync(genDir, { recursive: true, force: true });
+  }
+}
+
 // 新規ファイルの検出が混ざらないよう 1 枚ずつ直列に実行する。
 // 前のジョブは子プロセスが止まるまで次を開始しない（止まらない子が後続を塞ぐ問題は runCodex 側の停止処理で防ぐ）
 let codexQueue: Promise<unknown> = Promise.resolve();
 let codexJobSeq = 0;
+
+function codexPrompt(prompt: string, asset: AssetRequest): string {
+  return [
+    "Call the built-in image_gen tool exactly once with the prompt below, then stop.",
+    "Do not create, draw or edit any files yourself. If image_gen is unavailable, reply IMAGE_GEN_UNAVAILABLE and stop.",
+    `Aspect ratio: ${ASPECT_HINT[asset.aspect ?? "square"]}.`,
+    `Prompt: ${prompt}`,
+  ].join("\n");
+}
 
 function generateCodex(prompt: string, asset: AssetRequest, signal?: AbortSignal): Promise<Buffer> {
   const id = ++codexJobSeq;
@@ -419,17 +677,10 @@ function generateCodex(prompt: string, asset: AssetRequest, signal?: AbortSignal
     // キュー待ちの間に期限切れ・キャンセルされていたら、CLI を起動せずに抜ける
     if (sig.aborted) throw abortedError(sig.reason);
     log("起動");
+    if (isDesktop()) return runCodexDesktop(codexPrompt(prompt, asset), sig, log);
     const before = new Set(listPngs(CODEX_GEN_DIR));
     const startedAt = Date.now();
-    const stdout = await runCodex(
-      [
-        "Call the built-in image_gen tool exactly once with the prompt below, then stop.",
-        "Do not create, draw or edit any files yourself. If image_gen is unavailable, reply IMAGE_GEN_UNAVAILABLE and stop.",
-        `Aspect ratio: ${ASPECT_HINT[asset.aspect ?? "square"]}.`,
-        `Prompt: ${prompt}`,
-      ].join("\n"),
-      sig,
-    );
+    const stdout = await runCodex(codexPrompt(prompt, asset), sig);
     log(`終了 (${Date.now() - startedAt} ms)`);
     const created = listPngs(CODEX_GEN_DIR)
       .filter((p) => !before.has(p) && statSync(p).mtimeMs >= startedAt - 1000)
