@@ -88,10 +88,11 @@
   --gutter: 16px;
   --container: 1120px;
   --radius-sm: 4px;
-  --radius-button: 8px;
+  --radius-button: 999px; /* ボタン・メニューは丸い形（ポップ体に合わせる：UI-D-52） */
   --radius-card: 12px;
   --radius-pill: 999px;
   --border-width: 1px;
+  --border-width-control: 2px; /* ボタン・メニューの縁（UI-D-52） */
   --focus-ring-width: 3px;
   --focus-ring-offset: 2px;
 

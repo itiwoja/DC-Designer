@@ -6,6 +6,7 @@ import Shape from "../components/Shape.astro";
 import DownloadButton from "../components/DownloadButton.astro";
 import FeatureCard from "../components/FeatureCard.astro";
 import HeroParticles from "../components/HeroParticles.astro";
+import Icon from "../components/Icon.astro";
 import Reveal from "../components/Reveal.astro";
 import Requirements from "../components/Requirements.astro";
 import { getCollection, getEntry } from "astro:content";
@@ -44,7 +45,7 @@ const titleLines = (catchCopy ?? "").split(/(?<=、|から)/).filter(Boolean);
         <div class="hero__text" data-hero-text>
           <h1 id="hero-title">{titleLines.map((line) => <span class="hero__line">{line}</span>)}</h1>
           {rest.length > 0 && <p class="hero__lead">{rest.join(" ")}</p>}
-          <DownloadButton large variant="hero"><a class="btn btn--large btn--ghost" href="#features">機能を見る</a></DownloadButton>
+          <DownloadButton large variant="hero"><a class="btn btn--large btn--ghost btn--icon btn--icon-down" href="#features"><Icon name="arrow-down" />機能を見る</a></DownloadButton>
         </div>
       </section>
     </div>

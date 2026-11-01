@@ -23,6 +23,10 @@
 .hero__lead { max-width: 34em; margin: 0 auto var(--space-5); word-break: auto-phrase; text-wrap: pretty; }
 .hero__actions { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-3); }
 .hero__note { margin: var(--space-3) 0 0; color: var(--color-text-muted); font-size: var(--text-sm); }
+/* 狭い画面では大ボタンの文字を一段下げ、「Windows 版をダウンロード」を 1 行に保つ */
+@media (max-width: 767px) {
+  .hero__actions .btn--large { font-size: var(--text-base); padding-inline: var(--space-5); }
+}
 @media (min-width: 768px) {
   .hero__actions { flex-direction: row; justify-content: center; gap: var(--space-4); }
 }

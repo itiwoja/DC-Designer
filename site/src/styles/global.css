@@ -118,27 +118,32 @@ code { font-family: var(--font-mono); font-size: 0.92em; }
 
 /* CMP-003 ボタン。MOT-001：色は --dur-hover・--ease-out、位置は --dur-hover・--ease-bounce */
 .btn {
-  display: inline-flex; align-items: center; justify-content: center;
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
   min-height: 48px; padding-inline: var(--space-5);
   background: var(--btn-bg); color: var(--btn-fg);
-  border: 0; border-radius: var(--btn-radius);
+  /* 縁は全種 2px（主は地と同じ色）。主とゴーストを並べても大きさがそろう */
+  border: var(--border-width-control) solid var(--btn-bg); border-radius: var(--btn-radius);
   font: inherit; font-family: var(--font-display); font-size: var(--text-base); font-weight: var(--weight-display); letter-spacing: inherit; line-height: 1.4;
   text-decoration: none; text-align: center; cursor: pointer;
   /* 単語の途中で折り返さない（狭い画面では空白の所で 2 行になる） */
   overflow-wrap: normal; word-break: keep-all; padding-block: var(--space-2);
   transition: background-color var(--dur-hover) var(--ease-out), transform var(--dur-hover) var(--ease-bounce);
 }
-.btn:hover { background: var(--btn-bg-hover); color: var(--btn-fg); transform: translateY(-2px); }
+.btn:hover { background: var(--btn-bg-hover); border-color: var(--btn-bg-hover); color: var(--btn-fg); transform: translateY(-2px); }
 .btn:active { transform: translateY(0); }
 .btn--large { min-height: 56px; padding-inline: var(--space-6); font-size: var(--text-lg); }
 .btn--small { min-height: 44px; padding-inline: var(--space-4); font-size: var(--text-sm); }
-.btn--ghost { background: transparent; color: var(--color-action); box-shadow: none; border: var(--border-width) solid var(--color-action); }
-.btn--ghost:hover { background: var(--color-tint-square); color: var(--color-action); }
-.btn--on-band { background: var(--color-surface); color: var(--color-action); }
-.btn--on-band:hover { background: var(--color-tint-square); color: var(--color-action); }
+/* ゴースト：白い地（粒が透けない）＋群青の 2px の縁 */
+.btn--ghost { background: var(--color-surface); color: var(--color-action); border-color: var(--color-action); }
+.btn--ghost:hover { background: var(--color-tint-square); border-color: var(--color-action); color: var(--color-action); }
+.btn--on-band { background: var(--color-surface); border-color: var(--color-surface); color: var(--color-action); }
+.btn--on-band:hover { background: var(--color-tint-square); border-color: var(--color-tint-square); color: var(--color-action); }
+/* アイコン付き：文字の左に 20px のアイコン。hover でアイコンが矢印の向きへ 2px 動く */
+.btn__icon { flex: none; width: 1.15em; height: 1.15em; margin-left: calc(-1 * var(--space-1)); transition: transform var(--dur-hover) var(--ease-bounce); }
+.btn--icon:hover .btn__icon { transform: translateY(2px); }
 @media (prefers-reduced-motion: reduce) {
-  .btn { transition: background-color var(--dur-hover) var(--ease-out); }
-  .btn:hover, .btn:active { transform: none; }
+  .btn, .btn__icon { transition: background-color var(--dur-hover) var(--ease-out); }
+  .btn:hover, .btn:active, .btn--icon:hover .btn__icon { transform: none; }
 }
 
 /* CMP-009 パネル・表 */

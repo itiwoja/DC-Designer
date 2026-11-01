@@ -1,6 +1,7 @@
 ---
 import Base from "../../layouts/Base.astro";
 import Shape from "../../components/Shape.astro";
+import Icon from "../../components/Icon.astro";
 import CopyButton from "../../components/CopyButton.astro";
 import Requirements from "../../components/Requirements.astro";
 import { getReleaseData } from "../../lib/releases";
@@ -25,7 +26,7 @@ const command = `Get-FileHash "$env:USERPROFILE\\Downloads\\${fileName}" -Algori
         ? <p><strong>SignPath Foundation の署名つき</strong></p>
         : <p class="notice"><Shape shape="triangle" size="mark" />この版はコード署名をしていません</p>}
       <div class="actions">
-        <a class="btn btn--large" href={latest.installer.browserDownloadUrl}>ダウンロード</a>
+        <a class="btn btn--large btn--icon" href={latest.installer.browserDownloadUrl}><Icon name="download" />ダウンロード</a>
         <a href={RELEASES_URL}>すべての版（GitHub Releases）→</a>
       </div>
     </section>
