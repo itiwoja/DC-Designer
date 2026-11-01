@@ -45,27 +45,31 @@ flowchart TD
 ### CMP-002 ヘッダーとメニュー
 | 項目 | 仕様 |
 |---|---|
-| 地・縁 | `--color-surface`、下に 1px `--color-border` |
-| 高さ | 64px（今は 56px：UI-D-34） |
-| ロゴ | アプリのアイコン 28px＋「DC-Designer」（`--font-display`・`--weight-display`） |
+| 地・縁 | `--color-surface`、下に `--header-stripe`（4px）の● 朱・▲ 山吹・■ 群青の 3 等分の帯（UI-D-52） |
+| 位置 | 画面の上に貼り付く（`position: sticky`）。`#features` などへ飛んだとき隠れないよう `scroll-padding-top` を取る |
+| 高さ | `--header-height` 64px（UI-D-34） |
+| ロゴ | アプリのアイコン 32px＋「DC-Designer」（`--font-display`・`--text-lg`。768px 未満は `--text-sm`） |
 | ナビ | 768px 以上：横並び（機能・更新履歴・GitHub）。未満：「メニュー」ボタン（`details`）に畳む |
-| メニューボタン | 縁 `--color-border-control`・角丸 `--radius-button`・高さ 44px |
+| ダウンロード | ゴースト・小・アイコン付き（768px 未満はアイコンなし）。塗りの青はヒーローの主ボタンだけにする（UI-D-52） |
+| メニューボタン | 縁 2px `--color-border-control`・角丸 `--radius-button`・高さ 44px |
 | 現在地 | 今いるページのナビ項目に 3px の群青の下線＋`aria-current="page"` |
 
 | 状態 | 見た目 |
 |---|---|
 | 通常 | 墨の文字 |
-| hover | 下線（太さ 2px） |
+| hover | 768px 以上のナビ：丸い色面 `--color-tint-square`（色だけ・動きなし）。メニューの中：下線（太さ 2px） |
 | focus-visible | `--focus-ring`（`--color-focus`） |
 | 開いた（メニュー） | 白い板が下に出る。縁 `--color-border`・角丸 `--radius-card`・`--z-menu`。動きなし |
 
 ### CMP-003 ボタン
 | バリエーション | 地 | 文字 | 縁 | 使う所 |
 |---|---|---|---|---|
-| 主 | `--btn-bg` | `--btn-fg` | なし | ヒーロー・ダウンロードページ・ヘッダー |
-| 帯の上 | `--color-surface` | `--color-action` | なし | CMP-014 |
-| ゴースト | 透明 | `--color-action` | 1px `--color-action` | コピー・404 の副・ヒーローの「機能を見る」（大。主ボタンの数に数えない：UI-D-48） |
-| 小 | 主と同じ | 同じ | — | ヘッダー（ナビ扱い。主ボタンの数に数えない：UI-D-33） |
+| 主 | `--btn-bg` | `--btn-fg` | 2px（地と同じ色） | ヒーロー・ダウンロードページ |
+| 帯の上 | `--color-surface` | `--color-action` | 2px（地と同じ色） | CMP-014 |
+| ゴースト | `--color-surface`（粒が透けない） | `--color-action` | 2px `--color-action` | コピー・404 の副・ヒーローの「機能を見る」（大。主ボタンの数に数えない：UI-D-48） |
+| 小 | 主かゴーストと同じ | 同じ | 同じ | ヘッダー（ゴースト。ナビ扱い。主ボタンの数に数えない：UI-D-33） |
+
+形は全種 丸（`--radius-button` 999px）。ダウンロードには下向きの矢印＋線のアイコン、「機能を見る」には下向きの矢印を文字の左に置く（`Icon.astro`、`aria-hidden`、色は文字色）。ヒーローの主ボタンの文言は「Windows 版をダウンロード」だけにし、版番号は補足の行の頭に出す（UI-D-52）。768px 未満のヒーローの大ボタンは文字を `--text-base` に下げて 1 行に保つ。
 
 | サイズ | 高さ | 横の余白 | 文字 |
 |---|---|---|---|
@@ -76,7 +80,7 @@ flowchart TD
 | 状態 | 見た目 |
 |---|---|
 | 通常 | 上の表 |
-| hover | 地が `--btn-bg-hover`、2px 上がる（[MOT-001](06_motion.md#mot-001)）。帯の上とゴーストは地が `--color-tint-square`（群青の文字 5.14:1） |
+| hover | 地が `--btn-bg-hover`、2px 上がる（[MOT-001](06_motion.md#mot-001)）。帯の上とゴーストは地が `--color-tint-square`（群青の文字 5.14:1）。アイコンは 2px 下へ動く |
 | active | 上がった分が戻る（0px） |
 | focus-visible | `--focus-ring`（帯の上は `--color-focus-on-band`） |
 | disabled | 使わない（ダウンロード先は常にある） |

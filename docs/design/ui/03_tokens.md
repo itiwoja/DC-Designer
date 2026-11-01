@@ -149,10 +149,13 @@ flowchart LR
 | `--gutter` | 16px（768px 以上で 24px、1024px 以上で 32px） | 画面の左右 |
 | `--container` | 1120px | 中身の最大幅 |
 | `--radius-sm` | 4px | SHA-256・コードの枠 |
-| `--radius-button` | 8px | ボタン・メニュー |
+| `--radius-button` | 999px（丸い形：UI-D-52） | ボタン・メニュー・スキップリンク |
 | `--radius-card` | 12px | カード・パネル・画像の枠 |
 | `--radius-pill` | 999px | バッジ |
-| `--border-width` | 1px | すべての縁 |
+| `--border-width` | 1px | 飾り・カード・表の縁 |
+| `--border-width-control` | 2px | ボタン・メニューの縁（UI-D-52） |
+| `--header-height` | 64px | ヘッダーの高さ（UI-D-34） |
+| `--header-stripe` | 4px | ヘッダー下の●▲■ 3 色の帯（UI-D-52） |
 | `--focus-ring` | 3px solid、外側 2px | フォーカス |
 
 ### その他
@@ -177,7 +180,7 @@ flowchart LR
 | `--btn-radius` | `--radius-button` |
 | `--card-bg` / `--card-border` / `--card-radius` | `--color-surface` / `--color-border` / `--radius-card` |
 | `--shape-size-hero` | clamp(48px, 8vw, 120px)（404 の●▲■。トップでは使わなくなった） |
-| `--hero-min-height` | calc(100svh - 64px)。下限 560px（ヒーローの帯の高さ。ヘッダー 64px を除いた画面いっぱい：UI-D-42） |
+| `--hero-min-height` | calc(100svh - `--header-height` - `--header-stripe`)。下限 560px（ヒーローの帯の高さ。ヘッダーと 3 色の帯を除いた画面いっぱい：UI-D-42） |
 | `--hero-form-size` | clamp(120px, 14vw, 200px)（MOT-005 で粒が作る●▲■の 1 つの大きさ。1024px 以上だけ使う。1024px で約 143px） |
 | `--shape-size-mark` | 12px（見出しの小さな印。墨の 1px 縁つき：UI-D-36） |
 
