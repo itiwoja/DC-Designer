@@ -431,6 +431,34 @@ describe("ChatGPT 操作の間だけ資格情報を渡す", () => {
     rmSync(t.dir, { recursive: true, force: true });
   });
 
+  it("readSecrets の操作の間だけ、その資格情報の読み出しだけ通す（書き換え・削除・他の資格情報は拒否）", async () => {
+    const t = setupGated();
+    t.store.set("gemini", "apiKey", "gm-test");
+    const c = await ready(t);
+    const imageOp = DESKTOP_OPERATIONS["images.asset"];
+    get(c, "a", "gemini", "apiKey");
+    expect(lastResult(c)).toMatchObject({ ok: false, code: "SECRET_DENIED" });
+
+    const p = t.rt.request(imageOp, "/api/asset", { asset: {} });
+    get(c, "b", "gemini", "apiKey");
+    expect(lastResult(c)).toEqual({ type: "secret-result", requestId: "b", ok: true, state: "configured", value: "gm-test" });
+    c.emit({ type: "secret-set", requestId: "c", providerId: "gemini", kind: "apiKey", value: "evil" });
+    expect(lastResult(c)).toMatchObject({ requestId: "c", ok: false, code: "SECRET_DENIED" });
+    c.emit({ type: "secret-remove", requestId: "d", providerId: "gemini", kind: "apiKey" });
+    expect(lastResult(c)).toMatchObject({ requestId: "d", ok: false, code: "SECRET_DENIED" });
+    expect(t.store.get("gemini", "apiKey").value).toBe("gm-test");
+    get(c, "e");
+    expect(lastResult(c)).toMatchObject({ requestId: "e", ok: false, code: "SECRET_DENIED" });
+    get(c, "f", "openai", "apiKey");
+    expect(lastResult(c)).toMatchObject({ requestId: "f", ok: false, code: "SECRET_DENIED" });
+
+    t.pending[0].resolve(new Response("{}", { status: 200 }));
+    await p;
+    get(c, "g", "gemini", "apiKey");
+    expect(lastResult(c)).toMatchObject({ requestId: "g", ok: false, code: "SECRET_DENIED" });
+    rmSync(t.dir, { recursive: true, force: true });
+  });
+
   it("ChatGPT を使わない操作では開かない。複数並行は全部終わるまで開いたまま", async () => {
     const t = setupGated();
     const c = await ready(t);

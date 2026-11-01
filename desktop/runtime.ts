@@ -192,6 +192,8 @@ export function createRuntime(deps: RuntimeDeps) {
   let retrying = false;
   /** 実行中の ChatGPT 操作（operations の chatgpt）の件数。0 のとき worker に資格情報を渡さない */
   let chatgptActive = 0;
+  /** 実行中の操作が読み出しを許した資格情報（operations の readSecrets）ごとの件数 */
+  const readActive = new Map<string, number>();
 
   const snapshot = (): RuntimeSnapshot => ({
     state: model.state, appVersion: deps.appVersion, ...(model.error ? { error: model.error } : {}),
@@ -279,8 +281,12 @@ export function createRuntime(deps: RuntimeDeps) {
     if (!deps.secrets || typeof requestId !== "string" || !requestId || requestId.length > 100) return;
     if (typeof providerId !== "string" || typeof kind !== "string") return;
     if (m.type === "secret-set" && typeof m.value !== "string") return;
-    // worker が読み書きしてよいのは ChatGPT の資格情報だけ、かつ ChatGPT を使う操作の実行中だけ（API キーは画面の設定からだけ）
-    if (secretRefOf(providerId, kind) !== CHATGPT_OAUTH || chatgptActive <= 0) {
+    // worker が読み書きしてよいのは ChatGPT の資格情報だけ、かつ ChatGPT を使う操作の実行中だけ。
+    // ほかは、実行中の操作が readSecrets で許したものを読むだけ（API キーの保存・削除は画面の設定からだけ）
+    const ref = secretRefOf(providerId, kind);
+    const chatgptOk = ref === CHATGPT_OAUTH && chatgptActive > 0;
+    const readOk = m.type === "secret-get" && (readActive.get(ref) ?? 0) > 0;
+    if (!chatgptOk && !readOk) {
       if (m.type !== "secret-get" && m.type !== "secret-set" && m.type !== "secret-remove") return;
       if (!inst.exited) inst.child.postMessage({ type: "secret-result", requestId, ok: false, state: "unset", code: "SECRET_DENIED" });
       return;
@@ -409,14 +415,23 @@ export function createRuntime(deps: RuntimeDeps) {
     // 閉じる途中は新しい処理を受け付けないが、閉じる前の確定保存だけは通す（drain はその後に送る）
     const accepting = model.state === "ready" || (model.state === "closing" && op.closeSave === true);
     if (!accepting || !alive(inst) || !inst.port) return { ok: false, error: "APIの準備ができていません", code: "INVALID_STATE" };
-    // ChatGPT を使う操作の間だけ worker に資格情報を渡す。中断では worker の後始末の分だけ少し遅らせて閉じる
-    if (!op.chatgpt) return send(inst, op, p, body, opts);
-    chatgptActive++;
+    // ChatGPT を使う操作・readSecrets のある操作の間だけ worker に資格情報を渡す。中断では worker の後始末の分だけ少し遅らせて閉じる
+    const reads = op.readSecrets ?? [];
+    if (!op.chatgpt && !reads.length) return send(inst, op, p, body, opts);
+    if (op.chatgpt) chatgptActive++;
+    for (const r of reads) readActive.set(r, (readActive.get(r) ?? 0) + 1);
+    const close = () => {
+      if (op.chatgpt) chatgptActive--;
+      for (const r of reads) {
+        const n = (readActive.get(r) ?? 0) - 1;
+        if (n > 0) readActive.set(r, n); else readActive.delete(r);
+      }
+    };
     try {
       return await send(inst, op, p, body, opts);
     } finally {
-      if (signal?.aborted && (deps.chatgptGraceMs ?? CHATGPT_GRACE_MS) > 0) setTimeout(() => { chatgptActive--; }, deps.chatgptGraceMs ?? CHATGPT_GRACE_MS).unref?.();
-      else chatgptActive--;
+      if (signal?.aborted && (deps.chatgptGraceMs ?? CHATGPT_GRACE_MS) > 0) setTimeout(close, deps.chatgptGraceMs ?? CHATGPT_GRACE_MS).unref?.();
+      else close();
     }
   }
 

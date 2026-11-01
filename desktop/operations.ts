@@ -1,7 +1,7 @@
 /**
  * Windows 版（Electron）で画面から呼べる API 操作の静的な一覧（EXE-API-009）。
  * 画面は URL・method を渡さず、ここにある operation 名と params だけを渡す。main は同じ一覧で検証してから
- * 固定の内部 API へ中継する。AI 操作は載せる（送信の確認は worker が送る直前に main へ依頼する）が、画像生成（/api/asset）は載せない（認証はログアウトだけ。サインインは authGate が内部操作で行う）。フォント取得・OS 登録は fontGate が許可・確認してから中継する
+ * 固定の内部 API へ中継する。AI 操作は載せる（送信の確認は worker が送る直前に main へ依頼する）。画像生成（Gemini・ComfyUI・Codex CLI）も載せる（送るのは文字のプロンプトだけ。送信先は worker の外部通信の許可表で絞り、Codex は worker が子プロセスで起動する）。認証はログアウトだけ（サインインは authGate が内部操作で行う）。フォント取得・OS 登録は fontGate が許可・確認してから中継する
  */
 
 export type DesktopMethod = "GET" | "POST" | "PUT" | "DELETE";
@@ -21,6 +21,11 @@ export type DesktopOperation = {
    * route が authStatus / getAccessToken / listModels / askChatGPT / logout / startLogin / completeLogin のどれかを呼ぶものに付ける
    */
   chatgpt?: true;
+  /**
+   * 実行中だけ worker が読み出せる資格情報（secretRef）。読むだけで、書き換え・削除はできない。
+   * API キーの保存・削除は画面の設定（secrets の IPC）からだけ行う
+   */
+  readSecrets?: readonly string[];
   /** 閉じる途中（closing）でも通す、閉じる前の確定保存（新しい処理の受付は止めるが、保存だけは通す） */
   closeSave?: true;
 };
@@ -51,7 +56,7 @@ export const DESKTOP_OPERATIONS = {
   "generated.list": { method: "POST", route: "/api/generated/list", maxBody: 40 * MB },
   "generated.delete": { method: "POST", route: "/api/generated/delete", maxBody: 40 * MB },
 
-  // AI 操作（送信の確認は worker の askChatGPT が送る直前に main へ依頼する）。画像生成（/api/asset）は載せない
+  // AI 操作（送信の確認は worker の askChatGPT が送る直前に main へ依頼する）
   "ai.plan": { method: "POST", route: "/api/plan", maxBody: 40 * MB, chatgpt: true },
   "ai.planInstagram": { method: "POST", route: "/api/plan/instagram", maxBody: 40 * MB, stream: true, chatgpt: true },
   "ai.reproduce": { method: "POST", route: "/api/reproduce", maxBody: 40 * MB, stream: true, chatgpt: true },
@@ -62,6 +67,11 @@ export const DESKTOP_OPERATIONS = {
   "ai.summarize": { method: "POST", route: "/api/chat/summarize", maxBody: 1 * MB, chatgpt: true },
   "fonts.suggest": { method: "POST", route: "/api/fonts/suggest", maxBody: 1 * MB, chatgpt: true },
   "chatgpt.model": { method: "PUT", route: "/api/chatgpt/model", maxBody: 1024, chatgpt: true },
+
+  // 画像生成（Gemini の API キーは secrets、ComfyUI・Codex の設定は images.settings）
+  // Gemini の生成は worker が送る直前に API キーを読む（server/imagegen.ts の generateGemini）
+  "images.asset": { method: "POST", route: "/api/asset", maxBody: 1 * MB, readSecrets: ["gemini/apiKey"] },
+  "images.settings": { method: "PUT", route: "/api/image/settings", maxBody: 1024 },
 
   "auth.logout": { method: "POST", route: "/api/auth/chatgpt/logout", chatgpt: true },
 

@@ -1623,6 +1623,7 @@ export function App() {
           onOpenRouterModel={chooseOpenRouterModel}
           onAIProvider={chooseAIProvider}
           onSignOut={signOut}
+          onStatusChanged={refreshStatus}
         />
         </div>
       </aside>

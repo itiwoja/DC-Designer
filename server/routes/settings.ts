@@ -2,7 +2,8 @@ import type { Router } from "express";
 import { authStatus, USAGE_URL } from "../chatgpt-auth";
 import { chatGPTModel, modelSettings, setChatGPTModel } from "../chatgpt";
 import { aiStatus, setAIProvider } from "../ai";
-import { availableProviders, imageProviderName } from "../imagegen";
+import { availableProviders, codexStatus, imageProviderName } from "../imagegen";
+import { readImageSettings } from "../image-settings";
 import { openRouterModel, setOpenRouterModel } from "../openrouter";
 import { optString } from "../request-parsers";
 import type { RouteHandlers } from "../route-handlers";
@@ -14,7 +15,8 @@ export function registerSettingsRoutes(app: Router, { route }: RouteHandlers) {
     const ready = chatgpt.signedIn && chatgpt.planEnabled;
     const model = ready ? await chatGPTModel().catch(() => undefined) : undefined;
     const settings = ready ? await modelSettings().catch(() => undefined) : undefined;
-    return { imageProvider: imageProviderName(), imageProviders: availableProviders(), chatgpt: { ...chatgpt, model, ...settings, usageUrl: USAGE_URL }, ai: await aiStatus() };
+    const codex = process.env.DC_DESIGNER_DESKTOP === "1" ? { codex: codexStatus() } : {};
+    return { imageProvider: imageProviderName(), imageProviders: availableProviders(), imageSettings: readImageSettings(), ...codex, chatgpt: { ...chatgpt, model, ...settings, usageUrl: USAGE_URL }, ai: await aiStatus() };
   }));
   /** レイアウト生成・AI 修正に使う AI を選ぶ（"chatgpt" | "openrouter"、"" で自動） */
   app.put("/api/ai/provider", route((req) => {

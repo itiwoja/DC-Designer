@@ -63,7 +63,11 @@ export type AIStatus = { provider?: AIProvider; choice: AIProvider | ""; explici
 export type OpenRouterStatus = { model: string; models?: { slug: string; display_name: string }[]; modelsError?: string; modelChoice: string; autoModel: string };
 
 /** ai は再起動前の古い API サーバーからは届かない（そのあいだは従来どおり ChatGPT プランが使えれば使える扱い） */
-export type Status = { imageProvider: string; imageProviders: string[]; chatgpt: ChatGPTStatus; ai?: AIStatus };
+export type Status = { imageProvider: string; imageProviders: string[]; chatgpt: ChatGPTStatus; ai?: AIStatus; imageSettings?: ImageSettings; codex?: CodexStatus };
+/** 画像生成の設定（空文字は既定）。製品版のみ */
+export type ImageSettings = { comfyuiUrl: string; codexPath: string };
+/** Codex CLI の状態（製品版のみ） */
+export type CodexStatus = { state: "ready" | "not_found" | "signed_out"; path?: string };
 
 /** サインイン用タブから元のタブへ結果を渡すチャンネル名 */
 export const AUTH_CHANNEL = "dc-designer:chatgpt-auth";
@@ -94,6 +98,7 @@ export const api = {
   /** レイアウト生成・AI 修正に使うモデルを選ぶ（"" で自動） */
   setChatGPTModel: (model: string) => put<{ model: string }>("/api/chatgpt/model", { model }),
   /** レイアウト生成・AI 修正に使う AI を選ぶ（"" で自動） */
+  setImageSettings: (body: Partial<ImageSettings>) => put<ImageSettings>("/api/image/settings", body),
   setAIProvider: (provider: AIProvider | "") => put<AIStatus>("/api/ai/provider", { provider }),
   /** OpenRouter で使うモデルを選ぶ（"" で自動） */
   setOpenRouterModel: (model: string) => put<{ model: string }>("/api/openrouter/model", { model }),

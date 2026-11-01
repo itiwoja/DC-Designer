@@ -29,8 +29,19 @@ describe("AI 操作の操作表", () => {
     expect(DESKTOP_OPERATIONS["chatgpt.model"]).toMatchObject({ method: "PUT", route: "/api/chatgpt/model", maxBody: 1024 });
     expect(matchDesktopOperation("PUT", "/api/chatgpt/model")).toEqual({ operation: "chatgpt.model" });
   });
-  it("/api/asset は解決できない", () => {
-    expect(matchDesktopOperation("POST", "/api/asset")).toBeNull();
+  it("画像生成の操作（images.asset・images.settings）が約束どおりで、解決できる", () => {
+    expect(DESKTOP_OPERATIONS["images.asset"]).toEqual({ method: "POST", route: "/api/asset", maxBody: 1024 * 1024, readSecrets: ["gemini/apiKey"] });
+    expect(DESKTOP_OPERATIONS["images.settings"]).toEqual({ method: "PUT", route: "/api/image/settings", maxBody: 1024 });
+    expect(matchDesktopOperation("POST", "/api/asset")).toEqual({ operation: "images.asset" });
+    expect(matchDesktopOperation("PUT", "/api/image/settings")).toEqual({ operation: "images.settings" });
+    expect(resolveDesktopRequest({ operation: "images.asset", body: {} })?.path).toBe("/api/asset");
+    expect(resolveDesktopRequest({ operation: "images.settings", body: { comfyuiUrl: "" } })?.path).toBe("/api/image/settings");
+    // method 違い・query・params は通らない
+    expect(matchDesktopOperation("GET", "/api/asset")).toBeNull();
+    expect(matchDesktopOperation("POST", "/api/image/settings")).toBeNull();
+    expect(resolveDesktopRequest({ operation: "images.asset", query: { a: "1" } })).toBeNull();
+    expect(resolveDesktopRequest({ operation: "images.settings", params: { id: "abcdefghijkl" } })).toBeNull();
+    // 一覧に無い名前は引き続き解決できない
     expect(resolveDesktopRequest({ operation: "ai.asset" })).toBeNull();
     expect(resolveDesktopRequest({ operation: "asset.create" })).toBeNull();
   });

@@ -88,7 +88,7 @@ describe("製品版（window.dcDesktop あり）", () => {
 
   it("一覧に無い操作は DESKTOP_UNAVAILABLE", async () => {
     const bridge = desktop({ ok: true, data: {} });
-    await expect(request("POST", "/api/asset", {})).rejects.toMatchObject({ code: "DESKTOP_UNAVAILABLE", status: 404, message: "Windows版ではこの機能は使えません" });
+    await expect(request("POST", "/api/openrouter/key", {})).rejects.toMatchObject({ code: "DESKTOP_UNAVAILABLE", status: 404, message: "Windows版ではこの機能は使えません" });
     expect(bridge.request).not.toHaveBeenCalled();
   });
 
@@ -154,7 +154,7 @@ describe("製品版（window.dcDesktop あり）", () => {
 
   it("postWithProgress も対応付けできない URL は DESKTOP_UNAVAILABLE", async () => {
     const bridge = desktop({ ok: true, data: {} });
-    await expect(postWithProgress("/api/asset", {})).rejects.toMatchObject({ code: "DESKTOP_UNAVAILABLE", status: 404 });
+    await expect(postWithProgress("/api/openrouter/key", {})).rejects.toMatchObject({ code: "DESKTOP_UNAVAILABLE", status: 404 });
     expect(bridge.request).not.toHaveBeenCalled();
   });
 });
