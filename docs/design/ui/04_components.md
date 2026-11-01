@@ -45,8 +45,8 @@ flowchart TD
 ### CMP-002 ヘッダーとメニュー
 | 項目 | 仕様 |
 |---|---|
-| 地・縁 | `--color-surface`、下に `--header-stripe`（4px）の● 朱・▲ 山吹・■ 群青の 3 等分の帯（UI-D-52） |
-| 位置 | 画面の上に貼り付く（`position: sticky`）。`#features` などへ飛んだとき隠れないよう `scroll-padding-top` を取る |
+| 地・縁 | すりガラス：`--header-bg`（白 60%）＋後ろを `--header-blur` 12px ぼかす（`backdrop-filter`。効かないブラウザは白 94%：UI-D-54）。下に `--header-stripe`（4px）の● 朱・▲ 山吹・■ 群青の 3 等分の帯（UI-D-52）。帯は横へゆっくり流れる（[MOT-006](06_motion.md#mot-006)・UI-D-53） |
+| 位置 | 画面の上に貼り付く（`position: sticky`）。トップではヒーローの帯をヘッダーの下まで潜らせ、開いた直後から粒が透けて見える。`#features` などへ飛んだとき隠れないよう `scroll-padding-top` を取る |
 | 高さ | `--header-height` 64px（UI-D-34） |
 | ロゴ | アプリのアイコン 32px＋「DC-Designer」（`--font-display`・`--text-lg`。768px 未満は `--text-sm`） |
 | ナビ | 768px 以上：横並び（機能・更新履歴・GitHub）。未満：「メニュー」ボタン（`details`）に畳む |

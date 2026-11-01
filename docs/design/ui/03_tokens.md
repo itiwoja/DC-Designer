@@ -172,12 +172,16 @@ flowchart LR
 | `--stagger` | 80ms | 並んだものを順に出す間隔 |
 | `--ease-bounce` | cubic-bezier(0.34, 1.56, 0.64, 1) | 位置・大きさの動き（UI-D-16） |
 | `--ease-out` | cubic-bezier(0.2, 0, 0, 1) | 色の変化（UI-D-30） |
+| `--dur-stripe` | 24s | ヘッダー下の 3 色の帯が 1 画面幅流れる時間（MOT-006） |
 
 ### component トークン（代表）
 | component | 参照 |
 |---|---|
 | `--btn-bg` / `--btn-bg-hover` / `--btn-fg` | `--color-action` / `--color-action-hover` / `--color-on-action` |
 | `--btn-radius` | `--radius-button` |
+| `--header-bg` | `--color-surface` を 60% にした半透明（`color-mix`。UI-D-54） |
+| `--header-bg-solid` | `--color-surface` 94%（`backdrop-filter` が効かないとき） |
+| `--header-blur` | 12px（ヘッダーの後ろのぼかし） |
 | `--card-bg` / `--card-border` / `--card-radius` | `--color-surface` / `--color-border` / `--radius-card` |
 | `--shape-size-hero` | clamp(48px, 8vw, 120px)（404 の●▲■。トップでは使わなくなった） |
 | `--hero-min-height` | calc(100svh - `--header-height` - `--header-stripe`)。下限 560px（ヒーローの帯の高さ。ヘッダーと 3 色の帯を除いた画面いっぱい：UI-D-42） |
