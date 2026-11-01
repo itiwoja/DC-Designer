@@ -1,0 +1,17 @@
+---
+// CMP-005 図形の印（●▲■）。docs/design/ui/04_components.md。
+// CSP で style 属性が使えないので、色・大きさは tokens.css のクラスで付ける。飾りなので読み上げない。
+// size: mark＝見出しの小さな印（墨の 1px 縁つき）、hero＝ヒーロー・404 の大きな図形（縁なし）。
+// 位置や動きを足すときは class で追加のクラスを渡す。
+interface Props {
+  shape: "circle" | "triangle" | "square";
+  size?: "mark" | "hero";
+  class?: string;
+}
+const { shape, size = "mark", class: className } = Astro.props;
+---
+<svg class:list={["shape", `shape--${shape}`, `shape--${size}`, className]} viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+  {shape === "circle" && <circle cx="6" cy="6" r="5.5" />}
+  {shape === "triangle" && <polygon points="6,0.6 11.5,11.4 0.5,11.4" />}
+  {shape === "square" && <rect x="0.5" y="0.5" width="11" height="11" />}
+</svg>

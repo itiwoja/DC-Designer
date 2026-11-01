@@ -1,5 +1,7 @@
 ---
 import "../styles/global.css";
+import fontUrl from "../assets/fonts/outfit-latin-wght.woff2?url";
+import Shape from "../components/Shape.astro";
 import { getEntry } from "astro:content";
 import { getImage } from "astro:assets";
 import { REPO_URL } from "../lib/config";
@@ -34,6 +36,10 @@ const csp = [
   "base-uri 'self'",
   "form-action 'none'",
 ].join("; ");
+const isTop = Astro.url.pathname === url("/");
+// 現在地（CMP-002）：同じページのナビ項目だけ aria-current="page"。「機能」(/#features)・外部の GitHub には付けない
+const here = Astro.url.pathname.replace(/\/?$/, "/");
+const isHere = (href: string) => !href.includes("#") && !href.startsWith("http") && href === here;
 const navItems = [
   { href: url("/#features"), label: "機能" },
   { href: url("/changelog/"), label: "更新履歴" },
@@ -65,6 +71,7 @@ const footerItems = [
     <meta property="og:image" content={ogImage} />
     <meta property="og:locale" content="ja_JP" />
     <meta name="twitter:card" content="summary" />
+    {isTop && <link rel="preload" href={fontUrl} as="font" type="font/woff2" crossorigin />}
   </head>
   <body>
     <a class="skip-link" href="#main">本文へ移動</a>
@@ -72,13 +79,13 @@ const footerItems = [
       <div class="container site-header__inner">
         <a class="logo" href={url("/")}><img src={url("/icon.png")} width="28" height="28" alt="" />DC-Designer</a>
         <nav class="nav-wide" aria-label="メイン">
-          {navItems.map((n) => <a href={n.href}>{n.label}</a>)}
+          {navItems.map((n) => <a href={n.href} aria-current={isHere(n.href) ? "page" : undefined}>{n.label}</a>)}
         </nav>
-        <a class="btn btn--small" href={url("/download/")}>ダウンロード</a>
+        <a class="btn btn--small" href={url("/download/")} aria-current={isHere(url("/download/")) ? "page" : undefined}>ダウンロード</a>
         <details class="nav-menu">
           <summary>メニュー</summary>
           <ul>
-            {navItems.map((n) => <li><a href={n.href}>{n.label}</a></li>)}
+            {navItems.map((n) => <li><a href={n.href} aria-current={isHere(n.href) ? "page" : undefined}>{n.label}</a></li>)}
           </ul>
         </details>
       </div>
@@ -88,9 +95,16 @@ const footerItems = [
     </main>
     <footer class="site-footer">
       <div class="container">
-        <ul>
-          {footerItems.map((n) => <li><a href={n.href}>{n.label}</a></li>)}
-        </ul>
+        <div class="site-footer__row">
+          <ul>
+            {footerItems.map((n) => <li><a href={n.href}>{n.label}</a></li>)}
+          </ul>
+          <div class="site-footer__marks">
+            <Shape shape="circle" size="mark" />
+            <Shape shape="triangle" size="mark" />
+            <Shape shape="square" size="mark" />
+          </div>
+        </div>
         <small>DC-Designer は MIT ライセンスのオープンソースです。</small>
       </div>
     </footer>
