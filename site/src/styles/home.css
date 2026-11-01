@@ -1,0 +1,117 @@
+/* トップ（PG-001）専用のスタイル。正本は docs/design/ui/05_screens.md・06_motion.md・07_responsive_a11y.md。
+   色・間隔・動きは tokens.css のトークンだけを使う。動かすのは transform と opacity だけ。 */
+
+/* ---------- ダウンロード部品（DownloadButton） ---------- */
+.download-cta { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-2); }
+.download-cta__note { margin: 0; color: var(--color-text-muted); font-size: var(--text-sm); }
+.download-cta--band { align-items: flex-start; }
+@media (min-width: 768px) {
+  .download-cta { align-items: flex-start; }
+}
+
+/* ---------- SEC-001-01 ヒーロー ---------- */
+.hero { --hero-shape: calc(var(--shape-size-hero) * 0.6); display: grid; gap: var(--space-6); padding-block: var(--space-7); }
+.hero h1 { font-size: var(--text-hero); margin-bottom: var(--space-4); }
+.hero__lead { margin-bottom: var(--space-5); }
+/* 図形の場所は枠の余白（図形の 3/4）で先に確保する。図形は画像の角に 1/4 だけかかり、横にはみ出さない */
+.hero__visual {
+  --hero-pad: calc(var(--hero-shape) * 0.75);
+  position: relative;
+  padding: var(--hero-pad) var(--hero-pad) var(--hero-shape);
+}
+.hero__visual .hero__shape { position: absolute; width: var(--hero-shape); height: var(--hero-shape); }
+.hero__visual .hero__shape--circle { top: 0; right: 0; }
+.hero__visual .hero__shape--triangle { left: 0; bottom: var(--hero-pad); }
+/* 768 未満：■ は画像にかけない（枠の下余白に置く） */
+.hero__visual .hero__shape--square { right: 0; bottom: 0; }
+@media (min-width: 768px) {
+  .hero { --hero-shape: var(--shape-size-hero); }
+  .hero__visual { padding: var(--hero-pad); }
+  .hero__visual .hero__shape--triangle { bottom: 0; }
+}
+@media (min-width: 1024px) {
+  .hero { grid-template-columns: 5fr 6fr; align-items: center; gap: var(--space-7); }
+}
+
+/* MOT-002 読み込み時に 1 回：●→▲→■ の順に --stagger ずつ遅らせる。見出し・ボタンは動かさない */
+@keyframes shape-enter {
+  from { opacity: 0; transform: translateY(16px) scale(0.6); }
+  to { opacity: 1; transform: none; }
+}
+.hero__visual .hero__shape {
+  animation: shape-enter var(--dur-enter) var(--ease-bounce) both;
+}
+.hero__visual .hero__shape--triangle { animation-delay: var(--stagger); }
+.hero__visual .hero__shape--square { animation-delay: calc(var(--stagger) * 2); }
+@media (prefers-reduced-motion: reduce) {
+  .hero__visual .hero__shape { animation: none; }
+}
+
+/* ---------- 共通：セクションの間 ---------- */
+.home-section + .home-section { padding-top: 0; }
+
+/* ---------- CMP-007 機能カード ---------- */
+.feature-list { list-style: none; margin: var(--space-6) 0 0; padding: 0; display: grid; gap: var(--space-5); }
+.feature-card {
+  background: var(--card-bg); border: var(--border-width) solid var(--card-border); border-radius: var(--card-radius);
+  overflow: hidden; min-width: 0;
+}
+.feature-card h3 { margin-bottom: var(--space-2); }
+.feature-card__text p { margin-bottom: var(--space-2); }
+.feature-card__body .notice--weak { margin: var(--space-3) 0 0; }
+
+/* 主要：画像の背面に薄い色面（余白付き）。● 朱 ▲ 山吹 ■ 群青の薄い色 */
+.feature-card--major { display: grid; }
+.feature-card--major .feature-card__media { padding: var(--space-4); background: var(--feature-tint, var(--color-bg)); }
+.feature-card--major .feature-card__media picture,
+.feature-card--major .feature-card__media img { display: block; border-radius: var(--radius-sm); }
+.feature-card--major .feature-card__body { padding: var(--space-5); }
+.feature-card--circle { --feature-tint: var(--color-tint-circle); }
+.feature-card--triangle { --feature-tint: var(--color-tint-triangle); }
+.feature-card--square { --feature-tint: var(--color-tint-square); }
+@media (min-width: 768px) and (max-width: 1023.98px) {
+  .feature-card--major { grid-template-columns: 5fr 6fr; align-items: stretch; }
+  .feature-card--major .feature-card__media { display: flex; align-items: center; }
+}
+@media (min-width: 1024px) {
+  .feature-list--major { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* ほかの機能：白地の帯の上の白カードなので縁 1px 必須。図形なし */
+.home-band-white { background: var(--color-surface); }
+.feature-list--minor { gap: var(--space-4); }
+.feature-card--minor { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: var(--space-3); padding: var(--space-3); align-items: start; }
+.feature-card--minor .feature-card__media { aspect-ratio: 16 / 10; overflow: hidden; border-radius: var(--radius-sm); }
+.feature-card--minor .feature-card__media img { width: 100%; height: 100%; object-fit: cover; }
+.feature-card--minor h3 { font-size: 1.0625rem; }
+.feature-card--minor .feature-card__text { font-size: var(--text-sm); }
+@media (min-width: 768px) {
+  .feature-list--minor { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-5); }
+  .feature-card--minor { grid-template-columns: 160px minmax(0, 1fr); gap: var(--space-4); padding: var(--space-4); }
+}
+
+/* MOT-003 スクロールでカードが出る。隠すのは JS が付けた .is-pending のときだけ */
+.reveal { transition: opacity var(--dur-enter) var(--ease-bounce), transform var(--dur-enter) var(--ease-bounce); }
+.reveal.is-pending { opacity: 0; transform: translateY(16px); }
+.reveal-delay-1 { transition-delay: var(--stagger); }
+.reveal-delay-2 { transition-delay: calc(var(--stagger) * 2); }
+.reveal-delay-3 { transition-delay: calc(var(--stagger) * 3); }
+@media (prefers-reduced-motion: reduce) {
+  .reveal { transition: none; }
+  .reveal.is-pending { opacity: 1; transform: none; }
+}
+
+/* ---------- CMP-015 媒体の枠（デモ） ---------- */
+.media-frame { margin-top: var(--space-6); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-card); overflow: hidden; background: var(--color-surface); }
+.media-frame img, .media-frame video { width: 100%; }
+
+/* ---------- SEC-001-06 群青の帯（CMP-014） ---------- */
+.cta-band { background: var(--color-band); color: var(--color-on-action); padding-block: var(--section-y); }
+.cta-band__inner { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-5); }
+.cta-band__title { margin: 0; font-size: var(--text-2xl); }
+.cta-band .cta-band__shape { width: 56px; height: 56px; }
+@media (min-width: 768px) {
+  .cta-band__inner { flex-direction: row; align-items: center; gap: var(--space-6); }
+  .cta-band__title { flex: 1; }
+  .cta-band .cta-band__shape { width: 72px; height: 72px; }
+}

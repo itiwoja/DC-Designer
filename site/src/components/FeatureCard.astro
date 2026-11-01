@@ -1,22 +1,29 @@
 ---
+// CMP-007 機能カード。major＝主要 3 枚（色面＋図形の印）、minor＝ほかの機能（白地・縁 1px・図形なし）。
+// MOT-003 の対象は data-reveal を持つこのカード。隠す・出す処理は Reveal.astro の script が行う。
 import { render, type CollectionEntry } from "astro:content";
 import Media from "./Media.astro";
+import Shape from "./Shape.astro";
 
 interface Props {
   feature: CollectionEntry<"features">;
+  variant?: "major" | "minor";
+  shape?: "circle" | "triangle" | "square";
+  sizes?: string;
 }
-const { feature } = Astro.props;
+const { feature, variant = "minor", shape, sizes } = Astro.props;
 const { Content } = await render(feature);
+const major = variant === "major";
 ---
-<li class="card">
+<li class:list={["feature-card", `feature-card--${major ? "major" : "minor"}`, major && shape && `feature-card--${shape}`]} data-reveal data-feature={feature.id}>
   {feature.data.mediaId && (
-    <div class="card__media">
-      <Media mediaId={feature.data.mediaId} kind="feature" sizes="(min-width: 768px) 520px, 100vw" />
+    <div class="feature-card__media">
+      <Media mediaId={feature.data.mediaId} kind="feature" sizes={sizes} />
     </div>
   )}
-  <div class="card__body">
-    <h3>{feature.data.title}</h3>
-    <div class="card__text"><Content /></div>
-    {feature.data.exeNote && <p class="card__note">{feature.data.exeNote}</p>}
+  <div class="feature-card__body">
+    <h3 class:list={{ "heading-mark": major && !!shape }}>{major && shape && <Shape shape={shape} />}{feature.data.title}</h3>
+    <div class="feature-card__text"><Content /></div>
+    {feature.data.exeNote && <p class="notice notice--weak">{feature.data.exeNote}</p>}
   </div>
 </li>
