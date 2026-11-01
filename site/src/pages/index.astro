@@ -5,6 +5,7 @@ import Media from "../components/Media.astro";
 import Shape from "../components/Shape.astro";
 import DownloadButton from "../components/DownloadButton.astro";
 import FeatureCard from "../components/FeatureCard.astro";
+import HeroParticles from "../components/HeroParticles.astro";
 import Reveal from "../components/Reveal.astro";
 import Requirements from "../components/Requirements.astro";
 import { getCollection, getEntry } from "astro:content";
@@ -34,7 +35,9 @@ const home = await getEntry("pages", "home");
 const [catchCopy, ...rest] = (home?.body ?? "").trim().split(/\n\s*\n/);
 ---
 <Base title="ポスターを、AIの下書きからレイヤーで仕上げる" description="DC-Designer は、AI が作った下書きをレイヤーで自分の手で仕上げられるポスター作成アプリ（Windows 版）です。無料・MIT ライセンス。">
-  <div class="container">
+  <div class="hero-band">
+    <HeroParticles />
+    <div class="container">
     <section class="hero" aria-labelledby="hero-title">
       <div class="hero__text">
         <h1 id="hero-title">{catchCopy}</h1>
@@ -48,7 +51,10 @@ const [catchCopy, ...rest] = (home?.body ?? "").trim().split(/\n\s*\n/);
         <Shape shape="square" size="hero" class="hero__shape hero__shape--square" />
       </div>
     </section>
+    </div>
+  </div>
 
+  <div class="container">
     <section class="section home-section" id="features" aria-labelledby="features-title">
       <h2 id="features-title" class="heading-mark"><Shape shape="circle" />下書きから仕上げまで</h2>
       <ul class="feature-list feature-list--major">

@@ -1,0 +1,180 @@
+---
+// SEC-001-01 ヒーローの背景パーティクル。● ▲ ■ の小さな粒がマウスの周りに輪になって集まり、離れると家の位置へ戻る。
+// canvas は飾り（aria-hidden・pointer-events: none）。JS が動かないときは何も出ない。ヒーローに 1 つだけ置く。
+---
+<canvas class="hero-particles" aria-hidden="true" data-hero-particles></canvas>
+<script>
+  type Kind = 0 | 1 | 2; // 0 ● / 1 ▲ / 2 ■
+  interface Particle {
+    kind: Kind; hx: number; hy: number; x: number; y: number; vx: number; vy: number;
+    size: number; rot: number; spin: number; alpha: number;
+    phase: number; drift: number; ring: number; ang: number; orbit: number; caught: boolean;
+  }
+
+  const canvas = document.querySelector<HTMLCanvasElement>("[data-hero-particles]");
+  const host = canvas?.parentElement;
+  const ctx = canvas?.getContext("2d");
+  if (canvas && host && ctx) {
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const css = getComputedStyle(document.documentElement);
+    const color = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+    const colors = [
+      color("--color-shape-circle", "#E5432E"),
+      color("--color-shape-triangle", "#F2B21B"),
+      color("--color-shape-square", "#2F55D4"),
+    ];
+
+    const REACH = 240; // マウスがこの距離まで近づくと粒が反応する
+    const STIFFNESS = 38; // ばね（小さいほどカーソルに遅れてついてくる）
+    const DAMPING = 7; // 減衰
+    let w = 0;
+    let h = 0;
+    let dpr = 1;
+    let particles: Particle[] = [];
+    let mx = -9999;
+    let my = -9999;
+    let pointerIn = false;
+    let visible = true;
+    let raf = 0;
+    let last = 0;
+
+    const rand = (a: number, b: number) => a + Math.random() * (b - a);
+
+    const build = () => {
+      const rect = host.getBoundingClientRect();
+      w = rect.width;
+      h = rect.height;
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.max(1, Math.round(w * dpr));
+      canvas.height = Math.max(1, Math.round(h * dpr));
+      // 画面幅に応じて 60〜160 個
+      const count = Math.round(Math.min(160, Math.max(60, w / 7)));
+      particles = Array.from({ length: count }, (_, i) => {
+        const hx = rand(0, w);
+        const hy = rand(0, h);
+        return {
+          kind: (i % 3) as Kind, hx, hy, x: hx, y: hy, vx: 0, vy: 0,
+          size: rand(4, 9), rot: rand(0, Math.PI * 2), spin: rand(-0.6, 0.6), alpha: rand(0.5, 0.85),
+          phase: rand(0, Math.PI * 2), drift: rand(4, 12), ring: rand(60, 120), ang: 0,
+          orbit: rand(1.2, 2.2) * (Math.random() < 0.15 ? -1 : 1), caught: false,
+        };
+      });
+    };
+
+    const drawOne = (p: Particle) => {
+      const s = p.size;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.globalAlpha = p.alpha;
+      ctx.fillStyle = colors[p.kind];
+      ctx.beginPath();
+      if (p.kind === 0) {
+        ctx.arc(0, 0, s / 2, 0, Math.PI * 2);
+      } else if (p.kind === 1) {
+        ctx.moveTo(0, -s * 0.58);
+        ctx.lineTo(s * 0.55, s * 0.42);
+        ctx.lineTo(-s * 0.55, s * 0.42);
+        ctx.closePath();
+      } else {
+        ctx.rect(-s / 2, -s / 2, s, s);
+      }
+      ctx.fill();
+      ctx.restore();
+    };
+
+    const draw = () => {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      particles.forEach(drawOne);
+    };
+
+    const step = (t: number) => {
+      raf = 0;
+      if (!visible || document.hidden) return;
+      const dt = Math.min((t - last) / 1000 || 0.016, 0.033);
+      last = t;
+      const time = t / 1000;
+      for (const p of particles) {
+        // 反応するかは家の位置の近さで決める（輪になった粒が出入りでばたつかない）
+        const near = pointerIn && Math.hypot(p.hx - mx, p.hy - my) < REACH;
+        let tx: number;
+        let ty: number;
+        if (near) {
+          if (!p.caught) {
+            p.caught = true;
+            p.ang = Math.atan2(p.y - my, p.x - mx);
+          }
+          p.ang += p.orbit * dt;
+          tx = mx + Math.cos(p.ang) * p.ring;
+          ty = my + Math.sin(p.ang) * p.ring;
+        } else {
+          p.caught = false;
+          tx = p.hx + Math.cos(time * 0.6 + p.phase) * p.drift;
+          ty = p.hy + Math.sin(time * 0.5 + p.phase * 1.3) * p.drift;
+        }
+        p.vx += ((tx - p.x) * STIFFNESS - p.vx * DAMPING) * dt;
+        p.vy += ((ty - p.y) * STIFFNESS - p.vy * DAMPING) * dt;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        // 輪の中で速く動くほど少し回る
+        const speed = Math.hypot(p.vx, p.vy);
+        p.rot += (p.spin + (near ? speed * 0.01 : 0)) * dt;
+      }
+      draw();
+      raf = requestAnimationFrame(step);
+    };
+
+    const start = () => {
+      if (reduce || raf || !visible || document.hidden) return;
+      last = performance.now();
+      raf = requestAnimationFrame(step);
+    };
+    const stop = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+    };
+
+    build();
+    draw();
+
+    if (!reduce) {
+      const onPointer = (e: PointerEvent) => {
+        const rect = host.getBoundingClientRect();
+        mx = e.clientX - rect.left;
+        my = e.clientY - rect.top;
+        pointerIn = mx >= -REACH && mx <= rect.width + REACH && my >= -REACH && my <= rect.height + REACH;
+      };
+      const onLeave = () => {
+        pointerIn = false;
+      };
+      // canvas は pointer-events: none なので、window で位置だけ読む（スクロールは邪魔しない）
+      window.addEventListener("pointermove", onPointer, { passive: true });
+      window.addEventListener("pointerdown", onPointer, { passive: true });
+      window.addEventListener("pointercancel", onLeave, { passive: true });
+      window.addEventListener("pointerup", (e) => {
+        if (e.pointerType !== "mouse") onLeave();
+      }, { passive: true });
+      document.documentElement.addEventListener("mouseleave", onLeave);
+      window.addEventListener("blur", onLeave);
+      document.addEventListener("visibilitychange", () => (document.hidden ? stop() : start()));
+      if ("IntersectionObserver" in window) {
+        new IntersectionObserver((entries) => {
+          visible = entries.some((e) => e.isIntersecting);
+          if (visible) start();
+          else stop();
+        }).observe(host);
+      }
+      start();
+    }
+
+    if ("ResizeObserver" in window) {
+      new ResizeObserver(() => {
+        // 大きさが変わったら canvas と家の位置を作り直す
+        build();
+        if (reduce) draw();
+        else if (!raf) draw();
+      }).observe(host);
+    }
+  }
+</script>

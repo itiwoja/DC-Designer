@@ -10,6 +10,11 @@
 }
 
 /* ---------- SEC-001-01 ヒーロー ---------- */
+/* 背景のパーティクル（MOT-004）：画面の横幅いっぱいに敷く。重なりは 画像と図形 < 粒 < 文字・ボタン（クリックは通す）。
+   画像の上でも輪が見えるように、粒は画像より前に出す */
+.hero-band { position: relative; overflow: clip; }
+.hero-particles { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+.hero-band .hero__text { position: relative; z-index: 2; }
 .hero { --hero-shape: calc(var(--shape-size-hero) * 0.6); display: grid; gap: var(--space-6); padding-block: var(--space-7); }
 .hero h1 { font-size: var(--text-hero); margin-bottom: var(--space-4); }
 .hero__lead { margin-bottom: var(--space-5); }
