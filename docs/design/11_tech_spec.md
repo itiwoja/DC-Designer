@@ -1,5 +1,5 @@
 # 11. 技術仕様書
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.2（2026-11-01） ／ インプット：[01](01_requirements.md)〜[10](10_diagrams.md)
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.3（2026-11-01） ／ インプット：[01](01_requirements.md)〜[10](10_diagrams.md)
 
 > **3行で**
 > 1. Astro で作る日本語の静的 LP を、同じリポジトリの `site/` に置き、GitHub Actions で `https://itiwoja.github.io/DC-Designer/` に公開する。
@@ -9,10 +9,11 @@
 ## 🧭 判断してほしいこと
 | # | 種類 | 論点 | おすすめ | 詳細 |
 |---|---|---|---|---|
-| SITE-R-01 | リスク | `docs/code-signing-policy.md` のプライバシー節が古い（AI 送信の確認窓は撤去済み） | サイトに載せる前に正本を今の動きに直す（本設計の範囲外） | [12](#12-リスクと対策) |
+| SITE-R-01 | リスク | `docs/code-signing-policy.md` のプライバシー節が古い（AI 送信の確認窓は撤去済み） | サイトに載せる前に正本を今の動きに直し、プライバシー節は `docs/privacy.md` へのリンクだけにする（SITE-D-30。本設計の範囲外） | [12](#12-リスクと対策) |
 | SITE-R-02 | リスク | 未署名で SmartScreen の警告が出て離脱する | 手順と SHA-256 をボタン直下に出す | [04](04_functional_spec.md) |
 | SITE-R-03 | リスク | 機能紹介が exe 版と食い違う（Codex・ComfyUI は exe で無効など） | `exeAvailable` で出し分け、README の変更時に見直す | [08](08_database.md) |
 | SITE-R-04 | リスク | 配信 CI の名前を変えると自動連動が切れる | 名前を変えるときは `site.yml` も直す | [12](#12-リスクと対策) |
+| SITE-R-05 | リスク | 署名を始めるときに `signedSince` を書き忘れると、署名済みの版が「未署名」と出る | 署名つきの最初の版を出す手順に入れる | [12](#12-リスクと対策) |
 
 決定済み（2026-11-01、決定者：ユーザー）：SITE-Q-01 → 署名は文言で判定（SITE-D-25）／SITE-Q-02 → 仮の画像で先に公開（SITE-D-26）／SITE-Q-03 → 解析は入れない（SITE-D-27）／SITE-Q-04 → ポリシーは `docs/` が正本（SITE-D-28）。一覧は [README](README.md#決定済みの論点2026-11-01決定者ユーザー)。
 
@@ -70,8 +71,9 @@ SITE-SCR-001〜006（[06](06_ux_design.md)）。どの画面からも 1 クリ�
 - 入力検証：リリースノートの生 HTML を捨てる・`https:` 以外のリンクを消す（SITE-NFR-007）。content collections はスキーマで検証。
 - 配信の境界：`site/` はアプリと依存を共有せず、アプリの配布物の許可リストに入らない（SITE-D-18、既存 ADR-005）。
 - 秘密情報：サイトに秘密は無い。
-- 個人情報：Cookie・localStorage なし、解析もしない（SITE-D-27）。そのことをプライバシーに書く（SITE-FR-007）。
-- CSP は `<meta>` で（SITE-NFR-006）。
+- 個人情報：Cookie・localStorage なし、解析もしない（SITE-D-27）。そのことと、配信元の GitHub は GitHub の方針でアクセスを記録することをプライバシーに書く（SITE-FR-007）。
+- CSP は `<meta>` で（SITE-NFR-006）。インラインの CSS・JS と Web フォントを使わない（SITE-D-31）。
+- 署名の表示は迷ったら「未署名」と出す（SITE-D-29）。
 
 ### 9. エラーハンドリング・ログ・監視
 ビルド時の失敗はすべてビルドを止め、公開中のサイトを残す（[04 SITE-FR-008](04_functional_spec.md#site-fr-008)・[10 例外](10_diagrams.md#例外ビルド失敗)）。通知は Actions の失敗通知。公開後の監視は持たない。
@@ -81,27 +83,29 @@ SITE-SCR-001〜006（[06](06_ux_design.md)）。どの画面からも 1 クリ�
 |---|---|---|---|
 | GITHUB_TOKEN | Actions が自動で渡す | ○（CI） | SITE-API-001 の認証。手元では任意 |
 | Pages の Source | リポジトリ設定 | ○ | 「GitHub Actions」 |
+| signedSince | SiteConfig（`site/` のファイル） | —（初期は未設定） | 署名を始めた最初の版。未設定なら全版「未署名」（SITE-D-29） |
 
 環境は本番だけ。手元では `site/` で `npm run dev`。
 
 ### 11. テスト方針
 | レベル | 観点 |
 |---|---|
-| 単体 | 安定版の選び方（draft・prerelease の除外）、SHA256SUMS の解析（不一致・形式不正）、署名判定（未署名の文言あり・なし）、リンクの書き換え、無害化（`<script>`・`javascript:` が消える） |
-| ビルド | 媒体 `ready` でファイルが無いと失敗、`placeholder` は仮の画像で通る、content のスキーマ違反で失敗 |
+| 単体 | 安定版の選び方（draft・prerelease の除外）、SHA256SUMS の解析（`*` 付き・空白 2 つの両方、不一致・形式不正）、署名判定（未署名の文言あり・なし × `signedSince` 未設定・より前・以上）、リンクの書き換え、無害化（`<script>`・`javascript:` が消える） |
+| ビルド | 媒体 `ready` でファイルが無いと失敗、`placeholder` は仮の画像で通る、content のスキーマ違反で失敗、出力の HTML にインラインの `<script>`・`<style>`・`style=` が無い（SITE-D-31） |
 | 表示 | 6 画面を 360px・1280px で撮って確認、Lighthouse・axe（SITE-NFR-001・012） |
-| 連動 | `workflow_dispatch` で版情報が最新の Release と一致すること |
+| 連動 | `workflow_dispatch` で版情報が最新の Release と一致すること、ポリシーの最終更新日がそのファイルの最終コミット日と一致すること |
 
 ### 12. リスクと対策
 | # | リスク | 対策 |
 |---|---|---|
-| SITE-R-01 | 署名ポリシーの正本のプライバシー節が「本人が確認した内容を送る」のまま。サイトに載せると今の動き（確認なしで送信）と食い違い、SignPath の審査者にも誤った説明になる | 公開前に `docs/code-signing-policy.md` を直す（アプリ側の文書なので本設計の範囲外）。SITE-ADR-005（承認）によりサイトは正本を読むだけ |
+| SITE-R-01 | 署名ポリシーの正本のプライバシー節が「本人が確認した内容を送る」のまま。サイトに載せると今の動き（確認なしで送信）と食い違い、SignPath の審査者にも誤った説明になる | 公開前に `docs/code-signing-policy.md` を直す（アプリ側の文書なので本設計の範囲外）。そのときプライバシー節は `docs/privacy.md` へのリンクだけにする（SITE-D-30）。SITE-ADR-005（承認）によりサイトは正本を読むだけ |
 | SITE-R-02 | 未署名で SmartScreen の警告 | SITE-FR-005 |
 | SITE-R-03 | 機能紹介と exe の差 | SITE-TBL-003 の `exeAvailable` |
 | SITE-R-04 | 配信 CI の名前（`release-windows`）を変えると連動が切れる | ワークフロー名を変えるときは `site.yml` も直す取り決め（SITE-ADR-003） |
+| SITE-R-05 | 署名を始めるときに `signedSince` を書き忘れると、署名済みの版が「未署名」と出る（逆に「署名つき」と誤ることはない） | 署名つきの最初の版を出す手順に「`signedSince` を書く」を入れる（SITE-D-29） |
 
 ### 13. 未決事項・Claude判断（おまかせ）で決めた項目
-- 未決：なし。SITE-Q-01〜04 は 2026-11-01 にユーザーが決定（SITE-D-25〜28）。SITE-ADR-005 は承認、SITE-ADR-004 は取り消し（解析は入れない）。
+- 未決：なし。SITE-Q-01〜04 は 2026-11-01 にユーザーが決定（SITE-D-25〜28）。SITE-ADR-005 は承認、SITE-ADR-004 は取り消し（解析は入れない）。v0.3 の見直しで SITE-D-29〜31 を追加。
 - おまかせ（数値だけ）：SITE-D-13（数値目標）、15（更新履歴の畳み方）、17（媒体の寸法）、22（再試行）。一覧は [00 決定事項ログ](00_overview.md#決定事項ログ)。
 
 ### 14. 参照ドキュメント

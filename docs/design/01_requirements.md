@@ -1,5 +1,5 @@
 # 01. 要件定義
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.2（2026-11-01） ／ インプット：[00_overview](00_overview.md)、ヒアリング（決定事項ログ SITE-D-01〜12）
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.3（2026-11-01） ／ インプット：[00_overview](00_overview.md)、ヒアリング（決定事項ログ SITE-D-01〜12）
 
 > **3行で**
 > 1. DC-Designer（Windows 版）の**紹介・ダウンロード用の静的サイト**を、日本語・一般利用者向けに作る。
@@ -46,7 +46,7 @@ flowchart LR
 |---|---|---|
 | トップ → ダウンロードページへの遷移率 | —（測らない） | 測定手段なし（解析を入れないため、SITE-D-27） |
 | リリース公開からサイト反映まで | 15 分以内・手作業 0 回 | GitHub Actions の実行記録（SITE-FR-009） |
-| ダウンロード数（主な指標） | 前月比で増加 | GitHub Releases の asset の `download_count`（GitHub API で所有者が見る。サイトでは計測しない） |
+| ダウンロード数（主な指標） | 前月比で増加 | 毎月 1 日に、全版の installer の `download_count` の合計を GitHub API で所有者が控え、前月の控えとの差を見る（`download_count` は版ごとの累計なので差で見る。サイトでは計測しない） |
 | モバイルの Lighthouse 性能スコア | 90 以上 | Lighthouse（SITE-NFR-001） |
 
 数値はおまかせで決めた（SITE-D-13）。

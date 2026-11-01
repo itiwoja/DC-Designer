@@ -1,10 +1,10 @@
 # 04. 機能仕様
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.2（2026-11-01） ／ インプット：[03_use_cases](03_use_cases.md)
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.3（2026-11-01） ／ インプット：[03_use_cases](03_use_cases.md)
 
 > **3行で**
 > 1. 機能は 10 件（SITE-FR-010 解析ビーコンは取り下げ）。閲覧時に動くのはコピーボタンだけで、ほかはすべて**ビルド時に HTML を生成**する。
 > 2. 版情報は GitHub API から取り、最新の**安定版**（draft・prerelease 以外）だけをダウンロード対象にする。
-> 3. 署名の有無はリリースノートの決まった文言の有無で判定する（SITE-D-25）。
+> 3. 署名の有無はリリースノートの決まった文言と、署名を始めた版（`signedSince`）で判定し、迷ったら「未署名」と出す（SITE-D-25・29）。
 
 ## 🧭 判断してほしいこと
 | # | 種類 | 論点 | 選択肢 | おすすめ（理由） | 決まらないと止まるもの |
@@ -45,11 +45,11 @@ flowchart TB
 | ID | 機能名 | 概要 | 関連UC | 優先度 |
 |---|---|---|---|---|
 | SITE-FR-001 | ヒーロー | キャッチ・最新版のボタン・ヒーロー画像 | UC-001 | Must |
-| SITE-FR-002 | 機能紹介 | 機能カード（見出し・説明・画像/動画） | UC-001 | Must |
+| SITE-FR-002 | 機能紹介 | 機能カード（見出し・説明・画像/動画）とデモ動画 | UC-001 | Must |
 | SITE-FR-003 | 動作要件 | OS・AI の利用条件の表示 | UC-001, 002 | Must |
 | SITE-FR-004 | ダウンロード | 最新安定版の exe へのリンクと版情報 | UC-002 | Must |
 | SITE-FR-005 | 確認手順 | SHA-256・照合コマンド・SmartScreen の説明 | UC-002 | Must |
-| SITE-FR-006 | 更新履歴 | 全公開版のリリースノート | UC-003 | Must |
+| SITE-FR-006 | 更新履歴 | 公開版のリリースノート（直近 100 件まで） | UC-003 | Must |
 | SITE-FR-007 | ポリシー | プライバシー・コード署名ポリシー | UC-004 | Must |
 | SITE-FR-008 | リリース情報取得 | ビルド時に GitHub API から取得・検証 | UC-005, 006 | Must |
 | SITE-FR-009 | 自動デプロイ | main の変更・配信 CI の完了で公開 | UC-005, 006 | Must |
@@ -62,7 +62,7 @@ flowchart TB
 - 出力：SCR-001 の 1 画面目
 
 ### <a id="site-fr-002"></a>SITE-FR-002：機能紹介 〔SITE-UC-001〕
-- 入力：機能（SITE-TBL-003）を `order` 順に、各機能の媒体（SITE-TBL-004）
+- 入力：機能（SITE-TBL-003）を `order` 順に、各機能の媒体（SITE-TBL-004）、デモ動画（SITE-TBL-004 の `demo`。機能カードの下に 1 本）
 - 処理：`exeAvailable: false` の機能は出さない。媒体の `status` が `ready` なら画像/動画、`placeholder` なら枠の寸法に合わせた共通の仮の画像（「画面は準備中」と入った、実際の画面と誤解されない画像。[06 媒体の枠](06_ux_design.md#媒体の枠)）を出す（ビルドは止めない）。素材が揃う前でも公開してよい（SITE-D-26）。動画は `muted` `loop` `playsinline`、`prefers-reduced-motion` のときは自動再生せずポスター画像を出す
 - 初期の機能（`exeAvailable: true`）：AI でレイアウトを作る／レイヤーで編集できるエディタ／参考画像の再現／PowerPoint の読み込み・編集・書き出し（アニメーション・台本・発表者ビュー）／Instagram 投稿／PDF を開いて編集／SVG・PNG・PPTX・JSON の書き出し
 
@@ -79,7 +79,10 @@ flowchart TB
 ### <a id="site-fr-004"></a>SITE-FR-004：ダウンロード 〔SITE-UC-002〕
 - 入力：最新安定版（SITE-TBL-001）、exe の資産（SITE-TBL-002 `kind: installer`）
 - 出力：版・公開日（`YYYY年M月D日`、JST）・サイズ（MB、小数 1 桁。Windows のエクスプローラーと同じく 1 MB = 1,048,576 バイト）・署名状況・ダウンロードボタン・「すべての版（GitHub Releases）」へのリンク
-- 署名状況：`signed` が `false` なら「⚠ この版はコード署名をしていません」、`true` なら「SignPath Foundation の署名つき」。判定はリリースノートの `body` に「この版はコード署名をしていません」があれば `false`、無ければ `true`（SITE-D-25）。配信 CI のこの文言を変えるときは SITE-TBL-006 の `unsignedMarker` も直す
+- 署名状況：`signed` が `false` なら「⚠ この版はコード署名をしていません」、`true` なら「SignPath Foundation の署名つき」。判定は次の 2 つを両方満たすときだけ `true`、それ以外は `false`（迷ったら「未署名」と出す。SITE-D-25・29）
+  1. リリースノートの `body` に「この版はコード署名をしていません」（SITE-TBL-006 の `unsignedMarker`）が無い
+  2. 版が SITE-TBL-006 の `signedSince` 以上（`signedSince` が未設定なら満たさない）
+- 配信 CI のこの文言を変えるときは `unsignedMarker` も直す。署名つきの最初の版を出すときは `signedSince` を書く（SITE-R-05）。書き忘れても「署名つき」と誤って出ることはない
 
 ### <a id="site-fr-005"></a>SITE-FR-005：SHA-256 と確認手順 〔SITE-UC-002〕
 - 出力：SHA-256（64 桁の小文字 16 進数、コピーボタンつき）と、照合のコマンド
@@ -92,28 +95,28 @@ flowchart TB
 - コピーボタンは閲覧時の小さなスクリプト（Clipboard API）。使えない環境では値を選択できる文字として出すだけ
 
 ### <a id="site-fr-006"></a>SITE-FR-006：更新履歴 〔SITE-UC-003〕
-- 入力：draft 以外の全 Release（prerelease は「プレリリース」の札を付けて含める）
+- 入力：draft 以外の Release（SITE-API-001 で取れる直近 100 件まで。prerelease は「プレリリース」の札を付けて含める。100 件に届いたらページ送りを足す）
 - 処理：`body`（Markdown）を HTML に変換し、**生の HTML は捨てる**（許可するのは見出し・段落・リスト・リンク・強調・コード・引用だけ）。リンクは `https:` だけ残す。直近 10 版を開いた状態、それより古い版は `<details>` で畳む
 - 出力：版ごとに見出し（`v1.0.6`、アンカー `#v1-0-6`）・公開日・本文・GitHub の Release へのリンク
 
 ### <a id="site-fr-007"></a>SITE-FR-007：ポリシー 〔SITE-UC-004〕
 - 入力：`docs/privacy.md`（新設）・`docs/code-signing-policy.md`（既存）（SITE-TBL-005）
 - 処理：Markdown を HTML にする。相対リンク（`./release-policy.md`、`../SECURITY.md` など）は `https://github.com/itiwoja/DC-Designer/blob/main/<path>` に書き換える。ただしサイトのページになっている文書（2 件）へのリンクはサイト内のページへ
-- `docs/privacy.md` に書くこと：アプリが送る先（AI 利用時の ChatGPT・OpenRouter・OpenAI・Gemini、フォント取得の Google Fonts、更新確認の GitHub Releases）と、**AI の操作は追加の確認なしで送信する**こと（今の動き、SITE-D-12）。サイト自体は Cookie を使わず、解析もしない（閲覧数を数えない）こと（SITE-D-27）
-- 署名ポリシーの古い文面は SITE-R-01（[11_tech_spec](11_tech_spec.md#12-リスクと対策)）
+- `docs/privacy.md` に書くこと：アプリが送る先（AI 利用時の ChatGPT・OpenRouter・OpenAI・Gemini、フォント取得の Google Fonts、更新確認の GitHub Releases）と、**AI の操作は追加の確認なしで送信する**こと（今の動き、SITE-D-12）。サイト自体は Cookie を使わず、所有者は解析もしない（閲覧数を数えない）こと（SITE-D-27）。ただし、サイトの配信（GitHub Pages）と exe のダウンロード（GitHub Releases）では、GitHub が閲覧者の IP アドレスなどを GitHub のプライバシー方針に従って記録すること（「何も記録されない」とは書かない）
+- 署名ポリシーの古い文面は SITE-R-01（[11_tech_spec](11_tech_spec.md#12-リスクと対策)）。直すときに `docs/code-signing-policy.md` のプライバシー節は `docs/privacy.md` へのリンクだけにし、プライバシーの正本を 1 つにする（SITE-D-30）
 
 ### <a id="site-fr-008"></a>SITE-FR-008：リリース情報取得 〔SITE-UC-005, SITE-UC-006〕
 - 処理：
   1. SITE-API-001 で Release を最大 100 件取得（`GITHUB_TOKEN` で認証）
   2. `draft: true` を捨てる。`prerelease: false` のうち `publishedAt` が最新のものを「最新安定版」にする
   3. 最新安定版の資産から `DC-Designer-Setup-<version>.exe`（installer）と `SHA256SUMS.txt`（checksums）を探す。`latest.yml` は使わない
-  4. SITE-API-002 で `SHA256SUMS.txt` を取得し、exe のファイル名の行から値を取る
-  5. 署名状況を判定する（リリースノートの文言の有無、SITE-D-25）
+  4. SITE-API-002 で `SHA256SUMS.txt` を取得し、exe のファイル名の行から値を取る（行の形は [SITE-API-002](09_api.md#site-api-002sha256sumstxt-の取得)。実物は `<64桁> *<ファイル名>`）
+  5. 署名状況を判定する（リリースノートの文言の有無と `signedSince`、SITE-D-25・29）
 - エラー（すべてビルド失敗。公開中のサイトは残る）：
 
 | 条件 | ビルドのメッセージ |
 |---|---|
-| API が 2xx 以外・通信失敗（3 回まで再試行） | `GitHub API の取得に失敗しました（HTTP {status}）` |
+| API が 2xx 以外・通信失敗（再試行は 5xx と通信失敗だけ 3 回まで。403・429 などの 4xx はすぐ失敗。[SITE-API-001](09_api.md#site-api-001)） | `GitHub API の取得に失敗しました（HTTP {status}）` |
 | 安定版が 0 件 | `公開済みの安定版がありません` |
 | exe か SHA256SUMS.txt が無い | `v{version} に {name} がありません` |
 | SHA256SUMS.txt に exe の行が無い・64 桁の 16 進数でない | `v{version} の SHA-256 を読めません` |
@@ -155,3 +158,6 @@ flowchart TB
 - SITE-D-26：素材が揃う前は仮の画像で公開（決定者：ユーザー、2026-11-01）
 - SITE-D-27：解析は入れない。SITE-FR-010 を取り下げ（決定者：ユーザー、2026-11-01）
 - SITE-D-28：ポリシーは `docs/` が正本（決定者：ユーザー、2026-11-01）
+- SITE-D-29：署名の判定は `signedSince` も見て安全側に倒す（決定者：ユーザー〔Claude の案を承認〕、2026-11-01）
+- SITE-D-30：プライバシーの正本は `docs/privacy.md` の 1 つ（決定者：ユーザー〔Claude の案を承認〕、2026-11-01）
+- v0.3：再試行の条件を SITE-API-001 とそろえ、デモ動画を SITE-FR-002 に含め、更新履歴の上限（100 件）を明記

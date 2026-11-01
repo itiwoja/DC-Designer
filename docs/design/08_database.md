@@ -1,5 +1,5 @@
 # 08. コンテンツモデル（DB 設計の代わり）
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.2（2026-11-01） ／ インプット：[04_functional_spec](04_functional_spec.md)
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.3（2026-11-01） ／ インプット：[04_functional_spec](04_functional_spec.md)
 
 > **3行で**
 > 1. 静的サイトなので DB は持たない。代わりに、ビルド時に扱うデータを 7 つの「表」（SITE-TBL）として定義する。
@@ -40,7 +40,7 @@ erDiagram
 
 ## 要点
 - 表の一覧は [テーブル一覧](#テーブル一覧)。名前はコードの型名にもそのまま使う。
-- `signed` はリリースノートの「この版はコード署名をしていません」の有無で決める（SITE-D-25、[04](04_functional_spec.md#site-fr-004)）。
+- `signed` はリリースノートの「この版はコード署名をしていません」の有無と `signedSince` で決め、迷ったら `false`（SITE-D-25・29、[04](04_functional_spec.md#site-fr-004)）。
 - 媒体の `status` は `placeholder` → `ready` の一方向。`placeholder` の間は仮の画像を出す（[SITE-TBL-004](#site-tbl-004)、SITE-D-26）。
 - 日時は ISO 8601（UTC）で持ち、表示のときに JST にする。
 
@@ -79,11 +79,11 @@ GitHub の Release 1 件。主なフィールド：`tag`, `version`, `publishedA
 | prerelease | boolean | `prerelease` | |
 | bodyHtml | string | `body` を無害化して HTML に | SITE-FR-006 |
 | htmlUrl | string | `html_url` | GitHub の Release ページ |
-| signed | boolean | `body` の文言で判定（SITE-D-25） | `body` に「この版はコード署名をしていません」が無ければ true |
+| signed | boolean | `body` の文言と `signedSince` で判定（SITE-D-25・29） | `body` に「この版はコード署名をしていません」が無く、かつ `version` が SITE-TBL-006 の `signedSince` 以上のときだけ true。`signedSince` が未設定なら常に false |
 
 </details>
 
-- `draft: true` は取り込まない。件数は 100 件まで（超えたら古い方を捨てる。当面は届かない）。
+- `draft: true` は取り込まない。件数は 100 件まで（超えたら古い方を捨てる。当面は届かない。SITE-FR-006 の更新履歴も同じ上限）。
 
 ### <a id="site-tbl-002"></a>SITE-TBL-002：ReleaseAsset
 Release に付いた配布物のうち、サイトが使う 2 種類だけ。
@@ -123,7 +123,7 @@ Release に付いた配布物のうち、サイトが使う 2 種類だけ。
 | slug | `privacy` / `code-signing` | サイトの URL |
 | sourcePath | string | `docs/privacy.md` / `docs/code-signing-policy.md` |
 | title | string | 文書の最初の `#` 見出し |
-| updatedAt | string | 正本の最終コミット日（`git log -1`、ビルド時） |
+| updatedAt | string | 正本の最終コミット日（`git log -1 --format=%cI -- <sourcePath>`、ビルド時）。CI の checkout は `fetch-depth: 0` にする（既定の 1 だと HEAD の日付になる） |
 
 ### SITE-TBL-006：SiteConfig
 | 項目 | 値・元 |
@@ -131,6 +131,7 @@ Release に付いた配布物のうち、サイトが使う 2 種類だけ。
 | site / base | `https://itiwoja.github.io` / `/DC-Designer` |
 | repo | `itiwoja/DC-Designer` |
 | unsignedMarker | `この版はコード署名をしていません`（SITE-D-25。配信 CI の文言を変えたらここも直す） |
+| signedSince | 署名を始めた最初の版（例 `1.1.0`）。初期値は未設定（＝署名の版はまだ無い）。署名つきの最初の版を出すときに書く（SITE-D-29、SITE-R-05） |
 | GITHUB_TOKEN | Actions が自動で渡す。ログに出さない |
 
 ### SITE-TBL-007：PageText
@@ -149,3 +150,4 @@ Release に付いた配布物のうち、サイトが使う 2 種類だけ。
 - SITE-D-20：DB を持たず、ビルド時のデータを SITE-TBL として定義する（定石・静的サイト）
 - SITE-D-21：版情報はリポジトリに保存せず毎回取り直す（定石。古い控えを公開する危険を避ける）
 - v0.2：`signed` の判定（SITE-D-25）・仮の画像（SITE-D-26）を確定し、解析のトークン `PUBLIC_CF_BEACON_TOKEN` を外した（SITE-D-27）
+- v0.3：`signedSince` を追加し `signed` を安全側に倒した（SITE-D-29）。`updatedAt` の取り方と `fetch-depth: 0` を明記

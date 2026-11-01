@@ -1,5 +1,5 @@
 # 00. プロジェクト概要
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.2（2026-11-01） ／ インプット：リポジトリの README、ヒアリング（2026-11-01）
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.3（2026-11-01） ／ インプット：リポジトリの README、ヒアリング（2026-11-01）
 
 > **3行で**
 > 1. DC-Designer の紹介・ダウンロード用の静的サイト（日本語）を、`site/` に Astro で作り、GitHub Pages で公開する。
@@ -23,7 +23,7 @@ flowchart LR
 ## 要点
 - [エレベーターピッチ](#エレベーターピッチ)と[スコープ](#スコープ)。
 - [用語集](#用語集)：「安定版」「署名状況」「媒体」などの意味をここで固定。
-- [決定事項ログ](#決定事項ログ)：ユーザー決定 17 件・おまかせ 4 件・定石 7 件（v0.2 で SITE-D-25〜28 を追加、SITE-D-09 は取り下げて D-27 に置き換え）。
+- [決定事項ログ](#決定事項ログ)：ユーザー決定 19 件・おまかせ 4 件・定石 8 件（v0.2 で SITE-D-25〜28 を追加、SITE-D-09 は取り下げて D-27 に置き換え。v0.3 で SITE-D-29〜31 を追加）。
 - [トレーサビリティ表](#トレーサビリティ表)：REQ から画面・API・表までたどれる。
 
 ---
@@ -50,7 +50,7 @@ flowchart LR
 | リリース | `Release` | GitHub の Release 1 件（SITE-TBL-001） |
 | 安定版 | — | draft でも prerelease でもないリリース。最新のものがダウンロード対象 |
 | 配布物 | `ReleaseAsset` | Release に付いたファイル。サイトは installer と checksums だけ使う |
-| 署名状況 | `signed` | その版の exe に SignPath Foundation の署名があるか |
+| 署名状況 | `signed` | その版の exe に SignPath Foundation の署名があるか。判定は SITE-D-25・29（迷ったら「未署名」） |
 | 機能 | `Feature` | トップの機能カード 1 枚分（SITE-TBL-003） |
 | 媒体 | `Media` | スクショ・動画・OGP 画像（SITE-TBL-004） |
 | 枠（プレースホルダー） | `status: placeholder` | 素材がまだ無い媒体。「仮」と分かる仮の画像を出す（SITE-D-26） |
@@ -87,6 +87,9 @@ flowchart LR
 | SITE-D-26 | 素材が揃う前に、「仮」と分かる仮の画像で先に公開する。Remotion の素材ができたら差し替える（SITE-Q-02 案 B、2026-11-01） | ユーザー | 公開を素材待ちで止めない | REQ-008、FR-001・002、06、TBL-004 | — |
 | SITE-D-27 | 解析は入れない。解析そのものをスコープから外す（SITE-Q-03、2026-11-01） | ユーザー | — | REQ-007・US-008・UC-007・FR-010・API-003 を取り下げ、05、07 | [004](adr/SITE-ADR-004-analytics.md) |
 | SITE-D-28 | ポリシーは `docs/` を正本にし `docs/privacy.md` を新設。サイトは読み込むだけ（SITE-Q-04 案 A、2026-11-01） | ユーザー | 正本が 1 つで食い違わない。SignPath の条件も満たす | FR-007、TBL-005 | [005](adr/SITE-ADR-005-policy-source.md) |
+| SITE-D-29 | 署名の判定を安全側に倒す：`signed` が `true` になるのは「未署名の文言が無い」かつ「版が SITE-TBL-006 の `signedSince` 以上」のときだけ。`signedSince` が未設定なら全版 `false`（2026-11-01 見直し） | ユーザー（Claude の案を承認） | CI の文言を変えただけで未署名の版に「署名つき」と出るのを防ぐ。誤るなら「未署名」と出る側にする | FR-004・008、TBL-001・006、SITE-R-05 | — |
+| SITE-D-30 | `docs/code-signing-policy.md` のプライバシー節は、SITE-R-01 を直すときに `docs/privacy.md` へのリンクだけにする（2026-11-01 見直し） | ユーザー（Claude の案を承認） | プライバシーの正本を 1 つにする（SITE-ADR-005 の前提） | FR-007、TBL-005、SITE-R-01 | [005](adr/SITE-ADR-005-policy-source.md) |
+| SITE-D-31 | CSP（`<meta>`）と両立させるため、インラインの CSS・JS を出さない（`build.inlineStylesheets: 'never'`、スクリプトもインライン化させない、コピーボタンは島にせず `.astro` 内の `<script>`）。フォントはシステムフォントにし Web フォントを読まない | 定石 | `default-src 'self'`・`script-src 'self'` ではインラインの CSS・JS と外部のフォントが止まる | NFR-002・004・005・006、06、07 | — |
 
 未決の論点は無い（SITE-Q-01〜04 は SITE-D-25〜28 で決定）。
 

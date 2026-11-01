@@ -1,5 +1,5 @@
 # 07. システムアーキテクチャ
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.2（2026-11-01） ／ インプット：[04](04_functional_spec.md)、[05](05_non_functional.md)
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.3（2026-11-01） ／ インプット：[04](04_functional_spec.md)、[05](05_non_functional.md)
 
 > **3行で**
 > 1. Astro で静的に生成し、GitHub Actions から GitHub Pages へ公開する。サーバーも DB も持たない。
@@ -45,7 +45,7 @@ flowchart LR
   end
   RW -->|workflow_run completed| WF
   WF -->|SITE-API-001/002| API[(GitHub REST API<br>Releases)]
-  WF -->|build| ART[静的ファイル dist/]
+  WF -->|build| ART[静的ファイル site/dist/]
   SRC --> WF
   DOCS --> WF
   ART -->|deploy-pages| PAGES[GitHub Pages<br>環境 github-pages]
@@ -63,7 +63,7 @@ flowchart TB
   MD[lib/markdown.ts<br>無害化] --> LR
   MD --> POL
   PAGES --> LAY[layouts/Base<br>ヘッダー・フッター・CSP]
-  ISL[components/CopyButton<br>唯一の島] --> PAGES
+  ISL[components/CopyButton.astro<br>唯一のスクリプト・島にしない] --> PAGES
 ```
 
 ### 技術スタック
@@ -78,6 +78,8 @@ flowchart TB
 | 置き場所 | 同じリポジトリの `site/`（独自の `package.json`） | リリースと連動しやすい | 別リポジトリ → [SITE-ADR-006](adr/SITE-ADR-006-same-repo.md) |
 
 `site/` はアプリの `package.json` と依存を共有しない（アプリの配布物検査の許可リストに入らないようにする。ADR-005 と整合）。
+
+CSP（SITE-NFR-006）を `<meta>` で入れるため、インラインの CSS・JS を出さない設定にする（SITE-D-31）：`build.inlineStylesheets: 'never'`、スクリプトもインライン化させない（`vite.build.assetsInlineLimit: 0` など）、コピーボタンは `.astro` 内の `<script>` にして島（`client:*`。インラインのスクリプトとフレームワークのランタイムを出す）を使わない。フォントはシステムフォント。守れているかは、ビルド後の HTML を検査するテストで確かめる（[11 §11](11_tech_spec.md#11-テスト方針)）。
 
 ### デプロイ構成
 | 項目 | 値 |
@@ -96,6 +98,7 @@ on:
 permissions: { contents: read, pages: write, id-token: write }
 concurrency: { group: pages, cancel-in-progress: false }
 # build ジョブは workflow_run のとき conclusion == 'success' だけ実行
+# checkout は fetch-depth: 0（ポリシーの最終更新日を git log で取るため。既定の 1 だと HEAD の日付になる。SITE-TBL-005）
 ```
 
 ### 認証・認可
@@ -126,3 +129,4 @@ concurrency: { group: pages, cancel-in-progress: false }
 - 上の ADR 6 件（v0.2：SITE-ADR-004 を取り消して解析は入れない〔SITE-D-27〕、SITE-ADR-005 を承認〔SITE-D-28〕）
 - SITE-D-18：`site/` はアプリと依存を共有しない（定石・配布物の境界を守るため）
 - SITE-D-19：Pages の環境に承認は付けない（定石。公開してよいかは main へのマージで判断済み）
+- SITE-D-31：インラインの CSS・JS を出さず CSP と両立させる（定石）

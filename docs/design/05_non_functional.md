@@ -1,5 +1,5 @@
 # 05. 非機能要件
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.2（2026-11-01） ／ インプット：[01_requirements](01_requirements.md)
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.3（2026-11-01） ／ インプット：[01_requirements](01_requirements.md)
 
 > **3行で**
 > 1. 性能はモバイルで Lighthouse 90 以上・LCP 2.5 秒未満、JS は 30KB まで。
@@ -34,11 +34,11 @@ flowchart LR
 | ID | カテゴリ | 要件 | 目標値 | 根拠 |
 |---|---|---|---|---|
 | SITE-NFR-001 | 性能 | Lighthouse 性能スコア（モバイル） | 90 以上（全ページ） | KPI（01） |
-| SITE-NFR-002 | 性能 | LCP（4G 相当） | 2.5 秒未満 | Core Web Vitals の「良好」 |
+| SITE-NFR-002 | 性能 | LCP（4G 相当）・CLS | LCP 2.5 秒未満・CLS 0.1 未満 | Core Web Vitals の「良好」 |
 | SITE-NFR-003 | 性能 | トップの初回転送量（動画を除く） | 1.5MB 以下。画像は 1 枚 300KB 以下（AVIF/WebP） | 回線の遅い学生の利用 |
-| SITE-NFR-004 | 性能 | 閲覧時の JS | 合計 30KB 以下（gzip 後）。CLS 0.1 未満 | Astro の島はコピーボタンだけ |
-| SITE-NFR-005 | セキュリティ | 外部へのスクリプト | なし（自サイトのスクリプトだけ）。Cookie・localStorage を使わない。解析は入れない | プライバシーの約束・SITE-D-27 |
-| SITE-NFR-006 | セキュリティ | CSP | `<meta http-equiv="Content-Security-Policy">` で `default-src 'self'`、`script-src 'self'`、`connect-src 'self'`、`img-src 'self' data:`、`object-src 'none'`、`base-uri 'self'` | Pages はヘッダー不可 |
+| SITE-NFR-004 | 性能 | 閲覧時の JS | 合計 30KB 以下（gzip 後） | 閲覧時のスクリプトはコピーボタンだけ（島にしない、SITE-D-31） |
+| SITE-NFR-005 | セキュリティ | 外部へのスクリプト | なし（自サイトのスクリプトだけ）。Cookie・localStorage を使わない。解析は入れない。フォントはシステムフォント（Web フォントを外から読まない） | プライバシーの約束・SITE-D-27・31 |
+| SITE-NFR-006 | セキュリティ | CSP | `<meta http-equiv="Content-Security-Policy">` で `default-src 'self'`、`script-src 'self'`、`connect-src 'self'`、`img-src 'self' data:`、`object-src 'none'`、`base-uri 'self'` | Pages はヘッダー不可。インラインの CSS・JS を出さないことで成り立たせる（SITE-D-31） |
 | SITE-NFR-007 | セキュリティ | 外部由来の文字の扱い | リリースノートの生 HTML を捨て、`https:` 以外のリンクを消す | 外部 PR のタイトルが入る |
 | SITE-NFR-008 | セキュリティ | CI の権限 | サイトのワークフローは `contents: read`・`pages: write`・`id-token: write` だけ。PAT・追加の App を使わない | release-policy.md |
 | SITE-NFR-009 | 運用 | 反映の速さ | 配信 CI の完了・main への push から 15 分以内 | KPI（01） |
@@ -53,9 +53,11 @@ flowchart LR
 
 ### 測り方
 - SITE-NFR-001〜004：公開後に Lighthouse（モバイル）で全 6 画面を測る。
+- SITE-NFR-006：ビルド後の HTML に、インラインの `<script>`・`<style>`・`style=` 属性が無いことをテストで確かめる。
 - SITE-NFR-009・010：Actions の実行時間で見る。
 - SITE-NFR-012：axe などの自動検査＋キーボード操作の目視。
 
 ## このドキュメントで決まったこと
 - SITE-D-13：上の数値はすべて Claude判断（おまかせ）。ユーザーが「数値はおまかせ」を選んだ（ヒアリング 2 回目）
 - v0.2：解析を入れない（SITE-D-27）ため、SITE-NFR-005・006・015 から Cloudflare を外した
+- v0.3：CLS を SITE-NFR-004 から SITE-NFR-002 へ移した。CSP と両立させるためインラインの CSS・JS と Web フォントを使わない（SITE-D-31）

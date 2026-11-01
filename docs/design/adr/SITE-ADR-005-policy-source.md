@@ -16,4 +16,5 @@
 
 ## 影響
 - 正本の古い文面がそのまま公開される（SITE-R-01）。正本を直してから公開する。
+- `docs/code-signing-policy.md` にもプライバシー節があり、このままでは正本が 2 つになる。SITE-R-01 を直すときに、その節は `docs/privacy.md` へのリンクだけにする（SITE-D-30、v0.3）。
 - `docs/privacy.md` と `docs/code-signing-policy.md` の変更でサイトが再ビルドされる（SITE-FR-009）。
