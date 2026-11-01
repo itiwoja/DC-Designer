@@ -32,10 +32,7 @@ Free code signing provided by [SignPath.io](https://about.signpath.io), certific
 
 This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
 
-- AI 機能（OpenAI・ChatGPT / OpenRouter / Google Gemini）を使うときだけ、本人が送信先と対象を確認した内容をその AI サービスへ送る。画像は既定で送らない（[画像保護・フォント取得](./desktop-release-privacy.md)）。
-- フォント取得では、作品の文字を送らず、フォントの識別情報だけを Google Fonts へ送る。
-- 更新確認では、公開 GitHub Releases の公開情報だけを取得する。
-- 送信先のプライバシーポリシー：[OpenAI](https://openai.com/policies/privacy-policy/)、[OpenRouter](https://openrouter.ai/privacy)、[Google Gemini API](https://ai.google.dev/gemini-api/terms)、[Google Fonts](https://developers.google.com/fonts/faq/privacy)、[GitHub](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement)
+- このプログラムが外へ送る情報（AI 利用時の ChatGPT〔OpenAI〕、フォント取得の Google Fonts、更新確認の GitHub Releases）と、その条件は [プライバシー](./privacy.md) にまとめています。プライバシーの正本はこの 1 つです。
 
 ## 問題の報告
 
