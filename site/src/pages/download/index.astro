@@ -1,10 +1,12 @@
 ---
 import Base from "../../layouts/Base.astro";
+import Shape from "../../components/Shape.astro";
 import CopyButton from "../../components/CopyButton.astro";
 import Requirements from "../../components/Requirements.astro";
 import { getReleaseData } from "../../lib/releases";
 import { formatDateJa, formatMB } from "../../lib/format";
 import { RELEASES_URL } from "../../lib/config";
+import "../../styles/download.css";
 
 const { latest } = await getReleaseData();
 const fileName = `DC-Designer-Setup-${latest.version}.exe`;
@@ -12,7 +14,7 @@ const command = `Get-FileHash "$env:USERPROFILE\\Downloads\\${fileName}" -Algori
 ---
 <Base title="ダウンロード" description={`DC-Designer for Windows v${latest.version} のダウンロード。署名の状況、SmartScreen の進め方、SHA-256 の確かめ方も載せています。`}>
   <div class="container prose section">
-    <h1>DC-Designer for Windows</h1>
+    <h1 class="heading-mark"><Shape shape="square" size="mark" />DC-Designer for Windows</h1>
     <section class="panel" aria-labelledby="version-title">
       <h2 id="version-title">最新版 v{latest.version}</h2>
       <p class="meta">
@@ -21,7 +23,7 @@ const command = `Get-FileHash "$env:USERPROFILE\\Downloads\\${fileName}" -Algori
       </p>
       {latest.signed
         ? <p><strong>SignPath Foundation の署名つき</strong></p>
-        : <p class="notice">⚠ この版はコード署名をしていません</p>}
+        : <p class="notice"><Shape shape="triangle" size="mark" />この版はコード署名をしていません</p>}
       <div class="actions">
         <a class="btn btn--large" href={latest.installer.browserDownloadUrl}>ダウンロード</a>
         <a href={RELEASES_URL}>すべての版（GitHub Releases）→</a>
@@ -30,9 +32,9 @@ const command = `Get-FileHash "$env:USERPROFILE\\Downloads\\${fileName}" -Algori
 
     {!latest.signed && (
       <section class="panel" aria-labelledby="smartscreen-title">
-        <h2 id="smartscreen-title">Windows の警告（SmartScreen）が出たら</h2>
+        <h2 id="smartscreen-title" class="heading-mark"><Shape shape="circle" size="mark" />Windows の警告（SmartScreen）が出たら</h2>
         <p>署名をしていないため、初めて開くときに青い警告画面が出ることがあります。次の順に進めてください。</p>
-        <ol class="steps">
+        <ol class="download-steps">
           <li>警告画面の「詳細情報」を押します。</li>
           <li>下に出る「実行」を押します。</li>
         </ol>
@@ -41,23 +43,23 @@ const command = `Get-FileHash "$env:USERPROFILE\\Downloads\\${fileName}" -Algori
     )}
 
     <section class="panel" aria-labelledby="verify-title">
-      <h2 id="verify-title">本物か確かめる</h2>
-      <div class="hash-row">
-        <span>SHA-256：</span>
+      <h2 id="verify-title" class="heading-mark"><Shape shape="triangle" size="mark" />本物か確かめる</h2>
+      <div class="download-hash">
+        <span class="download-hash__label">SHA-256：</span>
         <code class="hash">{latest.installer.sha256}</code>
         <CopyButton value={latest.installer.sha256} />
       </div>
       <p>PowerShell で、次のコマンドを実行します。</p>
       <p class="code-block"><code>{command}</code></p>
-      <ul>
+      <ul class="download-notes">
         <li>「ダウンロード」フォルダーに保存した前提のコマンドです。保存先を変えた場合は、パスを直してください。</li>
         <li>Get-FileHash は大文字で表示します。大文字・小文字は区別せずに見比べてください。</li>
         <li>値が合わないときは、実行しないで、GitHub Issues か SECURITY.md の窓口に知らせてください。</li>
       </ul>
     </section>
 
-    <section aria-labelledby="req-title">
-      <h2 id="req-title">動作要件</h2>
+    <section class="download-req" aria-labelledby="req-title">
+      <h2 id="req-title" class="heading-mark"><Shape shape="square" size="mark" />動作要件</h2>
       <Requirements />
     </section>
   </div>

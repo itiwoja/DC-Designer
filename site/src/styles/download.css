@@ -1,0 +1,22 @@
+/* ダウンロード（PG-002）と コピーボタン（CMP-012）の見た目。正本は docs/design/ui/04・05 */
+
+/* SEC-002-02 手順：番号つき 2 段。番号は墨の太字 */
+.download-steps { margin: 0 0 var(--space-4); padding-left: var(--space-6); }
+.download-steps li { padding-left: var(--space-1); margin-bottom: var(--space-2); }
+.download-steps li::marker { font-family: var(--font-display); font-weight: var(--weight-bold); }
+
+/* SEC-002-03 SHA-256 の値とコピーボタンの横並び（狭い画面で折り返す） */
+.download-hash { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-bottom: var(--space-4); }
+.download-hash__label { font-weight: var(--weight-bold); }
+.download-hash .hash { min-width: 0; max-width: 100%; }
+.download-notes { margin: 0; padding-left: var(--space-5); }
+.download-notes li { margin-bottom: var(--space-2); }
+.panel > :last-child { margin-bottom: 0; }
+
+/* SEC-002-04 動作要件：パネルの外。上の余白はパネルの margin-bottom が受ける */
+.download-req { margin-top: var(--space-7); }
+
+/* CMP-012 コピーボタンの状態の文 */
+.copy { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.copy-status { font-size: var(--text-sm); color: var(--color-text); }
+.copy-status.is-error { color: var(--color-danger-text); }

@@ -18,14 +18,21 @@ const { value, label = "コピー" } = Astro.props;
     button.addEventListener("click", async () => {
       try {
         await navigator.clipboard.writeText(button.dataset.copy ?? "");
-        if (status) status.textContent = "コピーしました";
+        if (status) {
+          status.classList.remove("is-error");
+          status.textContent = "コピーしました";
+        }
         window.clearTimeout(timer);
         timer = window.setTimeout(() => {
           if (status) status.textContent = "";
         }, 2000);
       } catch {
         // 失敗しても、隣の値を選んで自分でコピーできる
-        if (status) status.textContent = "コピーできませんでした。値を選んでコピーしてください";
+        if (status) {
+          window.clearTimeout(timer);
+          status.classList.add("is-error");
+          status.textContent = "コピーできませんでした。値を選んでコピーしてください";
+        }
       }
     });
   });
