@@ -68,10 +68,22 @@ code { font-family: var(--font-mono); font-size: 0.92em; }
 html { scroll-padding-top: calc(var(--header-height) + var(--header-stripe) + var(--space-4)); }
 .site-header {
   background: var(--color-surface);
-  border-bottom: var(--header-stripe) solid transparent;
-  border-image: linear-gradient(90deg,
-    var(--color-shape-circle) 0 33.34%, var(--color-shape-triangle) 33.34% 66.67%, var(--color-shape-square) 66.67% 100%) 1;
+  padding-bottom: var(--header-stripe);
   position: sticky; top: 0; z-index: var(--z-header);
+}
+/* MOT-006：帯は 1 画面幅の 3 等分の模様を 2 回並べた 2 倍幅の板。-50% → 0 を繰り返して左 → 右へ流す。
+   はみ出し止めは帯の中だけ（ヘッダー全体に付けると開いたメニューが切れる） */
+.site-header__stripe { position: absolute; left: 0; right: 0; bottom: 0; height: var(--header-stripe); overflow: hidden; }
+.site-header__stripe::before {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: 200%;
+  background: linear-gradient(90deg,
+    var(--color-shape-circle) 0 33.34%, var(--color-shape-triangle) 33.34% 66.67%, var(--color-shape-square) 66.67% 100%) 0 0 / 50% 100% repeat-x;
+  transform: translateX(-50%);
+  animation: header-stripe var(--dur-stripe) linear infinite;
+}
+@keyframes header-stripe { from { transform: translateX(-50%); } to { transform: translateX(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .site-header__stripe::before { animation: none; }
 }
 .site-header__inner { display: flex; align-items: center; gap: var(--space-3); min-height: var(--header-height); position: relative; }
 .logo {
