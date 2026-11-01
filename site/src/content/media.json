@@ -1,0 +1,33 @@
+[
+  {
+    "id": "hero",
+    "type": "image",
+    "status": "placeholder",
+    "alt": "アプリの画面の画像は準備中です"
+  },
+  {
+    "id": "demo",
+    "type": "video",
+    "status": "placeholder",
+    "poster": "placeholder-demo.png",
+    "alt": "デモ動画は準備中です"
+  },
+  {
+    "id": "ogp",
+    "type": "image",
+    "status": "placeholder",
+    "alt": "紹介画像は準備中です"
+  },
+  {
+    "id": "feature-poster",
+    "type": "image",
+    "status": "placeholder",
+    "alt": "「ポスター作成」の画面の画像は準備中です"
+  },
+  {
+    "id": "feature-slides",
+    "type": "image",
+    "status": "placeholder",
+    "alt": "「スライド作成」の画面の画像は準備中です"
+  }
+]

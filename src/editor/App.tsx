@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent a
 import { slideContent } from "../notes";
 import { Poster } from "../render/Poster";
 import { buildExportSvg, download, renderSpecPng, svgToPngSized } from "../render/svg";
+import { pngToPdf } from "../render/pdf";
 import { A4Check } from "./A4Check";
 import { a4Fit, a4Instruction, a4Issues, a4Size, exportPixels, fitToA4, pngA4Report, PRINT_DPI, readPngInfo, SAFE_MARGIN_MM, setPngDpi } from "./a4";
 import { cropTarget } from "../render/ImageBox";
@@ -11,7 +12,6 @@ import { animationSequence, renumberAnimations } from "../animation";
 import { findPendingAssets, PosterSpecSchema, type AssetRequest, type Layer, type LayerAnimation, type PosterSpec, type SlideBgm, type SlideTransition } from "../schema";
 import { resolveTheme } from "../themes";
 import { applyFonts, specTexts } from "../fonts";
-import { blankInstagramSpec, IG_DEFAULT_RATIO, IG_MAX_IMAGES, IG_RATIO_KEYS, IG_RATIOS, nearestRatio, ratioOf, type IgRatio } from "../instagram";
 import { CATALOG_BY_NAME } from "../components/catalog";
 import { workSubject, watchWork, WORK_CHANGED_MESSAGE, type AiSubject } from "./aiSubject";
 import { desktopBridge, useDesktopVersion } from "./desktop";
@@ -43,11 +43,11 @@ import {
   alignedPosition, aspectOf, assetHolder, diffLayers, IMAGE_FILE_ACCEPT, IMAGE_FILE_TYPES, imageSlot, insertAfter, isVisibleOnCanvas,
   naturalSize, patchAsset, PPTX_ACCEPT, prepareAsset, reorderLayer, moveLayerTo, safeFileName, toLayerRef, uid, type AlignTo, type LayerRef,
 } from "./specOps";
-import { blobToRef, fitToRatio, loadImage, overlayOf, REF_OVERLAY_ID, referenceSize, resolveRefCrops, scaledReference, withOverlay, withoutOverlay } from "./reproduce";
+import { blobToRef, loadImage, overlayOf, REF_OVERLAY_ID, referenceSize, resolveRefCrops, scaledReference, withOverlay, withoutOverlay } from "./reproduce";
 import { readPref, STORAGE_KEY, writePref } from "./storage";
 import { TextEditor } from "./TextEditor";
 import { Toasts, useNotices, type Busy, type Notice } from "./Toasts";
-import { ask, Menu, RenderLoading, ThemeMenu, useLoadWithRetry } from "./ui";
+import { ask, askChoice, Menu, RenderLoading, ThemeMenu, useLoadWithRetry } from "./ui";
 import { Ico } from "./uiIcons";
 import { useAutoSave } from "./useAutoSave";
 import { topLayerAt, useCanvasPointer } from "./useCanvasPointer";
@@ -69,9 +69,6 @@ const RIGHT_WIDTH_KEY = "dc-designer:right-width";
 const DECK_HEIGHT_KEY = "dc-designer:deck-height";
 const NOTES_OPEN_KEY = "dc-designer:notes-open";
 const NOTES_HEIGHT_KEY = "dc-designer:notes-height";
-const IG_REPRODUCE_KEY = "dc-designer:ig-reproduce";
-/** Instagram の再現で同時に写し取る画像の数（1 枚でも中で 6 本の帯を同時に書かせている） */
-const IG_REPRODUCE_CONCURRENCY = 2;
 /** スライド一覧の既定の高さ（styles.css の --dh と合わせる）と、サムネイル以外の見出し・余白の分 */
 const DECK_H = 127, DECK_CHROME_H = 63;
 /** 台本欄の既定の高さ（styles.css の --nh と合わせる）と、畳んだときの高さ */
@@ -221,17 +218,11 @@ export function App() {
   const referenceCaption = refs.length ? `\n\n添付資料（画像の順番）:\n${refs.map((r, i) => `${i + 1}. ${r.name}`).join("\n")}` : "";
   /** 参考画像（1 枚目）を雰囲気の参考ではなく、見た目そのままに再現する */
   const [reproduce, setReproduce] = useState(false);
-  /** Instagram: 参考画像を 1 枚ずつ、投稿の 1 枚ずつとしてそのまま再現する（ChatGPT で作った画像を取り込む使い方が多いので既定で入） */
-  const [igReproduce, setIgReproduce] = useState(() => readPref(IG_REPRODUCE_KEY) !== "0");
-  const toggleIgReproduce = (on: boolean) => { setIgReproduce(on); writePref(IG_REPRODUCE_KEY, on ? "1" : "0"); };
   const [instruction, setInstruction] = useState("");
   const [chatMode, setChatMode] = useState<"chat" | "image">("chat");
   /** / コマンドの候補: 選択中の位置と、Esc で閉じたか（入力を変えると開き直す） */
   const [slashActive, setSlashActive] = useState(0);
   const [slashClosed, setSlashClosed] = useState(false);
-  /** Instagram の比率・枚数（0 はおまかせ） */
-  const [igRatioPick, setIgRatioPick] = useState<IgRatio | null>(null);
-  const [igCount, setIgCount] = useState(0);
   const [imgPrompt, setImgPrompt] = useState("");
   const [imgTransparent, setImgTransparent] = useState(false);
   const chat = useChat({ ready: !!aiProvider, posterId, posterTitle: spec.meta.title });
@@ -328,28 +319,12 @@ export function App() {
   };
 
   // ---------- AI: 新規作成 ----------
-  const planWithAI = () => mode === "slides" ? undefined : igReproduceOn ? reproduceInstagram() : mode === "instagram" ? planInstagram() : reproduceOn ? reproduceWithAI() : run(`${aiName} がレイアウトを設計中`, async (signal) => {
+  const planWithAI = () => mode === "slides" ? undefined : reproduceOn ? reproduceWithAI() : run(`${aiName} がレイアウトを設計中`, async (signal) => {
     const { spec: next } = await api.plan(brief + referenceCaption, undefined, toReferenceImages(refs), signal);
     const n = findPendingAssets(next).length;
     const images = n ? autoImages ? `・画像 ${n} 点を生成します` : `・画像 ${n} 点が未生成` : "";
     await openAsNewPoster(next, `新しいポスターを作成しました（${next.layers.length} レイヤー${images}）。前のポスターは成果物に保存されています`);
     if (n && autoImages) await generatePending(next, signal);
-  }, { cancelable: true });
-
-  // ---------- AI: Instagram の投稿（カルーセル） ----------
-  /** ブリーフから画像 1〜20 枚の投稿を作り、新しい Instagram の成果物として開く（画像も続けて生成） */
-  const planInstagram = () => run(`${aiName} が投稿を設計中`, async (signal) => {
-    const { w, h } = IG_RATIOS[igRatio];
-    const { title, posts } = await api.planInstagram(
-      { brief: brief + referenceCaption, width: w, height: h, count: igCount || undefined, references: toReferenceImages(refs) }, showAIProgress("レイヤー目"), signal,
-    );
-    if (signal.aborted) throw new Error("aborted");
-    const n = posts.reduce((a, p) => a + findPendingAssets(p).length, 0);
-    const images = n ? autoImages ? `・画像素材 ${n} 点を生成します` : `・画像素材 ${n} 点が未生成` : "";
-    const created = await openNewDeck(title, posts, "instagram", {
-      kind: "success", text: `Instagram の投稿を作成しました（${posts.length} 枚${images}）。前の成果物は保存されています`,
-    });
-    if (n && autoImages) await generateAcross(created.map((c) => c.id), signal);
   }, { cancelable: true });
 
   // ---------- AI: 参考画像の再現（A4 モード） ----------
@@ -419,60 +394,6 @@ export function App() {
     if (findPendingAssets(next).length && autoImages) await generatePending(next, signal);
   }, { cancelable: true });
 
-  // ---------- AI: 画像を 1 枚ずつ再現（Instagram） ----------
-  /**
-   * 参考画像の 1 枚ずつを、投稿の 1 枚ずつとして写し取り（＋描画結果と見比べて 1 回仕上げ）、新しい Instagram の投稿にする。
-   * 画像は投稿の比率に中央で切り抜いてから渡す。写し取れなかった画像は、参考画像だけを持った白紙にして順番は崩さない
-   */
-  const reproduceInstagram = () => run(`${aiName} が画像を写し取り中`, async (signal) => {
-    const { w: width, h: height } = IG_RATIOS[igRatio];
-    const items = refs.slice(0, IG_MAX_IMAGES);
-    const total = items.length;
-    let done = 0;
-    const tick = () => setBusy((b) => b && { ...b, progress: [done, total] });
-    tick();
-    const reproduceOne = async (r: (typeof items)[number], i: number): Promise<{ spec: PosterSpec; ok: boolean }> => {
-      const img = await fitToRatio(await loadImage(r.url), width, height);
-      const scaled = await scaledReference(img, width, height);
-      const overlaySrc = await uploadCrop(scaled.blob);
-      const title = `画像 ${i + 1}`;
-      try {
-        const { spec: raw } = await api.reproduce(scaled.ref, width, height, brief, undefined, signal);
-        const cropped = await resolveRefCrops({ ...raw, meta: { ...raw.meta, title } }, img, uploadCrop);
-        const first = withOverlay(cropped, overlaySrc);
-        // 仕上げに失敗しても、写し取ったものは使う
-        const refined = await refineSpec(first, img, scaled.ref, signal).catch((e) => { if (signal.aborted) throw e; return { spec: first }; });
-        return { spec: refined.spec, ok: true };
-      } catch (e) {
-        if (signal.aborted) throw e;
-        console.error(`画像 ${i + 1} の再現に失敗`, e);
-        return { spec: withOverlay(blankInstagramSpec(igRatio, title), overlaySrc), ok: false };
-      } finally {
-        done++;
-        tick();
-      }
-    };
-    // 同時に写し取る数を絞って、順番どおりに並べる
-    const results: { spec: PosterSpec; ok: boolean }[] = new Array(total);
-    let next = 0;
-    await Promise.all(Array.from({ length: Math.min(IG_REPRODUCE_CONCURRENCY, total) }, async () => {
-      while (next < total) {
-        const i = next++;
-        results[i] = await reproduceOne(items[i], i);
-      }
-    }));
-    if (signal.aborted) throw new Error("aborted");
-    const posts = results.map((r) => r.spec);
-    const failed = results.filter((r) => !r.ok).length;
-    const n = posts.reduce((a, p) => a + findPendingAssets(p).length, 0);
-    const images = n ? autoImages ? `・画像素材 ${n} 点を生成します` : `・画像素材 ${n} 点が未生成` : "";
-    const name = brief.trim().split("\n")[0].slice(0, 40) || "再現した投稿";
-    const created = await openNewDeck(name, posts, "instagram", failed
-      ? { kind: "error", text: `${total} 枚中 ${failed} 枚は写し取れませんでした（参考画像を重ねた白紙にしています。その画像を開いて「見比べて直す」で作り直せます）${images}` }
-      : { kind: "success", text: `${total} 枚の画像を再現しました${images}。左パネルの「参考画像を重ねる」で見比べられます` });
-    if (n && autoImages) await generateAcross(created.map((c) => c.id), signal);
-  }, { cancelable: true });
-
   /** 比較用レイヤーの参考画像と見比べて、もう 1 回直す */
   const refineWithAI = () => run("描画結果を参考画像と見比べて修正中", async (signal) => {
     const overlay = overlayOf(spec);
@@ -508,8 +429,8 @@ export function App() {
       const skipped: string[] = [];
       let bytes = refs.reduce((sum, r) => sum + r.img.data.length, 0);
       for (const file of [...files].sort((a, b) => a.name.localeCompare(b.name, "ja", { numeric: true }))) {
-        const remaining = refLimit - refs.length - next.length;
-        if (remaining < 1) { skipped.push(`参考資料は画像・PDFのページを合わせて ${refLimit} 枚までです（${file.name} 以降は追加していません）`); break; }
+        const remaining = MAX_REFERENCES - refs.length - next.length;
+        if (remaining < 1) { skipped.push(`参考資料は画像・PDFのページを合わせて ${MAX_REFERENCES} 枚までです（${file.name} 以降は追加していません）`); break; }
         try {
           const pages = await readReferenceFile(file, remaining);
           const size = pages.reduce((sum, p) => sum + p.img.data.length, 0);
@@ -530,14 +451,6 @@ export function App() {
       setReadingRefs(false);
     }
   };
-  /** 参考画像の並びを入れ替える（Instagram の再現では、この順が投稿の画像の順になる） */
-  const moveRef = (i: number, to: number) => setRefs((r) => {
-    if (to < 0 || to >= r.length) return r;
-    const next = [...r];
-    next.splice(to, 0, ...next.splice(i, 1));
-    return next;
-  });
-
   // ---------- AI: チャット ----------
   /** 製品版で「確認を待つ間に作品が編集されたか」を見張る対象（開いている作品の id と、デッキなら全スライド・ポスターなら編集中の spec の参照） */
   const workRefs = () => [posterIdRef.current, ...(deck ? deck.slides.map((s) => specOf(s.id)) : [specOf(posterIdRef.current ?? "")])];
@@ -556,7 +469,7 @@ export function App() {
       const notes = spec.notes?.trim().slice(0, 300);
       return full.has(number) ? { number, title: slide.title, spec } : { number, title: slide.title, texts: slideContent(spec).texts.map((t) => t.slice(0, 120)), ...(notes ? { notes } : {}) };
     }));
-    return { current, total: deck.slides.length, slides, ...(instagram ? { instagram } : {}) };
+    return { current, total: deck.slides.length, slides };
   };
 
   /**
@@ -616,7 +529,7 @@ export function App() {
     const current = deck ? deck.slides.findIndex((s) => s.id === posterIdRef.current) + 1 : 0;
     const position = deck && current ? addSlidePosition(text, current, deck.slides.length) : null;
     if (position) {
-      return chatTurn(user, `${aiName} が${instagram ? "画像" : "スライド"}を作成中`, restore, async (signal) => {
+      return chatTurn(user, `${aiName} がスライドを作成中`, restore, async (signal) => {
         const r = await addSlideByAI(signal, requestText, position, context, references);
         if (autoImages && r.spec && findPendingAssets(r.spec).length) {
           chat.push({ role: "assistant", text: r.text, changes: r.changes });
@@ -628,7 +541,7 @@ export function App() {
     }
     // 「授業スライド全体の差し色を変えて」: ふつうの修正は今のスライドしか書き換えないので、同じ指示を全スライドに当てる
     if (deck && deck.slides.length > 1 && isWholeDeckRequest(text)) {
-      return chatTurn(user, `${aiName} が全${instagram ? "画像" : "スライド"}を修正中`, restore, async (signal) => {
+      return chatTurn(user, `${aiName} が全スライドを修正中`, restore, async (signal) => {
         const r = await editAcrossDeck(signal, requestText, context, references);
         if (autoImages && r.ids.some((id) => { const sp = specOf(id); return sp && findPendingAssets(sp).length; })) {
           chat.push({ role: "assistant", text: r.text, changes: r.changes });
@@ -641,7 +554,7 @@ export function App() {
     return chatTurn(user, `${aiName} が考え中`, restore, async (signal) => {
       const changed = watchWork(!!desktopBridge(), workRefs);
       const ctx = await deckEditContext(text);
-      const res = await api.edit(cur, requestText, ids, signal, ctx, context, instagram || undefined, undefined, references, workSubject(deck, posterIdRef.current, cur.meta.title));
+      const res = await api.edit(cur, requestText, ids, signal, ctx, context, undefined, references, workSubject(deck, posterIdRef.current, cur.meta.title));
       if (changed()) throw new Error(WORK_CHANGED_MESSAGE);
       const next = res.spec;
       if (!next) return { text: res.reply || "変更はありませんでした" };
@@ -739,7 +652,7 @@ export function App() {
       // 解像度の低い画像は配置では直せないので、AI には伝えない
       const issues = a4Issues(next).filter((i) => i.kind !== "low-res");
       const changed = watchWork(!!desktopBridge(), workRefs);
-      const res = await api.edit(next, a4Instruction(next, issues, extra), undefined, signal, undefined, chat.context(), undefined, undefined, undefined, workSubject(deck, posterIdRef.current, next.meta.title));
+      const res = await api.edit(next, a4Instruction(next, issues, extra), undefined, signal, undefined, chat.context(), undefined, undefined, workSubject(deck, posterIdRef.current, next.meta.title));
       if (changed()) throw new Error(WORK_CHANGED_MESSAGE);
       if (res.spec) {
         const ai = fitToA4({ ...res.spec, meta: { ...res.spec.meta, width: next.meta.width, height: next.meta.height } });
@@ -825,8 +738,8 @@ export function App() {
     return { total, failed };
   };
   /**
-   * Instagram の投稿: ids の各画像を順に開いて、未生成の画像素材を生成する（画像は開いているものにしか当てられないため）。
-   * 終わったら、始めに開いていた画像に戻る
+   * デッキの ids の各スライドを順に開いて、未生成の画像素材を生成する（画像は開いているものにしか当てられないため）。
+   * 終わったら、始めに開いていたスライドに戻る
    */
   const generateAcross = async (ids: string[], signal: AbortSignal) => {
     const start = posterIdRef.current;
@@ -841,13 +754,11 @@ export function App() {
       failed += r.failed;
     }
     if (start && start !== posterIdRef.current && ids.includes(start)) await openSlide(start);
-    if (failed) notify({ kind: "error", text: `${failed} 点の画像生成に失敗しました。その画像を開き、レイヤーを選んで「再生成」できます` });
-    else if (total) notify({ kind: "success", text: `${targets.length} 枚の画像に、画像素材を ${total} 点生成しました` });
+    if (failed) notify({ kind: "error", text: `${failed} 点の画像生成に失敗しました。そのスライドを開き、レイヤーを選んで「再生成」できます` });
+    else if (total) notify({ kind: "success", text: `${targets.length} 枚のスライドに、画像素材を ${total} 点生成しました` });
   };
-  /** 未生成の画像をまとめて生成（Instagram の投稿なら全画像の分） */
-  const generateAll = () => run("画像を生成中", (signal) => (
-    instagram && deck ? generateAcross(deck.slides.map((s) => s.id), signal) : generatePending(spec, signal).then(() => {})
-  ), { cancelable: true });
+  /** 未生成の画像をまとめて生成 */
+  const generateAll = () => run("画像を生成中", (signal) => generatePending(spec, signal).then(() => {}), { cancelable: true });
 
   const regenerateLayer = (layerId: string) => run("画像を生成中", async (signal) => {
     const holder = assetHolder(spec.layers.find((l) => l.id === layerId) ?? null);
@@ -1003,6 +914,19 @@ export function App() {
       ? { kind: "success", text: `${name} を A4 で書き出しました（${size}）` }
       : { kind: "error", text: `${name} を書き出しましたが、A4 の大きさではありません（${size}）。A4 チェックからそろえられます` });
   });
+  /** PNG と同じ A4 300dpi の画像を、同じ実寸の 1 ページの PDF にする（印刷所・提出用） */
+  const exportPdf = () => run("PDF を書き出し中", async () => {
+    const name = `${safeFileName(spec.meta.title)}.pdf`;
+    const png = await buildA4Png();
+    download(await pngToPdf(png, PRINT_DPI, spec.meta.title || undefined), name);
+    const info = readPngInfo(new Uint8Array(await png.arrayBuffer()));
+    const r = info && pngA4Report(info);
+    if (!info || !r) return exported(name);
+    const size = `${r.wMm.toFixed(1)}×${r.hMm.toFixed(1)}mm`;
+    notify(r.ok
+      ? { kind: "success", text: `${name} を A4 で書き出しました（${size}）` }
+      : { kind: "error", text: `${name} を書き出しましたが、A4 の大きさではありません（${size}）。A4 チェックからそろえられます` });
+  });
   /** A4 の大きさで印刷プレビューを開く（ブラウザの印刷画面で用紙 A4・余白なしで確かめられる） */
   const printA4 = () => {
     // ポップアップを止められないよう、クリックのうちに窓だけ開いておく
@@ -1040,10 +964,10 @@ export function App() {
   const {
     deck, slides, specOf, deckOpen, toggleDeck, openSlide, updateSlide, addSlide, duplicateSlide, removeSlide, deleteSlides, moveSlide, reorderSlide, exportDeck,
     fontDialog, setFontDialog, openFontDialog, applyDeckFonts, applyTransitionToAll, renumberDeckPages, writeNotes, addSlideByAI, editAcrossDeck, importPptxFile,
-    instagram, exportImages, changeRatio, openNewDeck, deckReady, renameDeck,
+    deckReady, renameDeck,
   } = useDeck({ spec, theme, save, apiUp, busy, run, notify, exported, setBusyProgress, setSpec, resetSpec, stashHistory, setSelected, fitView });
-  /** PPTX のスライド（Instagram の投稿でない普通のデッキ）を開いているか。投影・台本・アニメーションはこのときだけ */
-  const isSlides = !!deck && !instagram;
+  /** スライド（デッキ）を開いているか。投影・台本・アニメーションはこのときだけ */
+  const isSlides = !!deck;
   /** 開いているモード。デッキを調べ終えたらデッキの種類で決め、それまでは URL の mode（無ければポスター）。別モードの成果物を作る・読み込む導線は出さない */
   const mode: AppMode = deck || deckReady ? modeOfDeck(deck) : readModeParam() ?? "poster";
   // URL の mode を今のモードに合わせ（open など他のクエリは残す）、開いている成果物をモードごとの「最後に開いた ID」に覚える
@@ -1054,35 +978,24 @@ export function App() {
     } catch { /* URL を書き換えられなくても動く */ }
   }, [mode]);
   useEffect(() => { if (posterId && (deck || deckReady)) writeLastId(mode, posterId); }, [mode, posterId, deck, deckReady]);
-  /** 新規作成タブ（ポスター・Instagram の生成）。PPTX モードでは出さずチャットだけにする */
+  /** 新規作成タブ（ポスターの生成）。スライドのモードでは出さずチャットだけにする */
   const canMake = mode !== "slides";
   const tab = canMake ? aiTab : "chat";
-  // Instagram の比率（未選択なら開いている投稿の比率）
-  /** Instagram で、参考画像を 1 枚ずつそのまま再現する（参考画像があれば「投稿を生成」の代わりにこれを行う） */
-  const igReproduceMode = mode === "instagram" && igReproduce;
-  const igReproduceOn = igReproduceMode && refs.length > 0;
-  const refLimit = igReproduceMode ? IG_MAX_IMAGES : MAX_REFERENCES;
-  // 再現するときは、選んでいなければ 1 枚目の画像に一番近い比率にする
-  const igRatio: IgRatio = igRatioPick ?? (igReproduceOn ? nearestRatio(refs[0].w, refs[0].h) : undefined) ?? (instagram ? ratioOf(W, H) : undefined) ?? IG_DEFAULT_RATIO;
-  /** Instagram の投稿で、未生成の画像素材がある画像の数と素材の数（開いている画像は編集中の内容） */
-  const deckPending = useMemo(() => {
-    if (!instagram || !deck) return null;
-    let images = 0, assets = 0;
-    for (const s of deck.slides) {
-      const n = findPendingAssets(s.id === posterId ? spec : slides.get(s.id) ?? spec).length;
-      if (n) { images++; assets += n; }
-    }
-    return { images, assets };
-  }, [instagram, deck, slides, spec, posterId]);
-  const pendingCount = deckPending ? deckPending.assets : pending.length;
+
+  const pendingCount = pending.length;
 
   const confirmExport = async () => {
-    const ok = await ask(instagram && deck
-      ? { title: "PNG で書き出しますか？", message: deck.slides.length > 1 ? `「${deck.name}」の ${deck.slides.length} 枚を、幅 1080px の PNG（番号付き）にして ZIP にまとめて保存します。投稿するときはこの順に選んでください。` : `「${deck.name}」を幅 1080px の PNG として保存します。`, ok: "書き出す" }
-      : deck
-      ? { title: "PowerPoint で書き出しますか？", message: `「${deck.name}」を .pptx ファイルとして保存します。`, ok: "書き出す" }
-      : { title: "PNG で書き出しますか？", message: `「${spec.meta.title || "無題のポスター"}」を A4 300dpi（2480×3508px）の PNG として保存します。書き出したあと、実寸が A4 になったかをお知らせします。`, ok: "書き出す" });
-    if (ok) (instagram ? exportImages : deck ? exportDeck : exportPng)();
+    if (deck) {
+      if (await ask({ title: "PowerPoint で書き出しますか？", message: `「${deck.name}」を .pptx ファイルとして保存します。`, ok: "書き出す" })) exportDeck();
+      return;
+    }
+    const format = await askChoice({
+      title: "書き出す形式を選んでください",
+      message: `「${spec.meta.title || "無題のポスター"}」を A4 300dpi（2480×3508px）で保存します。PDF は印刷・提出用、PNG は画像として使うときに。書き出したあと、実寸が A4 になったかをお知らせします。`,
+      choices: [{ value: "png", label: "PNG" }, { value: "pdf", label: "PDF" }],
+    });
+    if (format === "pdf") exportPdf();
+    else if (format === "png") exportPng();
   };
 
   // ---------- レイヤー操作 ----------
@@ -1179,7 +1092,7 @@ export function App() {
    * withView なら発表者ビューを別ウィンドウで開く（ポップアップを止められないよう、クリック・キーの処理の中で同期的に開く）
    */
   const startShow = (fromCurrent: boolean, withView = false) => {
-    if (!deck || instagram) return;
+    if (!deck) return;
     previewRef.current?.cancel();
     setTextEdit(null);
     setCropping(null);
@@ -1308,7 +1221,7 @@ export function App() {
   };
   // 参考画像の再現は A4 モード（単体のポスター）だけ。PPTX のスライドでは使わない
   const reproduceOn = reproduce && refs.length > 0 && mode === "poster";
-  const canPlan = canMake && !busy && !readingRefs && (!!brief.trim() || reproduceOn || igReproduceOn) && aiReady;
+  const canPlan = canMake && !busy && !readingRefs && (!!brief.trim() || reproduceOn) && aiReady;
   // / コマンドは AI を使わないので、サインインしていなくても送れる
   const canChat = !busy && !readingRefs && !!instruction.trim() && (aiReady || /^[/／]/.test(instruction.trim()));
   const slashItems = slashClosed ? [] : slashSuggestions(instruction, isSlides, mode === "poster");
@@ -1350,7 +1263,7 @@ export function App() {
   /** 送信の対象を示すチップ（× で選択解除） */
   /** レイヤーを選んでいないときの対象。デッキでは開いているスライド（ふつうの修正はそのスライドだけを書き換える） */
   const slideNo = deck ? deck.slides.findIndex((s) => s.id === posterId) + 1 : 0;
-  const chatFallback = slideNo ? `${instagram ? "画像" : "スライド"} ${slideNo}` : "ポスター全体";
+  const chatFallback = slideNo ? `スライド ${slideNo}` : "ポスター全体";
   const targetChip = (label: string | null, fallback: string) => label
     ? <span className="chip">{label}<button aria-label="対象を解除" onClick={() => setSelected(null)}>×</button></span>
     : <span className="chip muted">{fallback}</span>;
@@ -1387,7 +1300,7 @@ export function App() {
                 <div className="menu-list" role="menu" onClick={(e) => (e.target as Element).closest("button") && close()}>
                   <button role="menuitem" onClick={() => leaveTo(modeHomeUrl(mode))}><Ico name="home" /> ホーム<small>{MODES[mode].label}の新規作成・最近の成果物</small></button>
                   <button role="menuitem" onClick={() => leaveTo(modeLibraryUrl(mode))}><Ico name="folder" /> 成果物<small>{MODES[mode].label}の{MODES[mode].item}の一覧</small></button>
-                  <button role="menuitem" onClick={() => leaveTo(HOME_URL)}><Ico name="layers" /> モードを選ぶ<small>ポスター・PPTX・Instagram</small></button>
+                  <button role="menuitem" onClick={() => leaveTo(HOME_URL)}><Ico name="layers" /> モードを選ぶ<small>ポスター・スライド</small></button>
                   {mode === "slides" && <>
                     <div className="menu-sep" />
                     <label className="as-button" role="menuitem"><Ico name="slides" /> PowerPoint を開く…<small>スライドごとに編集</small><input type="file" accept={PPTX_ACCEPT} hidden onChange={(e) => { e.target.files?.[0] && importPptxFile(e.target.files[0]); e.target.value = ""; close(); }} /></label>
@@ -1413,7 +1326,7 @@ export function App() {
           <input
             className="title-input"
             aria-label={`${MODES[mode].item}のタイトル`}
-            placeholder={mode === "instagram" ? "無題の投稿" : mode === "slides" ? "無題のプレゼンテーション" : "無題のポスター"}
+            placeholder={mode === "slides" ? "無題のプレゼンテーション" : "無題のポスター"}
             value={deck ? deck.name : spec.meta.title}
             onChange={(e) => deck ? renameDeck(e.target.value) : setSpec((s) => ({ ...s, meta: { ...s.meta, title: e.target.value } }), "title")}
           />
@@ -1429,47 +1342,17 @@ export function App() {
           </div>}
 
           {tab === "plan" && <>
-            {mode === "instagram" && (
-              <div className="row ig-options">
-                <label className="field">
-                  <span>比率</span>
-                  <select value={igRatio} onChange={(e) => setIgRatioPick(e.target.value as IgRatio)} title={IG_RATIOS[igRatio].note}>
-                    {IG_RATIO_KEYS.map((k) => <option key={k} value={k}>{IG_RATIOS[k].label}</option>)}
-                  </select>
-                </label>
-                {igReproduceOn ? (
-                  <div className="field">
-                    <span>枚数</span>
-                    <span className="field-value">{Math.min(refs.length, IG_MAX_IMAGES)} 枚（画像の数）</span>
-                  </div>
-                ) : (
-                  <label className="field">
-                    <span>枚数</span>
-                    <select value={igCount} onChange={(e) => setIgCount(Number(e.target.value))} title="カルーセル（スワイプで見る複数枚の投稿）の画像の枚数">
-                      <option value={0}>おまかせ</option>
-                      {Array.from({ length: 10 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1} 枚</option>)}
-                    </select>
-                  </label>
-                )}
-              </div>
-            )}
-            {mode === "instagram" && (
-              <label className="check small" title="ChatGPT などで作った画像を、1 枚ずつ投稿の 1 枚ずつとして、文字・位置・色までそのまま写し取ります（写真やイラストは画像から切り抜きます）">
-                <input type="checkbox" checked={igReproduce} onChange={(e) => toggleIgReproduce(e.target.checked)} /> 画像を 1 枚ずつそのまま再現
-              </label>
-            )}
             <textarea
-              rows={igReproduceMode ? 3 : 7}
-              aria-label={igReproduceMode ? "補足（文言の差し替えなど）" : mode === "instagram" ? "投稿の内容（ブリーフ）" : "ポスターの内容（ブリーフ）"}
-              placeholder={igReproduceMode ? "補足（空で構いません。文言を差し替えたいときだけ書いてください。全部の画像に効きます）" : mode === "instagram" ? "投稿の内容（伝えたいこと・告知なら日時・場所・対象など）。カルーセルなら「1 枚目に…、2 枚目に…」のように書いても構いません" : "ポスターの内容（タイトル・日時・場所・対象など）"}
+              rows={7}
+              aria-label="ポスターの内容（ブリーフ）"
+              placeholder="ポスターの内容（タイトル・日時・場所・対象など）"
               value={brief}
               onChange={(e) => setBrief(e.target.value)}
               onKeyDown={submitOnModEnter(planWithAI, canPlan)}
             />
-            {!igReproduceMode && (
-              <ImageAttach
+            <ImageAttach
                 images={refs}
-                max={refLimit}
+                max={MAX_REFERENCES}
                 label="参考画像・PDFを添付（1ファイル20MB）"
                 caption="画像・PDF"
                 accept={REFERENCE_FILE_ACCEPT}
@@ -1477,45 +1360,19 @@ export function App() {
                 onAdd={onRefFiles}
                 onRemove={(i) => setRefs((x) => x.filter((_, j) => j !== i))}
               />
-            )}
             <div className="row">
-              {igReproduceMode && (
-                <label className="as-button small" title={`投稿にする画像（${IG_MAX_IMAGES} 枚まで・ドロップでも追加可）。並んだ順に 1 枚目・2 枚目…になります`}>
-                  <Ico name="plus" size={14} /> 画像を追加<input type="file" accept={REFERENCE_FILE_ACCEPT} multiple hidden disabled={readingRefs || !!busy} onChange={(e) => { onRefFiles(e.target.files); e.target.value = ""; }} />
-                </label>
-              )}
               {refs.length > 0 && !deck && mode === "poster" && (
                 <label className="check small" title="参考画像の 1 枚目を、文字・位置・色までそのまま写し取ります（写真やイラストは参考画像から切り抜きます）">
                   <input type="checkbox" checked={reproduce} onChange={(e) => setReproduce(e.target.checked)} /> 1 枚目をそのまま再現
                 </label>
               )}
             </div>
-            {refs.length > 0 && igReproduceMode && (
-              <ol className="ig-slots" aria-label="再現する画像（並びが投稿の順）">
-                {refs.slice(0, IG_MAX_IMAGES).map((r, i) => (
-                  <li key={r.url + i} className="ig-slot">
-                    <img src={r.url} alt={r.name} style={{ aspectRatio: `${IG_RATIOS[igRatio].w} / ${IG_RATIOS[igRatio].h}` }} title={`${r.name}（${r.w}×${r.h}）`} />
-                    <span className="ig-slot-no">{i + 1}</span>
-                    <span className="ig-slot-tools">
-                      <button aria-label={`${i + 1} 枚目を前へ`} title="前へ" disabled={i === 0} onClick={() => moveRef(i, i - 1)}><Ico name="chevronLeft" size={12} /></button>
-                      <button aria-label={`${r.name} を外す`} title="外す" onClick={() => setRefs((x) => x.filter((_, j) => j !== i))}>×</button>
-                      <button aria-label={`${i + 1} 枚目を後ろへ`} title="後ろへ" disabled={i === refs.length - 1} onClick={() => moveRef(i, i + 1)}><Ico name="chevronRight" size={12} /></button>
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            )}
-            {refs.length > 0 && igReproduceMode && refs.some((r) => !ratioOf(r.w, r.h) || ratioOf(r.w, r.h) !== igRatio) && (
-              <p className="hint small">比率が {IG_RATIOS[igRatio].label} と違う画像は、中央で切り抜いてから再現します（サムネイルは切り抜いた後の見え方です）</p>
-            )}
             {readingRefs && <p className="hint small" role="status">参考資料を読み込み中…</p>}
             {signinNote}
             <button className="primary block" disabled={!canPlan} onClick={planWithAI}>
-              <Ico name="sparkles" /> {igReproduceOn ? `${Math.min(refs.length, IG_MAX_IMAGES)} 枚の画像を再現` : reproduceOn ? "参考画像を再現" : mode === "instagram" ? "投稿を生成" : "レイアウトを生成"} <kbd>{MOD}+Enter</kbd>
+              <Ico name="sparkles" /> {reproduceOn ? "参考画像を再現" : "レイアウトを生成"} <kbd>{MOD}+Enter</kbd>
             </button>
-            {mode === "instagram" && <p className="hint small">{IG_RATIOS[igRatio].w}×{IG_RATIOS[igRatio].h}px・{IG_RATIOS[igRatio].note}。新しい投稿として作ります（今の成果物は残ります）。最大 {IG_MAX_IMAGES} 枚</p>}
             {reproduceOn && <p className="hint small">ブリーフは空でも構いません。文言を差し替えたいときだけ書いてください</p>}
-            {igReproduceMode && !refs.length && <p className="hint small">投稿にする画像を 1 枚目から順に追加してください（まとめて選ぶとファイル名の順に並びます）。1 枚あたり 2〜4 分ほどかかります</p>}
             {refOverlay && !isSlides && (
               <div className="row">
                 <button className="small" onClick={toggleRefOverlay} title="参考画像を半透明で重ねて、ずれを確認します">
@@ -1693,8 +1550,7 @@ export function App() {
             deck={deck} slides={slides} currentSpec={spec} open={deckOpen} currentId={posterId} width={W} height={H} thumbHeight={deckHeight - DECK_CHROME_H} disabled={!!busy}
             onOpen={goToSlide}
             onAdd={addSlide} onDuplicate={duplicateSlide} onRemove={removeSlide} onMove={moveSlide} onReorder={reorderSlide}
-            onExport={instagram ? confirmExport : exportDeck} onFonts={openFontDialog} onToggle={toggleDeck} onPresent={() => startShow(false)} onPresentView={() => startShow(true, true)}
-            instagram={instagram ? { ratio: ratioOf(W, H), onRatio: changeRatio } : undefined}
+            onExport={exportDeck} onFonts={openFontDialog} onToggle={toggleDeck} onPresent={() => startShow(false)} onPresentView={() => startShow(true, true)}
           />
         )}
         {deck && deckOpen && (
@@ -1721,7 +1577,7 @@ export function App() {
               className={"primary" + (!busy ? " attention" : "")}
               disabled={!!busy}
               onClick={generateAll}
-              title={deckPending && deckPending.images > 1 ? `${deckPending.images} 枚の画像にある未生成の画像素材をまとめて生成します` : "未生成の画像をまとめて生成します"}
+              title="未生成の画像をまとめて生成します"
             >
               <Ico name="image" /> 画像を生成<span className="pill-count">{pendingCount}</span>
             </button>
@@ -1777,7 +1633,7 @@ export function App() {
               </div>
             )}
           </Menu>
-          <button className="primary export-btn" onClick={confirmExport} aria-label="書き出し" title={instagram ? "全画像を PNG（幅 1080px）で書き出し" : deck ? "全スライドを PowerPoint で書き出し" : "PNG で書き出し（A4 300dpi・2480×3508px）"}><Ico name="download" /><span className="export-label">書き出し</span></button>
+          <button className="primary export-btn" onClick={confirmExport} aria-label="書き出し" title={deck ? "全スライドを PowerPoint（PPTX）で書き出し" : "PDF・PNG で書き出し（A4 300dpi・2480×3508px）"}><Ico name="download" /><span className="export-label">書き出し</span></button>
         </div>
         {(selectedLayer || multi) && <div className="inspector-wrap">
           <Inspector
@@ -1841,7 +1697,7 @@ export function App() {
 
       {fontDialog && deck && (
         <FontDialog
-          kind={instagram ? "instagram" : "slides"} deckName={deck.name} texts={fontDialog.texts} current={fontDialog.current}
+          kind="slides" deckName={deck.name} texts={fontDialog.texts} current={fontDialog.current}
           subject={workSubject(deck, posterIdRef.current, deck.name)} onApply={applyDeckFonts} onError={notifyAIError} onClose={() => setFontDialog(null)}
         />
       )}

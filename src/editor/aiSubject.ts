@@ -12,7 +12,7 @@ const make = (kind: AiSubject["kind"], id: string | null | undefined, title: str
 /** 保存済みのポスター単体。保存前（id が無い・形が違う）なら付けない */
 export const posterSubject = (id: string | null | undefined, title: string | undefined) => make("poster", id, title);
 
-/** 保存済みのデッキ（スライド・Instagram 投稿） */
+/** 保存済みのデッキ（スライド） */
 export const deckSubject = (deck: { id: string; name: string } | null | undefined) => (deck ? make("deck", deck.id, deck.name) : undefined);
 
 /** デッキを開いていればデッキ、そうでなければポスター単体 */

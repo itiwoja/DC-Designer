@@ -1,0 +1,39 @@
+---
+// 値をクリップボードへコピーするボタン。島にせず、この .astro の <script> だけで動かす（SITE-D-31）。
+// JS が無い・コピーに失敗しても、値そのものは選択できる文字として別に出してある。
+interface Props {
+  value: string;
+  label?: string;
+}
+const { value, label = "コピー" } = Astro.props;
+---
+<span class="copy">
+  <button type="button" class="btn btn--small btn--ghost copy-button" data-copy={value}>{label}</button>
+  <span class="copy-status" role="status" aria-live="polite"></span>
+</span>
+<script>
+  document.querySelectorAll<HTMLButtonElement>(".copy-button").forEach((button) => {
+    const status = button.parentElement?.querySelector<HTMLElement>(".copy-status");
+    let timer: number | undefined;
+    button.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(button.dataset.copy ?? "");
+        if (status) {
+          status.classList.remove("is-error");
+          status.textContent = "コピーしました";
+        }
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => {
+          if (status) status.textContent = "";
+        }, 2000);
+      } catch {
+        // 失敗しても、隣の値を選んで自分でコピーできる
+        if (status) {
+          window.clearTimeout(timer);
+          status.classList.add("is-error");
+          status.textContent = "コピーできませんでした。値を選んでコピーしてください";
+        }
+      }
+    });
+  });
+</script>

@@ -1,0 +1,35 @@
+/* 更新履歴（PG-003）と 版カード（CMP-013）。パネルと同じ形。開閉に動きは付けない */
+.release {
+  background: var(--card-bg); border: var(--border-width) solid var(--card-border); border-radius: var(--card-radius);
+  padding: var(--space-5); margin-bottom: var(--space-5);
+}
+@media (min-width: 768px) { .release { padding: var(--space-6); } }
+
+/* 見出し：版番号（Mochiy Pop One）＋日付（補助色・本文の太さ）＋バッジ */
+.release h2 {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3);
+  font-size: clamp(1.25rem, 1.1rem + 0.8vw, 1.5rem); margin: 0;
+}
+.release h2 time { color: var(--color-text-muted); font-family: var(--font-body); font-size: var(--text-base); font-weight: var(--weight-regular); }
+.release > h2 { margin-bottom: var(--space-4); }
+
+/* 畳んだ版：summary 全体を押せる。開閉の印は CSS の三角（transform のみ・動きなし） */
+.release details > summary {
+  display: flex; align-items: center; gap: var(--space-3); min-height: 44px; cursor: pointer; list-style: none;
+}
+.release details > summary::-webkit-details-marker { display: none; }
+.release details > summary::before {
+  content: ""; flex: none; width: 0; height: 0;
+  border-left: 8px solid var(--color-text); border-top: 5px solid transparent; border-bottom: 5px solid transparent;
+}
+.release details[open] > summary::before { transform: rotate(90deg); }
+.release details[open] > summary { margin-bottom: var(--space-4); }
+
+/* 版本文（サニタイズ済みの HTML）の中の見出し・箇条書き */
+.release__body > :first-child { margin-top: 0; }
+.release__body h1, .release__body h2, .release__body h3 { font-size: var(--text-lg); margin: var(--space-4) 0 var(--space-2); }
+.release__body ul, .release__body ol { margin: 0 0 var(--space-3); padding-left: var(--space-5); }
+.release__body li { margin-bottom: var(--space-1); }
+.release__link { margin: var(--space-3) 0 0; }
+
+.changelog-all { margin: var(--space-6) 0 0; }

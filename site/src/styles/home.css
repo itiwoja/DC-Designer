@@ -1,0 +1,116 @@
+/* トップ（PG-001）専用のスタイル。正本は docs/design/ui/05_screens.md・06_motion.md・07_responsive_a11y.md。
+   色・間隔・動きは tokens.css のトークンだけを使う。動かすのは transform と opacity だけ。 */
+
+/* ---------- ダウンロード部品（DownloadButton） ---------- */
+.download-cta { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-2); }
+.download-cta__note { margin: 0; color: var(--color-text-muted); font-size: var(--text-sm); }
+.download-cta--band { align-items: flex-start; }
+@media (min-width: 768px) {
+  .download-cta { align-items: flex-start; }
+}
+
+/* ---------- SEC-001-01 ヒーロー ---------- */
+/* 背景のパーティクル（MOT-004）：帯いっぱいに敷く。重なりは 粒 < 文字・ボタン（クリックは通す）。
+   帯の高さは ヘッダーを除いた画面いっぱい。文字の塊は帯の上下中央 */
+.hero-band { position: relative; overflow: clip; min-height: var(--hero-min-height); display: grid; align-items: center; }
+/* 帯をヘッダー（＋3 色の帯）の下まで潜らせ、すりガラス越しに粒が見えるようにする（UI-D-54）。文字の塊の位置は今のまま */
+.hero-band {
+  margin-top: calc(-1 * (var(--header-height) + var(--header-stripe)));
+  padding-top: calc(var(--header-height) + var(--header-stripe));
+  min-height: calc(var(--hero-min-height) + var(--header-height) + var(--header-stripe));
+}
+.hero-particles { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+.hero-band .container { position: relative; z-index: 2; }
+.hero { padding-block: var(--space-7); }
+.hero__text { width: fit-content; max-width: 100%; margin-inline: auto; text-align: center; }
+.hero h1 { font-size: var(--text-hero); margin-bottom: var(--space-4); }
+.hero__line { display: block; }
+/* 説明は見出しより広げない（文字の塊が横に伸びると MOT-005 の形を置く余白が無くなる） */
+.hero__lead { max-width: 34em; margin: 0 auto var(--space-5); word-break: auto-phrase; text-wrap: pretty; }
+.hero__actions { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-3); }
+.hero__note { margin: var(--space-3) 0 0; color: var(--color-text-muted); font-size: var(--text-sm); }
+/* 狭い画面では大ボタンの文字を一段下げ、「Windows 版をダウンロード」を 1 行に保つ */
+@media (max-width: 767px) {
+  .hero__actions .btn--large { font-size: var(--text-base); padding-inline: var(--space-5); }
+}
+@media (min-width: 768px) {
+  .hero__actions { flex-direction: row; justify-content: center; gap: var(--space-4); }
+}
+
+/* 画面画像：帯のすぐ下・中央・最大 960px */
+.hero-media { max-width: 960px; padding-top: var(--space-6); }
+.hero-media .media-frame { margin-top: 0; }
+
+/* ---------- 共通：セクションの間 ---------- */
+.home-section + .home-section { padding-top: 0; }
+
+/* ---------- CMP-007 機能カード ---------- */
+.feature-list { list-style: none; margin: var(--space-6) 0 0; padding: 0; display: grid; gap: var(--space-5); }
+.feature-card {
+  background: var(--card-bg); border: var(--border-width) solid var(--card-border); border-radius: var(--card-radius);
+  overflow: hidden; min-width: 0;
+}
+.feature-card h3 { margin-bottom: var(--space-2); }
+.feature-card__text p { margin-bottom: var(--space-2); }
+.note-mark { font-size: 0.6em; font-weight: var(--weight-regular); margin-left: 0.15em; vertical-align: super; line-height: 0; }
+.feature-notes { list-style: none; margin: var(--space-4) 0 0; padding: 0; font-size: var(--text-sm); color: var(--color-text-muted); }
+.feature-notes li { display: flex; gap: 0.25em; }
+.feature-notes__mark { flex: none; }
+
+/* 主要：画像の背面に薄い色面（余白付き）。● 朱 ▲ 山吹 ■ 群青の薄い色 */
+.feature-card--major { display: grid; }
+.feature-card--major .feature-card__media { padding: var(--space-4); background: var(--feature-tint, var(--color-bg)); }
+.feature-card--major .feature-card__media picture,
+.feature-card--major .feature-card__media img { display: block; border-radius: var(--radius-sm); }
+.feature-card--major .feature-card__body { padding: var(--space-5); }
+.feature-card--circle { --feature-tint: var(--color-tint-circle); }
+.feature-card--triangle { --feature-tint: var(--color-tint-triangle); }
+.feature-card--square { --feature-tint: var(--color-tint-square); }
+@media (min-width: 768px) and (max-width: 1023.98px) {
+  .feature-card--major { grid-template-columns: 5fr 6fr; align-items: stretch; }
+  .feature-card--major .feature-card__media { display: flex; align-items: center; }
+}
+@media (min-width: 1024px) {
+  .feature-list--major { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* MOT-003 スクロールでカードが出る。隠すのは JS が付けた .is-pending のときだけ */
+.reveal { transition: opacity var(--dur-enter) var(--ease-bounce), transform var(--dur-enter) var(--ease-bounce); }
+.reveal.is-pending { opacity: 0; transform: translateY(16px); }
+.reveal-delay-1 { transition-delay: var(--stagger); }
+.reveal-delay-2 { transition-delay: calc(var(--stagger) * 2); }
+.reveal-delay-3 { transition-delay: calc(var(--stagger) * 3); }
+@media (prefers-reduced-motion: reduce) {
+  .reveal { transition: none; }
+  .reveal.is-pending { opacity: 1; transform: none; }
+}
+
+/* ---------- CMP-015 媒体の枠（デモ） ---------- */
+.media-frame { margin-top: var(--space-6); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-card); overflow: hidden; background: var(--color-surface); }
+.media-frame img, .media-frame video { width: 100%; }
+
+/* ---------- SEC-001-06 群青の帯（CMP-014） ---------- */
+.cta-band { background: var(--color-band); color: var(--color-on-action); padding-block: var(--section-y); }
+.cta-band__inner { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-5); }
+.cta-band__title { margin: 0; font-size: var(--text-2xl); }
+@media (min-width: 768px) {
+  .cta-band__inner { flex-direction: row; align-items: center; gap: var(--space-6); }
+  .cta-band__title { flex: 1; }
+}
+
+/* ---------- SEC-001-07 DC-Designer とは（3 ステップ） ---------- */
+.steps { list-style: none; margin: var(--space-6) 0 0; padding: 0; display: grid; gap: var(--space-5); }
+.step {
+  background: var(--card-bg); border: var(--border-width) solid var(--card-border); border-radius: var(--card-radius);
+  border-top: 6px solid var(--step-tint, var(--card-border)); padding: var(--space-5); min-width: 0;
+}
+.step--circle { --step-tint: var(--color-shape-circle); }
+.step--triangle { --step-tint: var(--color-shape-triangle); }
+.step--square { --step-tint: var(--color-shape-square); }
+.step__num { display: flex; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-2); font-size: var(--text-sm); font-weight: var(--weight-bold); letter-spacing: 0.08em; color: var(--color-text-muted); }
+.step__title { margin: 0 0 var(--space-2); font-size: var(--text-lg); }
+.step__text { margin: 0; word-break: auto-phrase; text-wrap: pretty; }
+.step__note { margin: var(--space-3) 0 0; font-size: var(--text-sm); color: var(--color-text-muted); word-break: auto-phrase; }
+@media (min-width: 1024px) {
+  .steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

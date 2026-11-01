@@ -1,0 +1,434 @@
+---
+// SEC-001-01 ヒーローの背景パーティクル（MOT-004・MOT-005）。
+// MOT-004：● ▲ ■ の小さな粒がマウスの周りに輪になって集まり、離れると家の位置（文字の塊の外）へ戻る。
+// MOT-005：帯の幅 1024px 以上で、開いた直後に粒が集まって見出しの周りに ●▲■ の形を作り、1 秒保ってほどける（1 回だけ）。
+//   1. 出る 0〜0.3s → 2. 集まる 0.3〜1.5s → 3. 保つ 1.5〜2.5s → 4. ほどける 2.5s〜（MOT-004 のばねで家の位置へ）。1〜3 の間はマウスに反応しない。
+// 文字の塊は [data-hero-text]、ボタン列は [data-hero-actions]（どちらも帯の中。帯に対する相対座標で計算する）。
+// canvas は飾り（aria-hidden・pointer-events: none）。JS が動かないときは何も出ない。ヒーローに 1 つだけ置く。
+---
+<canvas class="hero-particles" aria-hidden="true" data-hero-particles></canvas>
+<script>
+  type Kind = 0 | 1 | 2; // 0 ● / 1 ▲ / 2 ■
+  interface Particle {
+    kind: Kind; lv: number; hx: number; hy: number; x: number; y: number; vx: number; vy: number;
+    sx: number; sy: number; // 出る位置（MOT-005 の段 1）
+    form: boolean; tx: number; ty: number; fk: number; // 形の点（form のときだけ）と、形に寄っている度合い 0〜1
+    size: number; rot: number; spin: number;
+    phase: number; drift: number; ring: number; ang: number; orbit: number; caught: boolean;
+  }
+  type Mode = "wait" | "intro" | "free" | "static";
+
+  const canvas = document.querySelector<HTMLCanvasElement>("[data-hero-particles]");
+  const host = canvas?.parentElement;
+  const ctx = canvas?.getContext("2d");
+  if (canvas && host && ctx) {
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const css = getComputedStyle(document.documentElement);
+    const color = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+    const colors = [
+      color("--color-shape-circle", "#E5432E"),
+      color("--color-shape-triangle", "#F2B21B"),
+      color("--color-shape-square", "#2F55D4"),
+    ];
+
+    const REACH = 240; // マウスがこの距離まで近づくと粒が反応する
+    const STIFFNESS = 38; // ばね（小さいほどカーソルに遅れてついてくる）
+    const DAMPING = 7; // 減衰
+    const KEEP_OUT = 24; // 文字の塊の外枠からこれだけ離して家の位置を置く
+    const FORM_COUNT = 120; // 1 つの形に使う粒の数
+    const ALPHAS = [0.5, 0.65, 0.8]; // 粒の濃さ（種類ごと・濃さごとに 1 本の path にまとめて描く）
+    const T_FADE = 0.3; // MOT-005 段 1 の終わり
+    const T_GATHER = 1.5; // 段 2 の終わり
+    const T_RELEASE = 2.5; // 段 3 の終わり（ここから反応する）
+    const FONT_WAIT = 500; // フォントを待つのはこの ms まで
+    let w = 0;
+    let h = 0;
+    let dpr = 1;
+    let particles: Particle[] = [];
+    let groups: Particle[][] = []; // kind * 3 + lv ごとの粒
+    let formOK = false; // 今の配置で形を作れるか
+    let mode: Mode = reduce ? "static" : host.getBoundingClientRect().width >= 1024 ? "wait" : "free";
+    let et = 0; // MOT-005 の経過秒
+    let sig = "";
+    let mx = -9999;
+    let my = -9999;
+    let pointerIn = false;
+    let visible = true;
+    let raf = 0;
+    let last = 0;
+
+    const rand = (a: number, b: number) => a + Math.random() * (b - a);
+
+    // cubic-bezier(0.2, 0, 0, 1)（--ease-out 相当）：時間 u の進み具合 0〜1。行き過ぎない
+    const ease = (u: number) => {
+      let lo = 0;
+      let hi = 1;
+      for (let i = 0; i < 18; i++) {
+        const s = (lo + hi) / 2;
+        const x = 3 * (1 - s) * (1 - s) * s * 0.2 + s * s * s;
+        if (x < u) lo = s;
+        else hi = s;
+      }
+      const s = (lo + hi) / 2;
+      return 3 * (1 - s) * s * s + s * s * s;
+    };
+
+    const inShape = (k: Kind, dx: number, dy: number, s: number) => {
+      if (k === 0) return dx * dx + dy * dy <= (s * s) / 4;
+      if (k === 2) return Math.abs(dx) <= s / 2 && Math.abs(dy) <= s / 2;
+      return dy >= -s / 2 && dy <= s / 2 && Math.abs(dx) <= ((dy + s / 2) / s) * (s / 2);
+    };
+
+    // 形の内側に格子で点を取る。間隔は「120 点以上になる最大の値」を二分探索で決め、余りはでたらめに捨てて 120 にする
+    const gridPoints = (k: Kind, cx: number, cy: number, s: number) => {
+      const collect = (d: number) => {
+        const pts: [number, number][] = [];
+        const n = Math.floor(s / 2 / d);
+        for (let i = -n; i <= n; i++) {
+          for (let j = -n; j <= n; j++) {
+            if (inShape(k, i * d, j * d, s)) pts.push([cx + i * d, cy + j * d]);
+          }
+        }
+        return pts;
+      };
+      let lo = s / 40;
+      let hi = s;
+      for (let i = 0; i < 24; i++) {
+        const mid = (lo + hi) / 2;
+        if (collect(mid).length >= FORM_COUNT) lo = mid;
+        else hi = mid;
+      }
+      const pts = collect(lo);
+      while (pts.length > FORM_COUNT) pts.splice(Math.floor(Math.random() * pts.length), 1);
+      return pts;
+    };
+
+    // 近い粒から順に点へ割り当てる（貪欲）
+    const assign = (list: Particle[], pts: [number, number][]) => {
+      const m = pts.length;
+      const dist = new Float32Array(list.length * m);
+      for (let i = 0; i < list.length; i++) {
+        for (let j = 0; j < m; j++) dist[i * m + j] = Math.hypot(list[i].sx - pts[j][0], list[i].sy - pts[j][1]);
+      }
+      const order = Array.from(dist.keys()).sort((a, b) => dist[a] - dist[b]);
+      const usedP = new Set<number>();
+      const usedT = new Set<number>();
+      for (const id of order) {
+        const i = Math.floor(id / m);
+        const j = id % m;
+        if (usedP.has(i) || usedT.has(j)) continue;
+        usedP.add(i);
+        usedT.add(j);
+        const p = list[i];
+        p.form = true;
+        p.tx = pts[j][0];
+        p.ty = pts[j][1];
+        if (usedT.size === m) break;
+      }
+    };
+
+    const build = () => {
+      const rect = host.getBoundingClientRect();
+      w = rect.width;
+      h = rect.height;
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.max(1, Math.round(w * dpr));
+      canvas.height = Math.max(1, Math.round(h * dpr));
+
+      // 文字の塊・ボタン列の位置（帯に対する相対座標）
+      const text = host.querySelector<HTMLElement>("[data-hero-text]");
+      const actions = host.querySelector<HTMLElement>("[data-hero-actions]");
+      const tr = text?.getBoundingClientRect();
+      const ar = actions?.getBoundingClientRect();
+      const box = tr ? { l: tr.left - rect.left, t: tr.top - rect.top, r: tr.right - rect.left, b: tr.bottom - rect.top } : null;
+      sig = `${window.innerWidth}|${w}x${h}|${tr?.width}x${tr?.height}`;
+
+      // 粒の数：768 未満 90・768〜1023 で 270・1024 以上 450（3 種同数）
+      const count = w < 768 ? 90 : w < 1024 ? 270 : 450;
+      // 文字の塊の外枠＋24px の中を避けて家の位置を決める
+      const inside = (x: number, y: number) =>
+        !!box && x > box.l - KEEP_OUT && x < box.r + KEEP_OUT && y > box.t - KEEP_OUT && y < box.b + KEEP_OUT;
+      const place = (): [number, number] => {
+        for (let i = 0; i < 60; i++) {
+          const x = rand(0, w);
+          const y = rand(0, h);
+          if (!inside(x, y)) return [x, y];
+        }
+        // 見つからないとき（狭い画面）は塊の上下左右の余白のうち広いところに置く
+        const m = box ? [
+          { x0: 0, x1: w, y0: 0, y1: box.t - KEEP_OUT },
+          { x0: 0, x1: w, y0: box.b + KEEP_OUT, y1: h },
+          { x0: 0, x1: box.l - KEEP_OUT, y0: 0, y1: h },
+          { x0: box.r + KEEP_OUT, x1: w, y0: 0, y1: h },
+        ] : [];
+        let best = m[0];
+        for (const r of m) if (!best || (r.x1 - r.x0) * (r.y1 - r.y0) > (best.x1 - best.x0) * (best.y1 - best.y0)) best = r;
+        if (best && best.x1 > best.x0 && best.y1 > best.y0) return [rand(best.x0, best.x1), rand(best.y0, best.y1)];
+        return [rand(0, w), rand(0, h)];
+      };
+      particles = Array.from({ length: count }, (_, i) => {
+        const [hx, hy] = place();
+        return {
+          kind: (i % 3) as Kind, lv: Math.floor(Math.random() * 3), hx, hy, x: hx, y: hy, vx: 0, vy: 0,
+          sx: rand(0, w), sy: rand(0, h), form: false, tx: hx, ty: hy, fk: 0,
+          size: rand(4, 9), rot: rand(0, Math.PI * 2), spin: rand(-0.6, 0.6),
+          phase: rand(0, Math.PI * 2), drift: rand(4, 12), ring: rand(60, 120), ang: 0,
+          orbit: rand(1.2, 2.2) * (Math.random() < 0.15 ? -1 : 1), caught: false,
+        };
+      });
+      groups = Array.from({ length: 9 }, () => []);
+      for (const p of particles) groups[p.kind * 3 + p.lv].push(p);
+
+      // MOT-005 の形（1024px 以上・動きを始める前か静止画のときだけ計算する）
+      formOK = false;
+      if ((reduce || mode === "wait") && box && ar && w >= 1024) {
+        // --hero-form-size = clamp(120px, 14vw, 200px)
+        const s = Math.min(200, Math.max(120, window.innerWidth * 0.14));
+        const centers: [number, number][] = [
+          [box.l - KEEP_OUT - s / 2, box.t + s / 2], // ●
+          [box.r + KEEP_OUT + s / 2, (box.t + box.b) / 2], // ▲
+          [box.l - KEEP_OUT - s / 2, ar.bottom - rect.top - s / 2], // ■
+        ];
+        const roomy = (w - (box.r - box.l)) / 2 >= s + 40;
+        const inner = centers.every(([cx, cy]) =>
+          cx - s / 2 >= 16 && cx + s / 2 <= w - 16 && cy - s / 2 >= 16 && cy + s / 2 <= h - 16);
+        if (roomy && inner) {
+          formOK = true;
+          for (let k = 0; k < 3; k++) {
+            const list = particles.filter((p) => p.kind === k);
+            assign(list, gridPoints(k as Kind, centers[k][0], centers[k][1], s));
+          }
+        }
+      }
+    };
+
+    // 頂点を自分で回して 1 本の path に足す
+    const addShape = (p: Particle, rot: number) => {
+      const s = p.size;
+      if (p.kind === 0) {
+        ctx.moveTo(p.x + s / 2, p.y);
+        ctx.arc(p.x, p.y, s / 2, 0, Math.PI * 2);
+        return;
+      }
+      const c = Math.cos(rot);
+      const sn = Math.sin(rot);
+      const pts = p.kind === 1
+        ? [[0, -s * 0.58], [s * 0.55, s * 0.42], [-s * 0.55, s * 0.42]]
+        : [[-s / 2, -s / 2], [s / 2, -s / 2], [s / 2, s / 2], [-s / 2, s / 2]];
+      for (let i = 0; i < pts.length; i++) {
+        const x = p.x + pts[i][0] * c - pts[i][1] * sn;
+        const y = p.y + pts[i][0] * sn + pts[i][1] * c;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+    };
+
+    // 種類 × 濃さの 9 本の path にまとめて fill（global は段 1 のフェード）
+    const draw = (global = 1) => {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      for (let g = 0; g < 9; g++) {
+        const list = groups[g];
+        if (!list.length) continue;
+        ctx.fillStyle = colors[Math.floor(g / 3)];
+        ctx.globalAlpha = ALPHAS[g % 3] * global;
+        ctx.beginPath();
+        for (const p of list) addShape(p, p.rot * (1 - p.fk));
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    };
+
+    // 動きを止めた状態を 1 枚描く（reduced-motion：形になった状態、または家の位置）
+    const drawStatic = () => {
+      for (const p of particles) {
+        p.x = formOK && p.form ? p.tx : p.hx;
+        p.y = formOK && p.form ? p.ty : p.hy;
+        p.fk = formOK && p.form ? 1 : 0;
+      }
+      draw();
+    };
+
+    // MOT-004 のばね。mouseOn のときだけ輪に引き寄せられる
+    const spring = (p: Particle, dt: number, time: number, mouseOn: boolean) => {
+      // 反応するかは家の位置の近さで決める（輪になった粒が出入りでばたつかない）
+      const near = mouseOn && pointerIn && Math.hypot(p.hx - mx, p.hy - my) < REACH;
+      let tx: number;
+      let ty: number;
+      if (near) {
+        if (!p.caught) {
+          p.caught = true;
+          p.ang = Math.atan2(p.y - my, p.x - mx);
+        }
+        p.ang += p.orbit * dt;
+        tx = mx + Math.cos(p.ang) * p.ring;
+        ty = my + Math.sin(p.ang) * p.ring;
+      } else {
+        p.caught = false;
+        tx = p.hx + Math.cos(time * 0.6 + p.phase) * p.drift;
+        ty = p.hy + Math.sin(time * 0.5 + p.phase * 1.3) * p.drift;
+      }
+      p.vx += ((tx - p.x) * STIFFNESS - p.vx * DAMPING) * dt;
+      p.vy += ((ty - p.y) * STIFFNESS - p.vy * DAMPING) * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      // 輪の中で速く動くほど少し回る
+      const speed = Math.hypot(p.vx, p.vy);
+      p.rot += (p.spin + (near ? speed * 0.01 : 0)) * dt;
+      // 形から離れたら回転をなじませる
+      if (p.fk > 0) p.fk = Math.max(0, p.fk - dt / 0.5);
+    };
+
+    const step = (t: number) => {
+      raf = 0;
+      if (!visible || document.hidden) return;
+      const dt = Math.min((t - last) / 1000 || 0.016, 0.033);
+      last = t;
+      const time = t / 1000;
+      let global = 1;
+      if (mode === "intro") {
+        et += dt;
+        if (et >= T_RELEASE) {
+          // 4. ほどける：形の粒は止まった状態から MOT-004 のばねで家の位置へ。ここからマウスに反応する
+          mode = "free";
+          for (const p of particles) {
+            p.vx = 0;
+            p.vy = 0;
+          }
+        } else {
+          global = Math.min(1, et / T_FADE);
+          const e = et < T_GATHER ? ease(Math.max(0, (et - T_FADE) / (T_GATHER - T_FADE))) : 1;
+          for (const p of particles) {
+            if (et < T_FADE) {
+              // 1. 出る：帯の中のでたらめな位置で透明 → 不透明
+              p.x = p.sx;
+              p.y = p.sy;
+              p.rot += p.spin * dt;
+            } else if (p.form) {
+              // 2. 集まる／3. 保つ（±1px だけ揺れる）
+              p.fk = e;
+              if (et < T_GATHER) {
+                p.x = p.sx + (p.tx - p.sx) * e;
+                p.y = p.sy + (p.ty - p.sy) * e;
+              } else {
+                p.x = p.tx + Math.sin(time * 9 + p.phase);
+                p.y = p.ty + Math.cos(time * 8 + p.phase * 1.3);
+              }
+            } else {
+              spring(p, dt, time, false); // 形に使わない粒は家の位置で漂う
+            }
+          }
+          draw(global);
+          raf = requestAnimationFrame(step);
+          return;
+        }
+      }
+      for (const p of particles) spring(p, dt, time, true);
+      draw(global);
+      raf = requestAnimationFrame(step);
+    };
+
+    const start = () => {
+      if (reduce || raf || !visible || document.hidden || mode === "wait" || mode === "static") return;
+      last = performance.now();
+      raf = requestAnimationFrame(step);
+    };
+    const stop = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      // MOT-005 の途中で画面外・裏タブになったら残りを飛ばして普段の状態へ
+      if (mode === "intro") skipIntro();
+    };
+    const skipIntro = () => {
+      mode = "free";
+      for (const p of particles) {
+        p.x = p.hx;
+        p.y = p.hy;
+        p.vx = 0;
+        p.vy = 0;
+        p.fk = 0;
+      }
+      draw();
+    };
+
+    if (reduce) {
+      build();
+      drawStatic();
+    } else {
+      build();
+      if (mode === "free") draw();
+      else ctx.clearRect(0, 0, w, h); // 開始まで何も描かない
+
+      const onPointer = (e: PointerEvent) => {
+        const rect = host.getBoundingClientRect();
+        mx = e.clientX - rect.left;
+        my = e.clientY - rect.top;
+        pointerIn = mx >= -REACH && mx <= rect.width + REACH && my >= -REACH && my <= rect.height + REACH;
+      };
+      const onLeave = () => {
+        pointerIn = false;
+      };
+      // canvas は pointer-events: none なので、window で位置だけ読む（スクロールは邪魔しない）
+      window.addEventListener("pointermove", onPointer, { passive: true });
+      window.addEventListener("pointerdown", onPointer, { passive: true });
+      window.addEventListener("pointercancel", onLeave, { passive: true });
+      window.addEventListener("pointerup", (e) => {
+        if (e.pointerType !== "mouse") onLeave();
+      }, { passive: true });
+      document.documentElement.addEventListener("mouseleave", onLeave);
+      window.addEventListener("blur", onLeave);
+      document.addEventListener("visibilitychange", () => (document.hidden ? stop() : start()));
+      if ("IntersectionObserver" in window) {
+        new IntersectionObserver((entries) => {
+          visible = entries.some((e) => e.isIntersecting);
+          if (visible) start();
+          else stop();
+        }).observe(host);
+      }
+
+      // 演出の開始は見出しのフォント（Mochiy Pop One）を待ってから。ただし最大 FONT_WAIT ms
+      if (mode === "wait") {
+        const begin = () => {
+          if (mode !== "wait") return;
+          build(); // フォントで見出しの大きさが変わるので点を取り直す
+          if (formOK && visible && !document.hidden) {
+            mode = "intro";
+            et = 0;
+            for (const p of particles) {
+              p.x = p.sx;
+              p.y = p.sy;
+            }
+            draw(0);
+          } else {
+            mode = "free";
+            draw();
+          }
+          start();
+        };
+        const ready = document.fonts?.ready ?? Promise.resolve();
+        Promise.race([ready, new Promise((r) => setTimeout(r, FONT_WAIT))]).then(begin, begin);
+      } else {
+        start();
+      }
+    }
+
+    if ("ResizeObserver" in window) {
+      const ro = new ResizeObserver(() => {
+        // 帯・見出しの大きさが変わったら canvas と家の位置・形の点を作り直す（変わっていなければ何もしない）
+        const text = host.querySelector<HTMLElement>("[data-hero-text]");
+        const hr = host.getBoundingClientRect();
+        const tr = text?.getBoundingClientRect();
+        if (`${window.innerWidth}|${hr.width}x${hr.height}|${tr?.width}x${tr?.height}` === sig) return;
+        // 演出の途中で大きさが変わったら、残りを飛ばして普段の状態へ
+        if (mode === "intro") mode = "free";
+        build();
+        if (reduce) drawStatic();
+        else if (mode !== "wait" && !raf) draw();
+      });
+      ro.observe(host);
+      const text = host.querySelector<HTMLElement>("[data-hero-text]");
+      if (text) ro.observe(text);
+    }
+  }
+</script>

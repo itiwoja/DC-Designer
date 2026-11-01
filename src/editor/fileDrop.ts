@@ -12,11 +12,10 @@ export type HomeDrop = { kind: "pdf" | "pptx"; file: File } | { error: string } 
 
 /**
  * ホームへドロップしたファイルから開くものを選ぶ。
- * PDF は Instagram 以外のどのホームでも開く。.pptx はモード選択画面とスライドのホームで開く。
- * 開けないファイルは理由を返し、Instagram のホームでは何もしない（null）
+ * PDF はどのホームでも開く。.pptx はモード選択画面とスライドのホームで開く。
+ * 開けないファイルは理由を返し、何も落とされなければ null
  */
 export function pickHomeDrop(files: readonly File[], mode: AppMode | undefined): HomeDrop {
-  if (mode === "instagram") return null;
   const pdf = files.find(isPdf);
   if (pdf) return { kind: "pdf", file: pdf };
   const pptx = files.find(isPptxFile);
@@ -26,8 +25,7 @@ export function pickHomeDrop(files: readonly File[], mode: AppMode | undefined):
 }
 
 /** ホームのドロップ先に出す案内 */
-export function homeDropLabel(mode: AppMode | undefined): string | null {
-  if (mode === "instagram") return null;
+export function homeDropLabel(mode: AppMode | undefined): string {
   return mode === "poster" ? "PDF をドロップして開く" : "PDF / PowerPoint をドロップして開く";
 }
 

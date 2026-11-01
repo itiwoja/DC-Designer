@@ -227,7 +227,6 @@ describe("AI 依頼の subject の検証", () => {
   // subject の検査は他の入力検証より先に行う。不正なら 400（AI は呼ばない）
   const routes: [string, Record<string, unknown>][] = [
     ["/api/plan", { brief: "b" }],
-    ["/api/plan/instagram", { brief: "b", width: 1080, height: 1080 }],
     ["/api/reproduce", { width: 1000, height: 1000 }],
     ["/api/reproduce/refine", {}],
     ["/api/edit", {}],
@@ -244,7 +243,7 @@ describe("AI 依頼の subject の検証", () => {
     for (const [path, body] of routes) {
       for (const subject of bads) {
         const res = await post(path, { ...body, subject });
-        expect([path, res.status]).toEqual([path, path === "/api/plan/instagram" || path === "/api/reproduce" || path === "/api/reproduce/refine" ? 200 : 400]);
+        expect([path, res.status]).toEqual([path, path === "/api/reproduce" || path === "/api/reproduce/refine" ? 200 : 400]);
         if (res.status === 200) {
           const last = JSON.parse((await res.text()).trim().split("\n").at(-1)!);
           expect(last).toMatchObject({ status: 400 });

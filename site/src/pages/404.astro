@@ -1,0 +1,21 @@
+---
+import Base from "../layouts/Base.astro";
+import { url } from "../layouts/paths";
+import Shape from "../components/Shape.astro";
+import "../styles/not-found.css";
+---
+<Base title="ページが見つかりません" description="お探しのページは見つかりませんでした。">
+  <div class="container not-found">
+    <div class="not-found__shapes">
+      <Shape shape="circle" size="hero" />
+      <Shape shape="triangle" size="hero" />
+      <Shape shape="square" size="hero" />
+    </div>
+    <h1>ページが見つかりません</h1>
+    <p>アドレスが違うか、ページが移動した可能性があります。</p>
+    <div class="actions">
+      <a class="btn" href={url("/")}>トップへ</a>
+      <a class="btn btn--ghost" href={url("/download/")}>ダウンロードへ</a>
+    </div>
+  </div>
+</Base>

@@ -1,0 +1,52 @@
+---
+// 媒体の枠（docs/design/06_ux_design.md「媒体の枠」）。
+// placeholder は枠ごとの仮の画像（静止画）、ready は本物の画像・動画を出す。
+import { Picture } from "astro:assets";
+import { getEntry } from "astro:content";
+
+interface Props {
+  mediaId: string;
+  kind: "hero" | "feature" | "demo";
+  loading?: "eager" | "lazy";
+  sizes?: string;
+}
+const { mediaId, kind, loading = "lazy", sizes } = Astro.props;
+
+const media = await getEntry("media", mediaId);
+if (!media) throw new Error(`media.json に ${mediaId} がありません`);
+const m = media.data;
+
+const images = import.meta.glob<{ default: ImageMetadata }>("/src/assets/media/*.{png,jpg,jpeg,webp,avif}", { eager: true });
+const videos = import.meta.glob<string>("/src/assets/media/*.{mp4,webm}", { eager: true, query: "?url", import: "default" });
+const pick = (name: string) => images[`/src/assets/media/${name}`]?.default;
+
+const placeholders = {
+  hero: "placeholder-hero.png",
+  feature: "placeholder-feature.png",
+  demo: "placeholder-demo.png",
+} as const;
+
+const ready = m.status === "ready" && m.src;
+let image: ImageMetadata | undefined;
+let videoSrc: string | undefined;
+let poster: ImageMetadata | undefined;
+if (ready && m.type === "video") {
+  videoSrc = videos[`/src/assets/media/${m.src}`];
+  poster = pick(m.poster ?? placeholders[kind]);
+  if (!videoSrc) throw new Error(`動画 ${m.src} が見つかりません`);
+} else if (ready) {
+  image = pick(m.src!);
+  if (!image) throw new Error(`画像 ${m.src} が見つかりません`);
+} else {
+  image = pick(m.poster ?? placeholders[kind]) ?? pick(placeholders[kind]);
+}
+---
+{videoSrc ? (
+  // 動画は自動再生しない（prefers-reduced-motion でも勝手に動かない）。操作は利用者に任せる
+  <video muted loop playsinline preload="none" controls poster={poster?.src} width={poster?.width ?? 1280} height={poster?.height ?? 720} aria-label={m.alt}>
+    <source src={videoSrc} />
+    <p>{m.alt}</p>
+  </video>
+) : image ? (
+  <Picture src={image} formats={["avif", "webp"]} alt={m.alt} width={image.width} height={image.height} loading={loading} sizes={sizes} widths={[image.width / 2, image.width]} />
+) : null}

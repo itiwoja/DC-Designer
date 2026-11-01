@@ -1,9 +1,8 @@
 import type { Router } from "express";
 import { PosterSpecSchema } from "../../src/schema";
-import { IG_MAX_IMAGES } from "../../src/instagram";
 import { runWithAiSubject } from "../ai-consent";
 import { httpError } from "../http-error";
-import { editPoster, planCarousel, planPoster, planSlide, refineReproduction, reproducePoster, summarizeChat, writeNotes } from "../planner";
+import { editPoster, planPoster, planSlide, refineReproduction, reproducePoster, summarizeChat, writeNotes } from "../planner";
 import { storeReferences } from "../references";
 import { optString, parseAcross, parseDeckContext, parseImage, parseSubject, parseTurns, strings } from "../request-parsers";
 import type { RouteHandlers } from "../route-handlers";
@@ -16,16 +15,6 @@ export function registerAiRoutes(app: Router, { route, progressRoute }: RouteHan
     const { brief, theme, references } = req.body ?? {};
     if (!brief) throw httpError(400, "brief は必須です");
     return runWithAiSubject(subject, async () => ({ spec: await planPoster({ brief, theme, references: storeReferences(references), signal }) }));
-  }));
-
-  /** ブリーフ（＋参考画像）→ Instagram のカルーセル投稿（同じ大きさの PosterSpec を 1〜20 枚） */
-  app.post("/api/plan/instagram", progressRoute(async (req, onProgress, signal) => {
-    const subject = parseSubject(req.body?.subject);
-    const { brief, width, height, count, references } = req.body ?? {};
-    if (!brief) throw httpError(400, "brief は必須です");
-    if (!Number.isFinite(width) || !Number.isFinite(height) || width < 100 || height < 100) throw httpError(400, "width / height が不正です");
-    const n = Number.isInteger(count) && count >= 1 && count <= IG_MAX_IMAGES ? count : undefined;
-    return runWithAiSubject(subject, () => planCarousel({ brief, width, height, count: n, references: storeReferences(references), onProgress, signal }));
   }));
 
   /** 参考画像 → それをそのまま写し取った PosterSpec（A4 モードの「参考画像を再現」） */
@@ -59,7 +48,7 @@ export function registerAiRoutes(app: Router, { route, progressRoute }: RouteHan
     if (!instruction) throw httpError(400, "instruction は必須です");
     const deck = parseDeckContext(req.body?.deck);
     const history = parseTurns(req.body?.history).slice(-30);
-    return runWithAiSubject(subject, () => editPoster({ spec, instruction, selectedIds, deck, across: parseAcross(req.body?.across), history, memory: optString(req.body?.memory, 3000), instagram: req.body?.instagram === true, references: storeReferences(req.body?.references), signal }));
+    return runWithAiSubject(subject, () => editPoster({ spec, instruction, selectedIds, deck, across: parseAcross(req.body?.across), history, memory: optString(req.body?.memory, 3000), references: storeReferences(req.body?.references), signal }));
   }));
 
   /** デッキの並び（文字）＋お手本のスライド ＋ 指示 → 新しく追加する 1 枚の PosterSpec（追加は画面側で行う） */
@@ -77,7 +66,7 @@ export function registerAiRoutes(app: Router, { route, progressRoute }: RouteHan
     if (!samples.length) throw httpError(400, "samples は必須です");
     return runWithAiSubject(subject, () => planSlide({
       instruction: String(instruction), position, total, deckTitle: optString(req.body?.title, 200), outline, samples,
-      history: parseTurns(req.body?.history).slice(-30), memory: optString(req.body?.memory, 3000), instagram: req.body?.instagram === true, references: storeReferences(req.body?.references), signal,
+      history: parseTurns(req.body?.history).slice(-30), memory: optString(req.body?.memory, 3000), references: storeReferences(req.body?.references), signal,
     }));
   }));
 

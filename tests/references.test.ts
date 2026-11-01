@@ -8,7 +8,7 @@ const ai = vi.hoisted(() => ({ ask: vi.fn() }));
 const storage = vi.hoisted(() => ({ save: vi.fn((mediaType: string, data: string) => ({ src: `/generated/saved-${data}.png` })) }));
 vi.mock("../server/chatgpt", async (original) => ({ ...await original<typeof import("../server/chatgpt")>(), askChatGPT: ai.ask }));
 vi.mock("../server/imagegen", () => ({ saveUpload: storage.save }));
-import { editPoster, planCarousel, planPoster, planSlide } from "../server/planner";
+import { editPoster, planPoster, planSlide } from "../server/planner";
 
 const spec = PosterSpecSchema.parse({ meta: { title: "添付のテスト", width: 1000, height: 1414 }, theme: "ocean", layers: [] });
 const references = [{ mediaType: "image/jpeg" as const, data: "YWJj" }, { mediaType: "image/png" as const, data: "ZGVm" }];
@@ -132,15 +132,6 @@ describe("添付画像を実際の保存URLで配置する", () => {
     expect(result.spec.layers[0]).toMatchObject({ src: "existing-logo.png" });
   });
 
-  it("カルーセル生成でも添付の原画像を使う", async () => {
-    ai.ask.mockResolvedValue(JSON.stringify({ title: "投稿", posts: [withImages()] }));
-    const result = await planCarousel({ brief: "添付ロゴを配置", width: 1080, height: 1080, references: saved });
-    expect(ai.ask.mock.calls[0][1][0].images).toEqual(saved);
-    expect(ai.ask.mock.calls[0][1][0].text).toContain(saved[0].src);
-    expect(result.posts[0].layers[0]).toMatchObject({ src: saved[0].src });
-    expect(findPendingAssets(result.posts[0])).toEqual([]);
-  });
-
   it("ファイル名を特定できなければ架空の画像を返さずAIに再修正させる", async () => {
     ai.ask.mockResolvedValueOnce(JSON.stringify({ reply: "配置", spec: { ...spec, layers: [image("logo", "unknown.png")] } }))
       .mockResolvedValueOnce(JSON.stringify({ reply: "配置", spec: withImages() }));
@@ -161,13 +152,13 @@ describe("AIへの添付受け渡し", () => {
   it("クライアントがPDFページをAPI本文に含める", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('{"reply":"確認した"}', { headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
-    await api.edit(spec, "資料を確認して", undefined, undefined, undefined, undefined, undefined, undefined, references);
+    await api.edit(spec, "資料を確認して", undefined, undefined, undefined, undefined, undefined, references);
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).references).toEqual(references);
   });
   it("クライアントが全スライド編集・スライド追加にも添付を含める", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response('{"reply":"配置した"}', { headers: { "Content-Type": "application/json" } })));
     vi.stubGlobal("fetch", fetchMock);
-    await api.edit(spec, "全スライドに配置", undefined, undefined, undefined, undefined, undefined, { number: 1, total: 2 }, references);
+    await api.edit(spec, "全スライドに配置", undefined, undefined, undefined, undefined, { number: 1, total: 2 }, references);
     await api.planSlide({ instruction: "ロゴ入りスライドを追加", position: 2, total: 1, outline: [], samples: [{ number: 1, spec }], references });
     for (const call of fetchMock.mock.calls) expect(JSON.parse(call[1].body).references).toEqual(references);
   });

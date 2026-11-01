@@ -1,0 +1,96 @@
+[
+  {
+    "tag_name": "v1.0.8",
+    "name": "DC-Designer v1.0.8",
+    "draft": true,
+    "prerelease": false,
+    "published_at": "2026-10-31T09:00:00Z",
+    "html_url": "https://github.com/itiwoja/DC-Designer/releases/tag/v1.0.8",
+    "body": "下書き。SHA-256: `0000000000000000000000000000000000000000000000000000000000000000`",
+    "assets": [
+      {
+        "name": "DC-Designer-Setup-1.0.8.exe",
+        "size": 123810973,
+        "browser_download_url": "https://github.com/itiwoja/DC-Designer/releases/download/v1.0.8/DC-Designer-Setup-1.0.8.exe"
+      },
+      {
+        "name": "SHA256SUMS.txt",
+        "size": 94,
+        "browser_download_url": "https://github.com/itiwoja/DC-Designer/releases/download/v1.0.8/SHA256SUMS.txt"
+      }
+    ]
+  },
+  {
+    "tag_name": "v1.1.0-beta.1",
+    "name": "DC-Designer v1.1.0-beta.1",
+    "draft": false,
+    "prerelease": true,
+    "published_at": "2026-10-31T00:00:00Z",
+    "html_url": "https://github.com/itiwoja/DC-Designer/releases/tag/v1.1.0-beta.1",
+    "body": "プレリリース。\n\nSHA-256: `1111111111111111111111111111111111111111111111111111111111111111`",
+    "assets": [
+      {
+        "name": "DC-Designer-Setup-1.1.0-beta.1.exe",
+        "size": 123810973,
+        "browser_download_url": "https://github.com/itiwoja/DC-Designer/releases/download/v1.1.0-beta.1/DC-Designer-Setup-1.1.0-beta.1.exe"
+      },
+      {
+        "name": "SHA256SUMS.txt",
+        "size": 94,
+        "browser_download_url": "https://github.com/itiwoja/DC-Designer/releases/download/v1.1.0-beta.1/SHA256SUMS.txt"
+      }
+    ]
+  },
+  {
+    "tag_name": "v1.0.6",
+    "name": "DC-Designer v1.0.6",
+    "draft": false,
+    "prerelease": false,
+    "published_at": "2026-10-30T05:52:59Z",
+    "html_url": "https://github.com/itiwoja/DC-Designer/releases/tag/v1.0.6",
+    "body": "Windows 10 / 11（x64）向けのインストーラーです。\n\n> **この版はコード署名をしていません。** 実行時に Windows SmartScreen の警告が出たら「詳細情報」→「実行」で進めてください。SignPath Foundation の署名は審査が通りしだい次の版から付けます。\n\nSHA-256: `f75df3993244aac42e39482e9782c9930a05b5b9eed95ca2ceb35f3fdd6d4ae8`\n\n\n## What's Changed\n* ChatGPT のサインインを取り消し・開き直しでき、結果をトーストで知らせる by @itiwoja in https://github.com/itiwoja/DC-Designer/pull/39\n* 更新の案内を右下のトーストで出し、作業を止めないようにする by @itiwoja in https://github.com/itiwoja/DC-Designer/pull/40\n* PPTX のスライドで範囲選択した要素をまとめて移動・サイズ変更できるようにする by @itiwoja in https://github.com/itiwoja/DC-Designer/pull/41\n* 版を 1.0.6 に上げる by @itiwoja in https://github.com/itiwoja/DC-Designer/pull/42\n\n\n**Full Changelog**: https://github.com/itiwoja/DC-Designer/compare/v1.0.5...v1.0.6",
+    "assets": [
+      {
+        "name": "DC-Designer-Setup-1.0.6.exe",
+        "size": 123810973,
+        "browser_download_url": "https://github.com/itiwoja/DC-Designer/releases/download/v1.0.6/DC-Designer-Setup-1.0.6.exe"
+      },
+      {
+        "name": "latest.yml",
+        "size": 351,
+        "browser_download_url": "https://github.com/itiwoja/DC-Designer/releases/download/v1.0.6/latest.yml"
+      },
+      {
+        "name": "SHA256SUMS.txt",
+        "size": 94,
+        "browser_download_url": "https://github.com/itiwoja/DC-Designer/releases/download/v1.0.6/SHA256SUMS.txt"
+      }
+    ]
+  },
+  {
+    "tag_name": "v1.0.5",
+    "name": "DC-Designer v1.0.5",
+    "draft": false,
+    "prerelease": false,
+    "published_at": "2026-10-29T12:23:40Z",
+    "html_url": "https://github.com/itiwoja/DC-Designer/releases/tag/v1.0.5",
+    "body": "Windows 10 / 11（x64）向けのインストーラーです。\n\n> **この版はコード署名をしていません。** 実行時に Windows SmartScreen の警告が出たら「詳細情報」→「実行」で進めてください。SignPath Foundation の署名は審査が通りしだい次の版から付けます。\n\nSHA-256: `6036aa83725a963a3e67d2385dd5f0e3bb8e6a0bcf4a76828729da843d3c7ae6`\n\n\n## What's Changed\n* exeの起動管理とレンダリング処理をリファクタリングする by @itiwoja in https://github.com/itiwoja/DC-Designer/pull/37\n* 版を 1.0.5 に上げる by @itiwoja in https://github.com/itiwoja/DC-Designer/pull/38\n\n\n**Full Changelog**: https://github.com/itiwoja/DC-Designer/compare/v1.0.4...v1.0.5",
+    "assets": [
+      {
+        "name": "DC-Designer-Setup-1.0.5.exe",
+        "size": 123807737,
+        "browser_download_url": "https://github.com/itiwoja/DC-Designer/releases/download/v1.0.5/DC-Designer-Setup-1.0.5.exe"
+      },
+      {
+        "name": "latest.yml",
+        "size": 351,
+        "browser_download_url": "https://github.com/itiwoja/DC-Designer/releases/download/v1.0.5/latest.yml"
+      },
+      {
+        "name": "SHA256SUMS.txt",
+        "size": 94,
+        "browser_download_url": "https://github.com/itiwoja/DC-Designer/releases/download/v1.0.5/SHA256SUMS.txt"
+      }
+    ]
+  }
+]
