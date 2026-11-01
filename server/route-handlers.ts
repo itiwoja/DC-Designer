@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { ChatGPTAuthError } from "./chatgpt-auth";
 import { ChatGPTError } from "./chatgpt";
+import { ImageGenError } from "./imagegen-error";
 import type { OnProgress, Progress } from "./planner";
 
 /** 応答を返し終える前に接続が切れたら（画面でキャンセルしたなど）処理も中断する */
@@ -16,6 +17,8 @@ export function createRouteHandlers({ desktop }: { desktop: boolean }) {
   function describeError(e: unknown): { status: number; message: string; code?: string } {
     if (e instanceof ChatGPTAuthError) return { status: 401, message: e.message, code: "chatgpt_auth" };
     if (e instanceof ChatGPTError) return { status: e.status >= 400 ? e.status : 502, message: e.message, code: e.code };
+    // 画像生成の失敗は、利用者が原因を直せるよう製品版でも決まった文言（パスや外部の応答本文を含まない）を返す
+    if (e instanceof ImageGenError) return { status: e.status, message: desktop ? e.userMessage : e.message, code: e.code };
     const status = (e as { status?: number })?.status;
     const client = !!status && status >= 400 && status < 500;
     const message = desktop && !client ? "内部エラーが発生しました" : e instanceof Error ? e.message : String(e);

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatGPTAuthError } from "../server/chatgpt-auth";
 import { ChatGPTError } from "../server/chatgpt";
 import { httpError } from "../server/http-error";
+import { ImageGenError } from "../server/imagegen-error";
 import type { OnProgress } from "../server/planner";
 import { createRouteHandlers, type RouteHandlers } from "../server/route-handlers";
 
@@ -91,6 +92,10 @@ describe.each<Format>(["json", "progress"])("共通応答処理（%s）", (forma
     await check("/desktop", 401, { error: "サインインしてください", code: "chatgpt_auth" });
     error = new ChatGPTError("利用上限です", 429, "usage_limit");
     await check("/desktop", 429, { error: "利用上限です", code: "usage_limit" });
+    // 画像生成の失敗：製品版は利用者向けの決まった文言、開発版は詳細つき
+    error = new ImageGenError("gemini_quota", "Gemini の利用上限に達しました", "HTTP 429: quota at C:\\Users\\me", 429);
+    await check("/desktop", 429, { error: "Gemini の利用上限に達しました", code: "gemini_quota" });
+    await check("/dev", 429, { error: "Gemini の利用上限に達しました（HTTP 429: quota at C:\\Users\\me）", code: "gemini_quota" });
   });
 
   it("クライアントが途中で切断すると、実行中の処理にキャンセルを伝える", async () => {

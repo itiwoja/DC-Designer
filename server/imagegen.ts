@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { delimiter, dirname, join } from "node:path";
 import type { AssetContext, AssetRequest } from "../src/schema";
 import { httpError } from "./http-error";
+import { ImageGenError } from "./imagegen-error";
 import { codexExeName, comfyBaseUrl, dataDir, readImageSettings } from "./image-settings";
 import { getSecret, hasSecret } from "./secrets";
 
@@ -113,10 +114,42 @@ function findImageData(node: unknown): string | undefined {
   }
 }
 
+/** Gemini の失敗の応答（HTTP ステータスと Google のエラー本文）を、利用者が直し方の分かる ImageGenError にする */
+export function geminiHttpError(status: number, err: { message?: string; status?: string; details?: { reason?: string }[] } | undefined): ImageGenError {
+  const detail = `HTTP ${status}${err?.message ? `: ${err.message.slice(0, 300)}` : ""}`;
+  const reasons = (err?.details ?? []).map((d) => d?.reason).filter(Boolean);
+  if (reasons.includes("API_KEY_INVALID") || /api key not valid|api_key_invalid/i.test(err?.message ?? ""))
+    return new ImageGenError("gemini_key_invalid", "Gemini の API キーが正しくありません。設定画面でキーを確かめて、保存し直してください", detail, 400);
+  if (status === 401 || status === 403)
+    return new ImageGenError("gemini_forbidden", "この API キーでは Gemini の画像生成を使えません。Google AI Studio で、キーの権限と Gemini API が有効かを確かめてください", detail, 403);
+  if (status === 429)
+    return new ImageGenError("gemini_quota", "Gemini の利用上限に達しました。しばらく待ってからやり直すか、Google AI Studio で利用枠・お支払いの設定を確かめてください", detail, 429);
+  if (status >= 500)
+    return new ImageGenError("gemini_server", "Gemini 側で一時的なエラーが起きました。少し待ってからやり直してください", detail);
+  return new ImageGenError("gemini_rejected", `Gemini が依頼を受け付けませんでした（HTTP ${status}）。内容を変えてやり直してください`, detail);
+}
+
 async function generateGemini(prompt: string, asset: AssetRequest, signal?: AbortSignal): Promise<Buffer> {
-  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+  const key = await getSecret("gemini", "apiKey");
+  if (!key) throw new ImageGenError("gemini_no_key", "Gemini の API キーが設定されていません。設定画面でキーを保存してください", undefined, 400);
+  let res: Response;
+  try {
+    res = await geminiFetch(key, prompt, asset, signal);
+  } catch (e: any) {
+    if (signal?.aborted) throw e;
+    throw new ImageGenError("gemini_network", "Gemini に接続できませんでした。インターネットに接続できているか確かめてください", e?.cause?.message ?? e?.message);
+  }
+  const json: any = await res.json().catch(() => ({}));
+  if (!res.ok) throw geminiHttpError(res.status, (Array.isArray(json) ? json[0] : json)?.error);
+  const b64 = findImageData(json);
+  if (!b64) throw new ImageGenError("gemini_no_image", "Gemini が画像を返しませんでした。安全フィルタで止められた可能性があります。内容を変えてやり直してください");
+  return Buffer.from(b64, "base64");
+}
+
+function geminiFetch(key: string, prompt: string, asset: AssetRequest, signal?: AbortSignal): Promise<Response> {
+  return fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
     method: "POST",
-    headers: { "x-goog-api-key": (await getSecret("gemini", "apiKey")) ?? "", "Content-Type": "application/json" },
+    headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image",
       input: [{ type: "text", text: prompt }],
@@ -132,14 +165,6 @@ async function generateGemini(prompt: string, asset: AssetRequest, signal?: Abor
     // 製品版はリダイレクトを自動で追わない（キーを別の送信先へ転送させない）
     ...(isDesktop() ? { redirect: "error" as const } : {}),
   });
-  const json: any = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const err = (Array.isArray(json) ? json[0] : json)?.error;
-    throw new Error(`Gemini 画像生成 API エラー (${res.status}): ${err?.message ?? JSON.stringify(json).slice(0, 300)}`);
-  }
-  const b64 = findImageData(json);
-  if (!b64) throw new Error("Gemini が画像を返しませんでした（安全フィルタでブロックされた可能性があります）");
-  return Buffer.from(b64, "base64");
 }
 
 // ---------- ComfyUI（ローカル GPU）----------
@@ -158,10 +183,11 @@ async function comfyFetch(path: string, init?: RequestInit, signal?: AbortSignal
   } catch (e: any) {
     // 中断はそのまま上へ（接続エラーの案内に差し替えない）
     if (signal?.aborted) throw e;
-    const where = isDesktop() ? "設定画面で URL を確認" : "別の場所なら COMFYUI_URL を設定";
-    throw new Error(`ComfyUI に接続できません（${comfyBaseUrl()} で ComfyUI が起動しているか確認。${where}）: ${e.cause?.message ?? e.message}`);
+    // 接続先はこの PC（ループバック）だけなので、URL は画面に出してよい
+    const where = isDesktop() ? "URL は設定画面で変えられます" : "別の場所なら COMFYUI_URL を設定";
+    throw new ImageGenError("comfyui_unreachable", `ComfyUI に接続できません。${comfyBaseUrl()} で ComfyUI が起動しているか確かめてください（${where}）`, e.cause?.message ?? e.message);
   }
-  if (!res.ok) throw new Error(`ComfyUI エラー (${res.status}) ${path}: ${(await res.text()).slice(0, 500)}`);
+  if (!res.ok) throw new ImageGenError("comfyui_http", `ComfyUI がエラーを返しました（HTTP ${res.status}）。ComfyUI の画面やログを確かめてください`, `${path}: ${(await res.text()).slice(0, 500)}`);
   return res;
 }
 
@@ -176,7 +202,7 @@ function resolveCheckpoint(): Promise<string> {
     .then((r) => r.json())
     .then((info: any) => {
       const names: string[] = info?.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0] ?? [];
-      if (!names.length) throw new Error("ComfyUI の models/checkpoints にモデルがありません（COMFYUI_CHECKPOINT も未指定）");
+      if (!names.length) throw new ImageGenError("comfyui_no_model", "ComfyUI にモデルが入っていません。models/checkpoints にチェックポイントを入れて、ComfyUI を再起動してください", "COMFYUI_CHECKPOINT も未指定");
       return names[0];
     })
     .catch((e) => { comfyCheckpoint = undefined; throw e; });
@@ -242,7 +268,7 @@ async function generateComfyUI(prompt: string, asset: AssetRequest, signal?: Abo
     body: JSON.stringify({ prompt: fillPlaceholders(template, vars), client_id: "dc-designer" }),
   }, signal).then((r) => r.json());
   const id: string = queued.prompt_id;
-  if (!id) throw new Error(`ComfyUI がジョブを受け付けませんでした: ${JSON.stringify(queued).slice(0, 300)}`);
+  if (!id) throw new ImageGenError("comfyui_rejected", "ComfyUI がジョブを受け付けませんでした。ワークフローとモデルを確かめてください", JSON.stringify(queued).slice(0, 300));
 
   // 完了は /history/{id} に出てくるまでポーリングで待つ（WebSocket を張らずに済ませる）
   const deadline = Date.now() + Number(process.env.COMFYUI_TIMEOUT_MS || 600_000);
@@ -253,18 +279,18 @@ async function generateComfyUI(prompt: string, asset: AssetRequest, signal?: Abo
     if (!entry) continue;
     if (entry.status?.status_str === "error") {
       const msg = entry.status.messages?.find((m: any) => m[0] === "execution_error")?.[1];
-      throw new Error(`ComfyUI の実行に失敗しました: ${msg?.exception_message ?? "不明なエラー"}`);
+      throw new ImageGenError("comfyui_failed", "ComfyUI の実行中にエラーが起きました。ComfyUI の画面やログを確かめてください", msg?.exception_message ?? "不明なエラー");
     }
     const images = Object.values<any>(entry.outputs ?? {}).flatMap((o) => o.images ?? []);
     const img = images.find((i: any) => i.type === "output") ?? images[0];
     if (!img) {
-      if (entry.status?.completed) throw new Error("ComfyUI のワークフローが画像を出力しませんでした（SaveImage ノードがあるか確認）");
+      if (entry.status?.completed) throw new ImageGenError("comfyui_no_output", "ComfyUI のワークフローが画像を出力しませんでした。SaveImage ノードがあるか確かめてください");
       continue;
     }
     const q = new URLSearchParams({ filename: img.filename, subfolder: img.subfolder ?? "", type: img.type ?? "output" });
     return Buffer.from(await (await comfyFetch(`view?${q}`, undefined, signal)).arrayBuffer());
   }
-  throw new Error("ComfyUI の画像生成がタイムアウトしました（COMFYUI_TIMEOUT_MS）");
+  throw new ImageGenError("comfyui_timeout", "ComfyUI の生成が時間内に終わりませんでした。ComfyUI が動いているか確かめて、やり直してください", "COMFYUI_TIMEOUT_MS");
 }
 
 // ---------- Codex CLI（ChatGPT プラン枠）----------
@@ -285,12 +311,29 @@ function listPngs(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-export type CodexErrorCode = "timeout" | "deadline" | "canceled" | "spawn" | "exit" | "auth" | "unavailable" | "no_image";
+export type CodexErrorCode = "timeout" | "deadline" | "canceled" | "spawn" | "not_found" | "exit" | "auth" | "quota" | "unavailable" | "no_image";
 
-/** Codex 経由の生成で起きた失敗。code で原因を区別できる */
-export class CodexError extends Error {
-  constructor(public code: CodexErrorCode, message: string) {
-    super(message);
+/** 製品版の画面に出す文言（stderr などパスを含みうるものは入れない）と HTTP ステータス */
+const CODEX_USER_MESSAGES: Record<CodexErrorCode, [string, number]> = {
+  timeout: ["Codex での生成が時間内に終わりませんでした。もう一度試してください", 504],
+  deadline: ["画像生成が時間内に終わりませんでした（順番待ちを含む）。もう一度試してください", 504],
+  canceled: ["画像生成をキャンセルしました", 499],
+  spawn: ["Codex CLI を起動できませんでした。設定画面で Codex の状態を確かめ、必要なら入れ直してください", 502],
+  not_found: ["Codex CLI が見つかりません。設定画面の「Codex CLI を入れる」から入れてください", 400],
+  exit: ["Codex CLI が途中で失敗しました。少し待ってからもう一度試してください", 502],
+  auth: ["Codex にサインインしていません。設定画面の「Codex にサインイン」からサインインしてください", 401],
+  quota: ["ChatGPT プランの利用上限に達しました。時間をおいてから試してください", 429],
+  unavailable: ["Codex の画像生成ツールが使えませんでした。設定画面から Codex CLI を入れ直してください", 502],
+  no_image: ["Codex が画像を作りませんでした。内容を変えてもう一度試してください", 502],
+};
+
+/** Codex 経由の生成で起きた失敗。code で原因を区別できる。message は詳細（開発版・ログ用）、userMessage は製品版の画面用 */
+export class CodexError extends ImageGenError {
+  declare code: CodexErrorCode;
+  constructor(code: CodexErrorCode, message: string) {
+    const [user, status] = CODEX_USER_MESSAGES[code];
+    super(code, user, undefined, status);
+    this.message = message;
     this.name = "CodexError";
   }
 }
@@ -427,6 +470,8 @@ function execCodex({ bin, args, spawnOptions, spawnHint, onStdout, signal }: Exe
         const errText = err.toString();
         if (stopErr) return reject(stopErr);
         if (code === 0) return resolve(out.toString());
+        if (/usage limit|rate limit|too many requests|\b429\b/i.test(`${out}${errText}`))
+          return reject(new CodexError("quota", `ChatGPT プランの利用上限に達しました: ${errText.slice(-300)}`));
         if (/not logged in|codex login|unauthorized|\b401\b/i.test(`${out}${errText}`))
           return reject(new CodexError("auth", `Codex CLI にサインインしていません（\`codex login\` を実行してください）: ${errText.slice(-300)}`));
         reject(new CodexError("exit", `codex exec が失敗しました (exit ${code}): ${errText.slice(-500)}`));
@@ -526,7 +571,7 @@ const CODEX_ENV_KEYS = ["PATH", "SystemRoot", "WINDIR", "TEMP", "TMP", "USERPROF
 /** 製品版：専用 CODEX_HOME で codex exec を 1 回実行し、生成された PNG を返す */
 async function runCodexDesktop(prompt: string, signal: AbortSignal, log: (msg: string) => void): Promise<Buffer> {
   const exe = resolveCodexExe();
-  if (!exe) throw new CodexError("spawn", "Codex CLI が見つかりません（設定で codex の場所を指定してください）");
+  if (!exe) throw new CodexError("not_found", "Codex CLI が見つかりません（設定で Codex CLI を入れるか、codex の場所を指定してください）");
   const userAuth = userAuthFile();
   if (!isFile(userAuth)) throw new CodexError("auth", "Codex CLI にサインインしていません（`codex login` を実行してください）");
 

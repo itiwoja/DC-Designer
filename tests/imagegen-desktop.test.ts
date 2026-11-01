@@ -52,7 +52,8 @@ beforeEach(() => {
   process.env.DATA_DIR = dataDir;
   process.env.CODEX_HOME = userHome;
   process.env.DC_DESIGNER_USER_ROOT = userRoot;
-  process.env.PATH = `${binDir}:${ORIGINAL_PATH}`;
+  // 開発機に入っている本物の codex を見つけない（起動しない）よう、PATH は偽の codex の置き場と最小限だけにする
+  process.env.PATH = `${binDir}:/usr/bin:/bin`;
   delete process.env.GEMINI_API_KEY;
   delete process.env.OPENAI_API_KEY;
 });
@@ -72,7 +73,7 @@ function installFakeCodex(opts: { tid?: string | null; rewriteAuth?: string; fai
   const path = join(binDir, "codex");
   const recordFile = join(binDir, "record.json");
   const tid = opts.tid === undefined ? "thread-123" : opts.tid;
-  writeFileSync(path, `#!/usr/bin/env node
+  writeFileSync(path, `#!${process.execPath}
 const fs = require("fs"), p = require("path");
 const home = process.env.CODEX_HOME;
 fs.writeFileSync(${JSON.stringify(recordFile)}, JSON.stringify({
@@ -238,5 +239,34 @@ describe("製品版の Codex 実行", () => {
     const r = await imagegen.generateAsset(asset("desktop-codex-5"), {}, "codex");
     expect(r.provider).toBe("placeholder");
     expect(existsSync(join(binDir, "record.json"))).toBe(false);
+  });
+});
+
+/** NDJSON の応答を行ごとの JSON にする */
+const postNdjson = async (path: string) => {
+  const res = await fetch(`${base}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  return (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
+};
+
+describe("製品版の画像生成の失敗の伝え方", () => {
+  it("Codex の失敗は、stderr（パスを含みうる）を出さず、直し方の分かる決まった文言と code を返す", async () => {
+    const fake = installFakeCodex({ fail: true });
+    settings.updateImageSettings({ codexPath: fake.path });
+    writeFileSync(join(userHome, "auth.json"), "{}");
+    const res = await fetch(`${base}/api/asset`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ asset: asset("desktop-codex-err"), provider: "codex" }) });
+    const body = await res.json();
+    expect(res.status).toBe(502);
+    expect(body.code).toBe("exit");
+    expect(body.error).toContain("Codex CLI が途中で失敗しました");
+    expect(body.error).not.toContain("boom");
+    expect(body.error).not.toContain(binDir);
+  });
+
+  it("ComfyUI に接続できなければ、内部エラーではなく起動の確認を案内する", async () => {
+    settings.updateImageSettings({ comfyuiUrl: "http://127.0.0.1:9" });
+    const res = await fetch(`${base}/api/asset`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ asset: asset("desktop-comfy-err"), provider: "comfyui" }) });
+    const body = await res.json();
+    expect(body.code).toBe("comfyui_unreachable");
+    expect(body.error).toContain("http://127.0.0.1:9/ で ComfyUI が起動しているか");
   });
 });
