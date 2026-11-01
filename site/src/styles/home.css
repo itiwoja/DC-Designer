@@ -97,3 +97,20 @@
   .cta-band__inner { flex-direction: row; align-items: center; gap: var(--space-6); }
   .cta-band__title { flex: 1; }
 }
+
+/* ---------- SEC-001-07 DC-Designer とは（3 ステップ） ---------- */
+.steps { list-style: none; margin: var(--space-6) 0 0; padding: 0; display: grid; gap: var(--space-5); }
+.step {
+  background: var(--card-bg); border: var(--border-width) solid var(--card-border); border-radius: var(--card-radius);
+  border-top: 6px solid var(--step-tint, var(--card-border)); padding: var(--space-5); min-width: 0;
+}
+.step--circle { --step-tint: var(--color-shape-circle); }
+.step--triangle { --step-tint: var(--color-shape-triangle); }
+.step--square { --step-tint: var(--color-shape-square); }
+.step__num { display: flex; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-2); font-size: var(--text-sm); font-weight: var(--weight-bold); letter-spacing: 0.08em; color: var(--color-text-muted); }
+.step__title { margin: 0 0 var(--space-2); font-size: var(--text-lg); }
+.step__text { margin: 0; word-break: auto-phrase; text-wrap: pretty; }
+.step__note { margin: var(--space-3) 0 0; font-size: var(--text-sm); color: var(--color-text-muted); word-break: auto-phrase; }
+@media (min-width: 1024px) {
+  .steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
