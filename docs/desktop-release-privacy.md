@@ -14,7 +14,7 @@
 
 | ID | 種類 | 論点 | おすすめ・止まるもの |
 | --- | --- | --- | --- |
-| [EXE-R-01](./README.md) | リスク | 外部CLI・ComfyUIの拡張が画像を外へ送る可能性 | 段階1〜3の製品版ではCodex・ComfyUI連携を無効にして経路自体を持たない（[段階分け](./desktop-release-spec.md)）。有効化する段階4以降はegressを制御・検証できない経路で参考画像機能を無効化 |
+| [EXE-R-01](./README.md) | リスク | 外部CLI・ComfyUIの拡張が画像を外へ送る可能性 | 2026-11-01にCodex・ComfyUI・Geminiの画像生成を製品版で有効にした。参考画像はCodex・Geminiへ渡さず、文字のプロンプトだけを送る。ComfyUIはloopbackのみ。ComfyUI側のworkflow・custom nodeの外部送信はアプリで制御できない（残る差分） |
 | [EXE-Q-01〜03](./README.md) | 決定済み・一部確認待ち | 配信先は公開GitHub Releases、署名はSignPath Foundation（審査待ち）、OSはWindowsのみ（版・CPUは実機確認待ち） | 親入口へ集約。本書では決めない |
 
 ## 全体図
@@ -92,7 +92,7 @@ flowchart LR
 - 素材は[EXE-API-009](./desktop-release-runtime.md#exe-api-009)の認可済みIPCを通じて取得する。brokerが作品scopeと素材IDを台帳へ照合して検証済みbytesを返し、rendererが一時Blob URLを作る。任意path、`file:`、外部URL、パストラバーサル、symlink／junction経由の領域外参照を拒否する。
 - `runtimeUrl`は一時的な表示用参照であり、永続的なファイルパス・外部送信URL・公開許可ではない。保存するのは素材IDで、作品切替・窓終了等で一時URLを破棄する。画像・音声をローカルHTTPや汎用`app://`資源として公開しない。
 - 資格情報はElectronのOS暗号化機構を介したWindows DPAPIで保護し、通常利用者だけのアクセス制限を併用する。暗号化可否を検査できない／復号不能なら`reauthRequired`にし、平文fallbackはしない。
-- 復号値は必要な送信先の処理へ必要な間だけ渡す。rendererへ読み戻すAPIや、workerへ資格情報の永続フォルダを渡す契約は設けない。信頼するAPIの保存サービスはworkspace／assetsを管理するが、AIアダプター・Codex・ComfyUIへは当該操作の許可snapshotだけを渡す。
+- 復号値は必要な送信先の処理へ必要な間だけ渡す。rendererへ読み戻すAPIや、workerへ資格情報の永続フォルダを渡す契約は設けない。workerが読めるのは、ChatGPTを使う操作の実行中のChatGPTの資格情報と、操作の一覧で`readSecrets`に挙げた資格情報（画像生成`images.asset`の実行中のGeminiのAPIキーだけ。読むだけで、書き換え・削除はできない）に限る。信頼するAPIの保存サービスはworkspace／assetsを管理するが、AIアダプター・Codex・ComfyUIへは当該操作の許可snapshotだけを渡す。
 - APIやCLIを同一Windows利用者の権限で起動するだけでは、OSのファイルアクセスを強制隔離したことにはならない。フォルダ指定・read-onlyだけ（段階4でJob Objectを入れてもそれだけ）を流出防止の証明とせず、経路ごとのアクセス・送信制約を検証できなければ該当連携を無効にする。ローカルプロセスのメモリまで絶対保護できるとはしない。
 - 利用者画像・資格情報をインストーラー、asar、`dist`、ソースマップ、リポジトリ、CI artifact、更新メタデータ・更新要求へ混入させない。ビルドの入力は承認済み製品アセットと合成fixtureに限定し、実利用の`public/generated/`を製品アセットとみなさない。
 
@@ -126,9 +126,13 @@ flowchart LR
 
 - 多段AI処理は確認対象の範囲を拡大しない。生成→評価→修正で追加の画像・比較スクショ・送信先が必要なら、その段階で別の一回確認を求める。画像なしのAI要求も本文・送信先を目的別ゲートで制限する。
 - CodexはCLIがローカルで動くことと処理がオフラインであることを区別する。参照画像の暗黙添付、広い作業フォルダ探索、他セッションの生成物取り込みを禁止し、ジョブ固有の入力・出力だけを扱う。
-- **段階1〜3の製品版ではCodex連携・ComfyUI連携を無効にする**（画像を渡す経路を持たない）。以下のCodex・ComfyUIの条件は、段階4等で有効化する場合の条件として残す。
-- （有効化する場合）Codexの未知バージョンで画像egressを制御・検証できない場合は参考画像機能を無効にする。参考画像を付けなくても他の私有画像を探索・送信できる経路が残るなら、そのCodex連携全体を無効にする。プロンプト上の「送信しない」指示だけを防壁としない。
-- （有効化する場合）ComfyUIも指定先・workflow・custom nodeからの外部egressを検査対象にする。ローカル指定はloopbackの検証済み接続に限定し、遠隔指定・外部転送・参照画像追加は別送信として確認する。制御不能なら画像を渡さない。
+- **2026-11-01：製品版で画像生成（Gemini・ComfyUI・Codex CLI経由のChatGPT）を有効にした**（段階1〜3の「無効」から変更）。条件と、満たしていない点は次のとおり。実機（Windows）での確認は未実施。
+  - Gemini：利用者が設定画面で入れたAPIキーを`safeStorage`（`gemini/apiKey`）へ保存し、プロンプト・画風・配色を`generativelanguage.googleapis.com`（`/v1beta/interactions`）へ送る。外部通信の許可表に1件追加。参考画像は送らない。
+  - ComfyUI：送り先を`127.0.0.1`・`localhost`・`[::1]`のhttp(s)に限る（path・query・資格情報は不可、外部URLは設定不可）。ComfyUI側のworkflow・custom nodeがさらに外へ送るかはアプリで制御できず、残る差分とする。
+  - Codex（ChatGPT）：利用者が自分で導入し`codex login`したCLIの`codex.exe`を、shellなし・窓なしで直接起動する。アプリ専用の`CODEX_HOME`（`cache/codex-home`）へ実行の間だけ利用者の`auth.json`を写して終了後に削除し、更新されたトークンは利用者の`auth.json`へ書き戻す。結果は当該実行のスレッドのフォルダの画像だけを採用し、`~/.codex/generated_images`は読まない。参考画像は渡さない（文字のプロンプトのみ）。Codexは子プロセスのためworkerの外部通信ゲートを通らず、OpenAIへ直接通信する（ゲートによる強制はできない）。
+  - アプリのChatGPTログインのトークンで画像を直接生成する方式は、OpenAIが`subscription_sharing_unsupported_capability`（image_generationツールは非対応）で拒否するため使わない。OpenAIのAPIキーでの画像生成・OpenRouterは製品版で使わない。
+- （未達）Codexの未知バージョンで画像egressを制御・検証できない場合は参考画像機能を無効にする。今回はバージョン検証をしておらず、参考画像をCodexへ渡さないことで代える。参考画像を付けなくても他の私有画像を探索・送信できる経路が残るなら、そのCodex連携全体を無効にする。プロンプト上の「送信しない」指示だけを防壁としない。
+- （一部のみ達成：送り先のloopback限定と参考画像なしは実施。workflow・custom nodeの外部egress検査は未達）ComfyUIも指定先・workflow・custom nodeからの外部egressを検査対象にする。ローカル指定はloopbackの検証済み接続に限定し、遠隔指定・外部転送・参照画像追加は別送信として確認する。制御不能なら画像を渡さない。
 
 <a id="fonts"></a>
 <a id="exe-fr-005"></a>
@@ -205,7 +209,7 @@ flowchart LR
 | 要件 | 画面・API・ストア | 受け入れ観点 |
 | --- | --- | --- |
 | EXE-REQ-001 → EXE-FR-004 | EXE-SCR-002／EXE-API-003/004／EXE-TBL-001/004 | 通信検査で未同意・拒否・期限切れ・再起動時の画像bytesが0。直接HTTP／WebSocket／画像URL等のrenderer迂回も0。確認した送信先・本文・画像bytesと実通信が一致 |
-| 同上 | 同上 | 画像変更・追加・自動比較スクショ・派生処理変更・fallback・endpoint／model変更で再同意。重複confirm・再送・多段処理で許可拡大0。段階1〜3の製品版でCodex・ComfyUI連携が無効で画像を渡す経路が無い。有効化する場合は未知Codex／制御不能egressで参考画像を渡さない |
+| 同上 | 同上 | 画像変更・追加・自動比較スクショ・派生処理変更・fallback・endpoint／model変更で再同意。重複confirm・再送・多段処理で許可拡大0。Codex・Gemini・ComfyUIへは参考画像を渡さず、文字のプロンプトだけを送る（2026-11-01に有効化。実機の通信検査は未実施）。未知Codex／制御不能egressでは参考画像を渡さない |
 | 同上 | 同上 | OpenRouter等の内部負荷分散・provider／region切替・model fallback・server tool転送を確認し、単一の確認先に固定できなければ画像要求を拒否する |
 | EXE-REQ-003 → EXE-FR-003 | EXE-SCR-004／EXE-API-006／EXE-TBL-001/002 | 既知の合成画像・本文・秘密値fixtureを用い、インストーラー／asar／dist／ソースマップ／CI artifact／ログ／更新通信への混入を検出。許可した製品fixtureと私有fixtureを区別 |
 | 同上 | 同上 | 通常更新で作品と認証状態を維持。別利用者・別PC・DPAPI失敗時は再認証し、平文を残さない。バックアップ秘密値0。保存失敗・移行失敗・削除失敗を成功表示しない |
@@ -219,6 +223,7 @@ REQ→US→UCの上流対応は[技術仕様の対応表](./desktop-release-spec
 
 - 2026-10-26改訂（v0.2、決定者：ユーザー（改善案の適用を承認））：(1) AI送信確認を、mainが生成する専用の確認窓での1回に改め、ネイティブ確認ダイアログとの二重確認をやめた（安全条件は維持）。(2) フォントは段階2では端末内サブセット化せず全文字入りで埋め込む（書き出しは大きくなる。端末内サブセットは後の任意改善。`text=`廃止とOS登録の別同意は維持）。(3) Codex・ComfyUI連携は段階1〜3の製品版で無効。既存条件は有効化する場合の条件として残す。(4) 実行構成は段階1〜3が名前付きパイプlease、EXE-TBL-006・supervisor・Jobは段階4の設計。段階分けの正本は[spec](./desktop-release-spec.md)。
 - ユーザー確認済み：画像のAI送信は送信先・対象画像を提示した本人の明示確認だけを許可し、フォント取得は維持する。
+- 2026-11-01改訂（決定者：ユーザー）：Windows版の画像生成（Gemini・ComfyUI・Codex CLI経由のChatGPT）を有効にした。(1) Gemini：利用者のAPIキーを`safeStorage`に保存し、プロンプトを`generativelanguage.googleapis.com`へ送る（許可表に1件追加）。(2) ComfyUI：loopbackのみ。(3) Codex：利用者導入の`codex.exe`を直接起動し、アプリ専用`CODEX_HOME`へ実行の間だけ`auth.json`を写す。外部通信ゲートを通らずOpenAIへ直接通信する。(4) 参考画像はCodex・Geminiへ渡さない。(5) 後回し：Windows Jobオブジェクトでの起動（中断は`taskkill /T`）、Codexのバージョン検証、ComfyUI側の外部送信の制御。Windows実機での確認は未実施。
 - [ADR-002](./adr/ADR-002-private-data-and-consent.md)：私有ストアと目的別通信・短命一回確認。main生成の専用確認窓での1回の確認とする設計判断（v0.2で二重確認を改訂）。
 - [ADR-004](./adr/ADR-004-font-acquisition.md)：作品文字を送らない全文字入りフォントの取得・埋め込み（段階2は端末内サブセットなし）と、別同意のOS登録を採用する設計判断。
 - AI設計値：AI／OSフォント登録の許可期限各5分、フォント1ファイル受信・展開後各32MiB。安全性の実証値ではなく、正式配信前に妥当性を検証する。

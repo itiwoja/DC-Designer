@@ -198,6 +198,7 @@ Instagram のフィードやストーリーズに載せる画像を作る。1 �
 Windows用インストーラー、配信CI（`v*` タグで起動。[配布・更新ポリシー](./docs/release-policy.md#1回の配信手順)）、起動時の更新確認（v1.0.3から）はある。コード署名（SignPathの審査待ち。それまでは未署名で公開し、更新ファイルはSHA-512だけで確かめる）・配信権限の制限は未実装・未設定。
 
 - 対象はWindowsのみ。インストーラーと更新ファイルは公開GitHub Releasesで配り、コード署名はSignPath Foundationを使う（段階3のビルドが揃ってから申請）。署名の方針は [Code signing policy](./docs/code-signing-policy.md)。実装は段階1〜4に分けて進める（[段階分け](./docs/desktop-release-spec.md#phases)）。
+- Windows版でも画像生成（Gemini＝利用者のAPIキー、ComfyUI＝この PC のloopbackのみ、ChatGPT＝利用者導入のCodex CLI経由）を使える（2026-11-01。Windows実機での確認は未実施）。参考画像は渡さず文字のプロンプトだけを送る。Codexは外部通信ゲートを通らずOpenAIへ直接通信する。OpenAI APIキーでの画像生成とOpenRouterはWindows版では使わない。詳細は[プライバシー](./docs/privacy.md)、[変更記録](./docs/changes/2026-11-01-desktop-imagegen.md)。
 - 日常の開発は `main` で行い、配布するタイミングで `main` を `release` にマージする。チェリーピックは原則使わない。
 - `main` / `release` へのpushやマージだけでは配信しない。`release` 上で確認したコミットに `v1.0.1` などのタグを付け、正式配信を開始する。
 - **正式配信の権限・最終承認は、リポジトリ所有者の @itiwoja 本人だけが持つ。** 自動ビルド・公開は、本人が承認した処理として実行する。
