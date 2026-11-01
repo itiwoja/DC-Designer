@@ -178,29 +178,37 @@ export function useLoadWithRetry(load: () => Promise<void>, onError?: () => void
 }
 
 export type ConfirmOptions = { title: string; message?: string; ok: string; danger?: boolean };
-let showConfirm: ((o: ConfirmOptions) => Promise<boolean>) | null = null;
+/** askChoice() の選択肢。最後のものが既定（Enter・最初のフォーカス） */
+export type ChoiceOptions<T extends string> = { title: string; message?: string; choices: { value: T; label: string }[] };
+type ConfirmRequest = { title: string; message?: string; danger?: boolean; choices: { value: string; label: string }[]; resolve: (v: string | null) => void };
+let showConfirm: ((o: Omit<ConfirmRequest, "resolve">) => Promise<string | null>) | null = null;
 
 /** ブラウザ標準の confirm() の代わり。画面に <ConfirmHost /> が 1 つあること */
 export function ask(o: ConfirmOptions): Promise<boolean> {
-  return showConfirm ? showConfirm(o) : Promise.resolve(false);
+  return showConfirm ? showConfirm({ ...o, choices: [{ value: "ok", label: o.ok }] }).then((v) => v === "ok") : Promise.resolve(false);
 }
 
-/** ask() の確認ダイアログを出す場所。Esc・外側クリックでキャンセル、Enter で決定。開いている間はほかのショートカットに使わせない */
+/** キャンセルのほかに、いくつかの選択肢から 1 つ選ばせる（キャンセルなら null） */
+export function askChoice<T extends string>(o: ChoiceOptions<T>): Promise<T | null> {
+  return showConfirm ? (showConfirm(o) as Promise<T | null>) : Promise.resolve(null);
+}
+
+/** ask()・askChoice() の確認ダイアログを出す場所。Esc・外側クリックでキャンセル、Enter で既定の選択肢。開いている間はほかのショートカットに使わせない */
 export function ConfirmHost() {
-  const [req, setReq] = useState<(ConfirmOptions & { resolve: (ok: boolean) => void }) | null>(null);
+  const [req, setReq] = useState<ConfirmRequest | null>(null);
   useEffect(() => {
     showConfirm = (o) => new Promise((resolve) => setReq({ ...o, resolve }));
     return () => { showConfirm = null; };
   }, []);
-  const answer = useCallback((ok: boolean) => setReq((r) => { r?.resolve(ok); return null; }), []);
+  const answer = useCallback((v: string | null) => setReq((r) => { r?.resolve(v); return null; }), []);
   useEffect(() => {
     if (!req) return;
     const onKey = (e: KeyboardEvent) => {
       // フォーカス中のボタンを Tab・Enter・Space で操作するのはそのまま通す
       const onButton = e.target instanceof HTMLButtonElement;
       if (["Tab", "Enter", " "].includes(e.key) && onButton) return;
-      if (e.key === "Escape") answer(false);
-      else if (e.key === "Enter") answer(true);
+      if (e.key === "Escape") answer(null);
+      else if (e.key === "Enter") answer(req.choices[req.choices.length - 1].value);
       e.stopPropagation();
       if (e.key !== "Tab") e.preventDefault();
     };
@@ -208,14 +216,17 @@ export function ConfirmHost() {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [req, answer]);
   if (!req) return null;
+  const last = req.choices.length - 1;
   return (
-    <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && answer(false)}>
+    <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && answer(null)}>
       <div className="modal confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby={req.message ? "confirm-message" : undefined}>
         <h2 id="confirm-title">{req.title}</h2>
         {req.message && <p id="confirm-message">{req.message}</p>}
         <div className="row end">
-          <button onClick={() => answer(false)}>キャンセル</button>
-          <button className={"primary" + (req.danger ? " danger" : "")} autoFocus onClick={() => answer(true)}>{req.ok}</button>
+          <button onClick={() => answer(null)}>キャンセル</button>
+          {req.choices.map((c, i) => (
+            <button key={c.value} className={i === last ? "primary" + (req.danger ? " danger" : "") : undefined} autoFocus={i === last} onClick={() => answer(c.value)}>{c.label}</button>
+          ))}
         </div>
       </div>
     </div>

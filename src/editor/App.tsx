@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent a
 import { slideContent } from "../notes";
 import { Poster } from "../render/Poster";
 import { buildExportSvg, download, renderSpecPng, svgToPngSized } from "../render/svg";
+import { pngToPdf } from "../render/pdf";
 import { A4Check } from "./A4Check";
 import { a4Fit, a4Instruction, a4Issues, a4Size, exportPixels, fitToA4, pngA4Report, PRINT_DPI, readPngInfo, SAFE_MARGIN_MM, setPngDpi } from "./a4";
 import { cropTarget } from "../render/ImageBox";
@@ -46,7 +47,7 @@ import { blobToRef, loadImage, overlayOf, REF_OVERLAY_ID, referenceSize, resolve
 import { readPref, STORAGE_KEY, writePref } from "./storage";
 import { TextEditor } from "./TextEditor";
 import { Toasts, useNotices, type Busy, type Notice } from "./Toasts";
-import { ask, Menu, RenderLoading, ThemeMenu, useLoadWithRetry } from "./ui";
+import { ask, askChoice, Menu, RenderLoading, ThemeMenu, useLoadWithRetry } from "./ui";
 import { Ico } from "./uiIcons";
 import { useAutoSave } from "./useAutoSave";
 import { topLayerAt, useCanvasPointer } from "./useCanvasPointer";
@@ -913,6 +914,19 @@ export function App() {
       ? { kind: "success", text: `${name} を A4 で書き出しました（${size}）` }
       : { kind: "error", text: `${name} を書き出しましたが、A4 の大きさではありません（${size}）。A4 チェックからそろえられます` });
   });
+  /** PNG と同じ A4 300dpi の画像を、同じ実寸の 1 ページの PDF にする（印刷所・提出用） */
+  const exportPdf = () => run("PDF を書き出し中", async () => {
+    const name = `${safeFileName(spec.meta.title)}.pdf`;
+    const png = await buildA4Png();
+    download(await pngToPdf(png, PRINT_DPI, spec.meta.title || undefined), name);
+    const info = readPngInfo(new Uint8Array(await png.arrayBuffer()));
+    const r = info && pngA4Report(info);
+    if (!info || !r) return exported(name);
+    const size = `${r.wMm.toFixed(1)}×${r.hMm.toFixed(1)}mm`;
+    notify(r.ok
+      ? { kind: "success", text: `${name} を A4 で書き出しました（${size}）` }
+      : { kind: "error", text: `${name} を書き出しましたが、A4 の大きさではありません（${size}）。A4 チェックからそろえられます` });
+  });
   /** A4 の大きさで印刷プレビューを開く（ブラウザの印刷画面で用紙 A4・余白なしで確かめられる） */
   const printA4 = () => {
     // ポップアップを止められないよう、クリックのうちに窓だけ開いておく
@@ -971,12 +985,18 @@ export function App() {
   const pendingCount = pending.length;
 
   const confirmExport = async () => {
-    const ok = await ask(deck
-      ? { title: "PowerPoint で書き出しますか？", message: `「${deck.name}」を .pptx ファイルとして保存します。`, ok: "書き出す" }
-      : { title: "PNG で書き出しますか？", message: `「${spec.meta.title || "無題のポスター"}」を A4 300dpi（2480×3508px）の PNG として保存します。書き出したあと、実寸が A4 になったかをお知らせします。`, ok: "書き出す" });
-    if (ok) (deck ? exportDeck : exportPng)();
+    if (deck) {
+      if (await ask({ title: "PowerPoint で書き出しますか？", message: `「${deck.name}」を .pptx ファイルとして保存します。`, ok: "書き出す" })) exportDeck();
+      return;
+    }
+    const format = await askChoice({
+      title: "書き出す形式を選んでください",
+      message: `「${spec.meta.title || "無題のポスター"}」を A4 300dpi（2480×3508px）で保存します。PDF は印刷・提出用、PNG は画像として使うときに。書き出したあと、実寸が A4 になったかをお知らせします。`,
+      choices: [{ value: "png", label: "PNG" }, { value: "pdf", label: "PDF" }],
+    });
+    if (format === "pdf") exportPdf();
+    else if (format === "png") exportPng();
   };
-
 
   // ---------- レイヤー操作 ----------
   const reorder = (id: string, to: (layers: Layer[], i: number) => number) => setSpec((s) => {
@@ -1613,7 +1633,7 @@ export function App() {
               </div>
             )}
           </Menu>
-          <button className="primary export-btn" onClick={confirmExport} aria-label="書き出し" title={deck ? "全スライドを PowerPoint で書き出し" : "PNG で書き出し（A4 300dpi・2480×3508px）"}><Ico name="download" /><span className="export-label">書き出し</span></button>
+          <button className="primary export-btn" onClick={confirmExport} aria-label="書き出し" title={deck ? "全スライドを PowerPoint（PPTX）で書き出し" : "PDF・PNG で書き出し（A4 300dpi・2480×3508px）"}><Ico name="download" /><span className="export-label">書き出し</span></button>
         </div>
         {(selectedLayer || multi) && <div className="inspector-wrap">
           <Inspector
