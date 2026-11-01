@@ -2,15 +2,17 @@
   {
     "id": "hero",
     "type": "image",
-    "status": "placeholder",
-    "alt": "アプリの画面の画像は準備中です"
+    "status": "ready",
+    "alt": "「ポスターもスライドも、AIの下書きから。レイヤーで、自分の手で仕上げる。」の文字と、DC-Designer で作った作例（架空のイベント「みどり町 星空観察会」のポスターと表紙スライド）",
+    "src": "hero.png"
   },
   {
     "id": "demo",
     "type": "video",
-    "status": "placeholder",
-    "poster": "placeholder-demo.png",
-    "alt": "デモ動画は準備中です"
+    "status": "ready",
+    "poster": "demo-poster.png",
+    "alt": "DC-Designer のデモ動画（約 23 秒・効果音つき、ナレーションなし）。作りたいポスターの内容を文章で入力すると、AI がレイアウトを組み立て、22 枚のレイヤーに分かれたポスターができる。ラベルをドラッグして位置を直し、同じ題材のスライドも作って、PDF・PNG・PPTX で書き出せることを紹介する",
+    "src": "demo.mp4"
   },
   {
     "id": "ogp",
