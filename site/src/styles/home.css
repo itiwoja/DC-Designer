@@ -109,11 +109,9 @@
 .media-frame img, .media-frame video { width: 100%; }
 
 /* ---------- SEC-001-06 群青の帯（CMP-014） ---------- */
-.cta-band .cta-band__shape { width: 56px; height: 56px; }
 .cta-band { background: var(--color-band); color: var(--color-on-action); padding-block: var(--section-y); }
 .cta-band__inner { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-5); }
 .cta-band__title { margin: 0; font-size: var(--text-2xl); }
-  .cta-band .cta-band__shape { width: 72px; height: 72px; }
 @media (min-width: 768px) {
   .cta-band__inner { flex-direction: row; align-items: center; gap: var(--space-6); }
   .cta-band__title { flex: 1; }
