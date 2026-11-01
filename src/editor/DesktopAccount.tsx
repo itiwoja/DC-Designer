@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { DesktopBridge } from "../../desktop/bridge";
 import { api, type Status } from "./api";
+import { codexSetup, describeCodexJob, useCodexSetup } from "./codexSetup";
 import { DESKTOP_ACCOUNT_CHANGED, DESKTOP_SIGN_IN_STARTED, deriveDesktopAccountView, describeDesktopAccount, isChatGPTReauthRequired, isDesktopSigningIn, runDesktopSignIn } from "./accountView";
 import { Menu } from "./ui";
 import { Ico } from "./uiIcons";
@@ -33,12 +34,48 @@ export function SignInWaiting({ bridge }: { bridge: DesktopBridge }) {
 const DESKTOP_IMAGE_LABELS: Record<string, string> = { gemini: "Gemini（API キー）", comfyui: "ComfyUI（この PC）", codex: "ChatGPT（Codex CLI）", placeholder: "仮の画像" };
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+const CODEX_SOURCE_LABELS: Record<string, string> = { app: "このアプリで入れた版", "codex-app": "Codex アプリの CLI", npm: "npm で入れた CLI", path: "PATH の CLI", configured: "指定した場所" };
+
 /** Codex CLI の状態の文言 */
 export function describeCodex(codex: Status["codex"]): string {
   if (!codex) return "確認中…";
-  if (codex.state === "ready") return `使えます${codex.path ? `（${codex.path}）` : ""}`;
-  if (codex.state === "signed_out") return "Codex CLI にサインインしていません（`codex login`）";
-  return "Codex CLI が見つかりません（インストールして `codex login`）";
+  const where = codex.source ? CODEX_SOURCE_LABELS[codex.source] : codex.path;
+  if (codex.state === "ready") return `使えます${where ? `（${where}）` : ""}`;
+  if (codex.state === "signed_out") return `サインインしていません${where ? `（${where}）` : ""}`;
+  return "Codex CLI が見つかりません";
+}
+
+/** Codex CLI の欄：状態と、入れる・サインインのボタン、進み具合（吹き出しを閉じても続く） */
+export function CodexSetupRows({ codex, onStatusChanged }: { codex: Status["codex"]; onStatusChanged?: () => void }) {
+  const { job, error } = useCodexSetup(onStatusChanged);
+  const p = job?.progress;
+  return (
+    <>
+      <div className="status-row">
+        <span className="status-label">Codex</span>
+        <span className="status-val"><span className={"dot " + (codex?.state === "ready" ? "ok" : "warn")} aria-hidden />{describeCodex(codex)}</span>
+      </div>
+      {job ? (
+        <div className="codex-setup" role="status" aria-live="polite">
+          {job.kind === "install"
+            ? <progress className="codex-setup-progress" aria-label="Codex CLI を入れる進み具合" max={p?.step === "download" && p.total ? p.total : undefined} value={p?.step === "download" && p.total ? p.done ?? 0 : undefined} />
+            : <span className="spinner" aria-hidden />}
+          <p className="hint">{describeCodexJob(job)}</p>
+          {job.kind === "login" && p?.url && <p className="hint"><a href={p.url} target="_blank" rel="noreferrer">ブラウザが開かないときはこちら</a></p>}
+          <div className="row end"><button className="small" onClick={codexSetup.cancel}>中止</button></div>
+        </div>
+      ) : codex?.state === "not_found" ? (
+        codex.canInstall ? <>
+          <p className="hint">公式の GitHub から Codex CLI {codex.installVersion}（約 120MB）を取ってきて、このアプリ専用の場所に入れます。入れたあと、ブラウザで ChatGPT にサインインします。</p>
+          <div className="row end"><button className="small primary" onClick={codexSetup.install}>Codex CLI を入れる</button></div>
+        </> : <p className="hint">Codex CLI を入れて、下の「場所」に codex.exe を指定してください。</p>
+      ) : codex?.state === "signed_out" ? <>
+        <p className="hint">ChatGPT のプラン（Plus / Pro など）の枠で画像を作ります。ブラウザで ChatGPT にサインインしてください。</p>
+        <div className="row end"><button className="small primary" onClick={codexSetup.login}>Codex にサインイン</button></div>
+      </> : null}
+      {error && <p className="hint" role="alert">{error}</p>}
+    </>
+  );
 }
 
 /** 製品版の「画像生成」欄（選択・Gemini の API キー・ComfyUI の URL・Codex CLI）。キーは画面に読み戻さない */
@@ -125,10 +162,7 @@ export function DesktopImageSettings({ bridge, status, imageChoices, imageProvid
         <span className="status-val"><input type="text" aria-label="ComfyUI の URL" spellCheck={false} placeholder="http://127.0.0.1:8188" value={comfy} onChange={(e) => setComfy(e.target.value)} /></span>
       </div>
       <p className="hint">この PC で動いている ComfyUI だけ使えます。空なら既定（http://127.0.0.1:8188）。</p>
-      <div className="status-row">
-        <span className="status-label">Codex</span>
-        <span className="status-val"><span className={"dot " + (status?.codex?.state === "ready" ? "ok" : "warn")} aria-hidden />{describeCodex(status?.codex)}</span>
-      </div>
+      <CodexSetupRows codex={status?.codex} onStatusChanged={onStatusChanged} />
       <div className="status-row">
         <span className="status-label">場所</span>
         <span className="status-val"><input type="text" aria-label="codex.exe の場所" spellCheck={false} placeholder="空なら自動検出（codex.exe の絶対パス）" value={codexPath} onChange={(e) => setCodexPath(e.target.value)} /></span>

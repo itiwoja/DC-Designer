@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DesktopBridge } from "../desktop/bridge";
-import { api, type Status } from "../src/editor/api";
+import { api, type SetupProgress, type Status } from "../src/editor/api";
+import { codexSetup } from "../src/editor/codexSetup";
 import { describeCodex, DesktopImageSettings } from "../src/editor/DesktopAccount";
 
 let root: Root;
@@ -91,9 +92,69 @@ it("ComfyUI・Codex の設定を保存し、400 のエラー文はそのまま�
 
 it("Codex の状態の文言", async () => {
   expect(describeCodex({ state: "ready", path: "C:\\x\\codex.exe" })).toBe("使えます（C:\\x\\codex.exe）");
+  expect(describeCodex({ state: "ready", path: "C:\\x\\codex.exe", source: "app" })).toBe("使えます（このアプリで入れた版）");
+  expect(describeCodex({ state: "ready", source: "codex-app" })).toBe("使えます（Codex アプリの CLI）");
   expect(describeCodex({ state: "not_found" })).toContain("見つかりません");
   expect(describeCodex({ state: "signed_out" })).toContain("サインインしていません");
-  const { bridge } = mkBridge(false);
-  await mount(bridge, st({ codex: { state: "signed_out" } }));
-  expect(container.textContent).toContain("`codex login`");
+});
+
+describe("Codex CLI を入れる・サインイン", () => {
+  beforeEach(() => codexSetup.reset());
+  const button = (label: string) => [...container.querySelectorAll("button")].find((b) => b.textContent === label);
+
+  it("見つからず入れられるなら「Codex CLI を入れる」を出し、押すとダウンロードの進み具合を出す。入れ終えたら続けてサインインする", async () => {
+    let progress: ((p: SetupProgress) => void) | undefined;
+    let finishInstall: (v: { path: string; version: string; signedIn: boolean }) => void = () => {};
+    let finishLogin: (v: { signedIn: true }) => void = () => {};
+    vi.spyOn(api, "installCodex").mockImplementation((onProgress) => { progress = onProgress; return new Promise((r) => { finishInstall = r; }); });
+    const login = vi.spyOn(api, "loginCodex").mockImplementation((onProgress) => { progress = onProgress; return new Promise((r) => { finishLogin = r; }); });
+    const onStatusChanged = vi.fn();
+    const { bridge } = mkBridge(false);
+    await mount(bridge, st({ codex: { state: "not_found", canInstall: true, installVersion: "0.166.0" } }), { onStatusChanged });
+    expect(container.textContent).toContain("Codex CLI 0.166.0（約 120MB）");
+    await act(async () => button("Codex CLI を入れる")!.click());
+    expect(container.textContent).toContain("ダウンロードの準備をしています");
+    expect(button("Codex CLI を入れる")).toBeUndefined();
+    await act(async () => progress!({ phase: "setup", step: "download", done: 31 * 1024 * 1024, total: 124 * 1024 * 1024 }));
+    expect(container.textContent).toContain("ダウンロード中… 25%（31.0 / 124.0 MB）");
+    const bar = container.querySelector("progress")!;
+    expect(bar.getAttribute("value")).toBe(String(31 * 1024 * 1024));
+    await act(async () => progress!({ phase: "setup", step: "verify" }));
+    expect(container.textContent).toContain("公式のファイルと一致するか確かめています");
+    await act(async () => finishInstall({ path: "C:\\codex.exe", version: "0.166.0", signedIn: false }));
+    expect(login).toHaveBeenCalled();
+    expect(onStatusChanged).toHaveBeenCalled();
+    expect(container.textContent).toContain("ブラウザで ChatGPT にサインインしてください");
+    await act(async () => progress!({ phase: "setup", step: "login", url: "https://auth.openai.com/oauth/authorize?x=1" }));
+    expect(container.querySelector("a")?.getAttribute("href")).toBe("https://auth.openai.com/oauth/authorize?x=1");
+    await act(async () => finishLogin({ signedIn: true }));
+    expect(container.querySelector("[role=status]")).toBeNull();
+  });
+
+  it("サインインしていなければ「Codex にサインイン」、失敗したらサーバーの文言を出す", async () => {
+    vi.spyOn(api, "loginCodex").mockRejectedValue(new Error("Codex にサインインできませんでした。もう一度試してください"));
+    const { bridge } = mkBridge(false);
+    await mount(bridge, st({ codex: { state: "signed_out", canInstall: true, installVersion: "0.166.0" } }));
+    await act(async () => button("Codex にサインイン")!.click());
+    expect(container.querySelector("[role=alert]")?.textContent).toBe("Codex にサインインできませんでした。もう一度試してください");
+  });
+
+  it("中止すると取り消しを送り、エラーは出さない", async () => {
+    let signal: AbortSignal | undefined;
+    vi.spyOn(api, "installCodex").mockImplementation((_p, s) => { signal = s; return new Promise((_, rej) => s!.addEventListener("abort", () => rej(new DOMException("aborted", "AbortError")))); });
+    const { bridge } = mkBridge(false);
+    await mount(bridge, st({ codex: { state: "not_found", canInstall: true, installVersion: "0.166.0" } }));
+    await act(async () => button("Codex CLI を入れる")!.click());
+    await act(async () => button("中止")!.click());
+    expect(signal?.aborted).toBe(true);
+    expect(container.querySelector("[role=alert]")).toBeNull();
+    expect(button("Codex CLI を入れる")).toBeTruthy();
+  });
+
+  it("入れられない PC では場所の指定を案内する", async () => {
+    const { bridge } = mkBridge(false);
+    await mount(bridge, st({ codex: { state: "not_found", canInstall: false, installVersion: "0.166.0" } }));
+    expect(button("Codex CLI を入れる")).toBeUndefined();
+    expect(container.textContent).toContain("codex.exe を指定してください");
+  });
 });

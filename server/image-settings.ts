@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join, posix, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 import { httpError } from "./http-error";
+import { PINNED_CODEX } from "./codex-pinned";
 
 /** 画像生成まわりの設定（画面の設定から保存。空文字＝既定） */
 export type ImageSettings = { comfyuiUrl: string; codexPath: string };
@@ -48,6 +49,18 @@ function validateComfyUrl(v: string): string {
 
 /** Codex の実行ファイル名（Windows は codex.exe、それ以外は codex） */
 export const codexExeName = () => (process.platform === "win32" ? "codex.exe" : "codex");
+
+/** このアプリが入れる Codex CLI の置き場所（製品版だけ。<userRoot>/tools/codex）。版ごとのフォルダに codex.exe を置く */
+export const appCodexDir = (): string | undefined => {
+  const root = process.env.DC_DESIGNER_USER_ROOT;
+  return root ? join(root, "tools", "codex") : undefined;
+};
+
+/** このアプリが入れた（入れる）Codex CLI の実行ファイル。版は server/codex-pinned.ts の固定版 */
+export const appCodexExe = (version = PINNED_CODEX.version): string | undefined => {
+  const dir = appCodexDir();
+  return dir ? join(dir, version, codexExeName()) : undefined;
+};
 
 /** Codex のパスを検証する（空文字はそのまま。絶対パスで、ファイル名が codex.exe / codex のものだけ） */
 function validateCodexPath(v: string): string {

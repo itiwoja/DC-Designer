@@ -2,7 +2,12 @@ import type { Request, Response } from "express";
 import { ChatGPTAuthError } from "./chatgpt-auth";
 import { ChatGPTError } from "./chatgpt";
 import { ImageGenError } from "./imagegen-error";
-import type { OnProgress, Progress } from "./planner";
+import type { Progress } from "./planner";
+import type { SetupProgress } from "./codex-setup";
+
+/** 進み具合：AI の生成（thinking / writing）か、Codex の準備（setup） */
+export type RouteProgress = Progress | SetupProgress;
+export type OnRouteProgress = (p: RouteProgress) => void;
 
 /** 応答を返し終える前に接続が切れたら（画面でキャンセルしたなど）処理も中断する */
 function requestSignal(res: Response): AbortSignal {
@@ -47,19 +52,20 @@ export function createRouteHandlers({ desktop }: { desktop: boolean }) {
    * 時間のかかる生成用: 進み具合を 1 行 1 JSON（NDJSON）で流し、最後に {"result"} か {"error"} を送る。
    * 書き出し中の進み具合は 0.5 秒に 1 回まで、thinking への切り替えはすぐ送る
    */
-  const progressRoute = (fn: (req: Request, onProgress: OnProgress, signal: AbortSignal) => Promise<unknown>) => async (req: Request, res: Response) => {
+  const progressRoute = (fn: (req: Request, onProgress: OnRouteProgress, signal: AbortSignal) => Promise<unknown>) => async (req: Request, res: Response) => {
     const signal = requestSignal(res);
     res.status(200).setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
     res.setHeader("Cache-Control", "no-cache");
     res.flushHeaders();
     const line = (o: unknown) => { if (!res.writableEnded) res.write(JSON.stringify(o) + "\n"); };
     let last = 0;
-    let pending: Progress | undefined;
+    let pending: RouteProgress | undefined;
     let timer: NodeJS.Timeout | undefined;
     const flush = () => { timer = undefined; if (pending) { line({ progress: pending }); pending = undefined; last = Date.now(); } };
-    const onProgress = (p: Progress) => {
+    const onProgress = (p: RouteProgress) => {
       pending = p;
-      if (p.phase === "thinking") { clearTimeout(timer); flush(); return; }
+      // 段階の切り替え（thinking・ダウンロード以外の準備の段階）はすぐ送る。量の進み具合だけ間引く
+      if (p.phase === "thinking" || (p.phase === "setup" && p.step !== "download")) { clearTimeout(timer); flush(); return; }
       if (!timer) timer = setTimeout(flush, Math.max(0, 500 - (Date.now() - last)));
     };
     try {

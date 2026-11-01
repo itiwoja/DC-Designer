@@ -168,6 +168,26 @@ describe("egress ゲート：画像生成", () => {
     expect(real).not.toHaveBeenCalled();
   });
 
+  it("Codex CLI の取得：固定版のファイルと、github の転送先（署名つき query）の GET だけ通す", async () => {
+    const { gate, real } = setup();
+    await gate.fetch("https://github.com/openai/codex/releases/download/rust-v0.166.0/codex-x86_64-pc-windows-msvc.exe.tar.gz", { redirect: "manual" });
+    await gate.fetch("https://github.com/openai/codex/releases/download/rust-v0.166.0/codex-aarch64-pc-windows-msvc.exe.tar.gz");
+    await gate.fetch("https://release-assets.githubusercontent.com/github-production-release-asset/965415649/a622?sig=x&exp=1");
+    await gate.fetch("https://objects.githubusercontent.com/github-production-release-asset/1/2?sig=x");
+    expect(real).toHaveBeenCalledTimes(4);
+    expect(real.mock.calls[0][1]?.redirect).toBe("manual");
+    for (const u of [
+      "https://github.com/openai/codex/releases/download/rust-v0.1.0/codex-x86_64-pc-windows-msvc.exe.tar.gz", // 別の版
+      "https://github.com/openai/codex/releases/download/rust-v0.166.0/codex-x86_64-pc-windows-msvc.exe", // 別のファイル
+      "https://github.com/openai/codex/releases/download/rust-v0.166.0/codex-x86_64-pc-windows-msvc.exe.tar.gz?x=1", // query つき
+      "https://github.com/evil/repo/releases/download/x/codex.tar.gz",
+      "https://release-assets.githubusercontent.com/other/path",
+      "https://api.github.com/repos/openai/codex/releases/latest",
+    ]) await denied(gate.fetch(u));
+    await denied(gate.fetch("https://github.com/openai/codex/releases/download/rust-v0.166.0/codex-x86_64-pc-windows-msvc.exe.tar.gz", { method: "POST" }));
+    expect(real).toHaveBeenCalledTimes(4);
+  });
+
   it("既存の規則はループバックの緩和を受けない（http・任意ポートは拒否のまま）", async () => {
     const { gate, real } = setup();
     for (const u of ["http://fonts.googleapis.com/css2", "https://fonts.googleapis.com:8443/css2", "http://api.openai.com/v1/models"]) await denied(gate.fetch(u));

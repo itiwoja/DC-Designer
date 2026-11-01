@@ -72,6 +72,9 @@ export const DESKTOP_OPERATIONS = {
   // Gemini の生成は worker が送る直前に API キーを読む（server/imagegen.ts の generateGemini）
   "images.asset": { method: "POST", route: "/api/asset", maxBody: 1 * MB, readSecrets: ["gemini/apiKey"] },
   "images.settings": { method: "PUT", route: "/api/image/settings", maxBody: 1024 },
+  // Codex CLI の準備：固定版を GitHub から入れる（worker の外部通信ゲートで github.com と転送先だけ許可）／`codex login` でサインインする
+  "codex.install": { method: "POST", route: "/api/codex/install", maxBody: 1024, stream: true },
+  "codex.login": { method: "POST", route: "/api/codex/login", maxBody: 1024, stream: true },
 
   "auth.logout": { method: "POST", route: "/api/auth/chatgpt/logout", chatgpt: true },
 

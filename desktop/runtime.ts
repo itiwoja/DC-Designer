@@ -72,6 +72,7 @@ const BAD_STREAM: DesktopResult = { ok: false, error: "応答の形式が正し�
 function sanitizeProgress(v: unknown): DesktopProgress | null {
   if (!v || typeof v !== "object") return null;
   const o = v as Record<string, unknown>;
+  if (o.phase === "setup") return sanitizeSetupProgress(o);
   if (o.phase !== "thinking" && o.phase !== "writing") return null;
   if (typeof o.attempt !== "number" || !Number.isInteger(o.attempt)) return null;
   return {
@@ -79,6 +80,25 @@ function sanitizeProgress(v: unknown): DesktopProgress | null {
     attempt: o.attempt,
     ...(typeof o.chars === "number" && Number.isFinite(o.chars) ? { chars: o.chars } : {}),
     ...(typeof o.items === "number" && Number.isFinite(o.items) ? { items: o.items } : {}),
+  };
+}
+
+const SETUP_STEPS = ["download", "verify", "install", "login"] as const;
+/** `codex login` の認可 URL だけを画面へ渡す（画面はこれを既定のブラウザで開く） */
+const CODEX_AUTH_URL_PREFIX = "https://auth.openai.com/oauth/authorize?";
+const isCount = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n >= 0;
+
+/** Codex CLI の準備の進み具合を検証する。形が違えば null */
+function sanitizeSetupProgress(o: Record<string, unknown>): DesktopProgress | null {
+  const step = SETUP_STEPS.find((s) => s === o.step);
+  if (!step) return null;
+  const url = typeof o.url === "string" && o.url.startsWith(CODEX_AUTH_URL_PREFIX) && o.url.length <= 4096 && !/\s/.test(o.url) ? o.url : undefined;
+  return {
+    phase: "setup",
+    step,
+    ...(isCount(o.done) ? { done: o.done } : {}),
+    ...(isCount(o.total) ? { total: o.total } : {}),
+    ...(url && step === "login" ? { url } : {}),
   };
 }
 

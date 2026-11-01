@@ -3,7 +3,9 @@
  * worker の外部通信は global fetch だけ（node:http・WebSocket は使わない）なので、ここを通らない通信は無い。
  * 開発版（DC_DESIGNER_DESKTOP が無い）では包まない。URL の query・本文はエラーにもログにも出さない
  */
-export type EgressPurpose = "fonts" | "auth" | "ai" | "image";
+export type EgressPurpose = "fonts" | "auth" | "ai" | "image" | "tools";
+
+import { CODEX_ASSET_HOSTS, CODEX_RELEASE_HOST, codexReleasePath, PINNED_CODEX } from "./codex-pinned";
 
 export class EgressDeniedError extends Error {
   readonly code = "EGRESS_DENIED" as const;
@@ -41,6 +43,15 @@ const comfyRules: Rule[] = LOOPBACK_HOSTS.flatMap((host): Rule[] => [
   { purpose: "image", method: "POST", host, path: { exact: "/prompt" }, loopback: true },
 ]);
 
+/**
+ * Codex CLI の取得（server/codex-setup.ts）：固定版のファイルの path だけ。github.com は転送（302）を返し、
+ * 呼び出し側が転送先のホストを検証してから取りに行く（転送先は署名つきの query が付く）
+ */
+const codexRules: Rule[] = [
+  ...Object.values(PINNED_CODEX.assets).map((a): Rule => ({ purpose: "tools", method: "GET", host: CODEX_RELEASE_HOST, path: { exact: codexReleasePath(a) } })),
+  ...CODEX_ASSET_HOSTS.map((host): Rule => ({ purpose: "tools", method: "GET", host, path: { prefix: "/github-production-release-asset/" }, query: true })),
+];
+
 /** 許可表。auth の path は chatgpt-auth.ts の JWKS_URL / TOKEN_URL / REVOKE_URL と一致する（tests/egress.test.ts で確かめる） */
 export const EGRESS_RULES: readonly Rule[] = [
   { purpose: "fonts", method: "GET", host: "fonts.googleapis.com", path: { prefix: "/css2" }, query: true },
@@ -53,6 +64,7 @@ export const EGRESS_RULES: readonly Rule[] = [
   // 画像生成：Gemini（server/imagegen.ts の generateGemini）
   { purpose: "image", method: "POST", host: GEMINI_HOST, path: { exact: "/v1beta/interactions" } },
   ...comfyRules,
+  ...codexRules,
 ];
 
 /** 一回分の許可の有効期間（承認から送信までの間だけ） */

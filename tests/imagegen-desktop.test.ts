@@ -111,22 +111,34 @@ describe("製品版の availableProviders", () => {
   it("Codex は見つかりサインイン済みのときだけ出る", () => {
     // 見つからない
     settings.updateImageSettings({ codexPath: join(binDir, "codex") });
-    expect(imagegen.codexStatus()).toEqual({ state: "not_found" });
+    expect(imagegen.codexStatus()).toMatchObject({ state: "not_found", installVersion: "0.166.0" });
+    expect(imagegen.codexStatus().path).toBeUndefined();
     expect(imagegen.availableProviders()).not.toContain("codex");
     // 見つかるがサインインしていない
     const { path } = installFakeCodex();
-    expect(imagegen.codexStatus()).toEqual({ state: "signed_out", path });
+    expect(imagegen.codexStatus()).toMatchObject({ state: "signed_out", path, source: "configured" });
     expect(imagegen.availableProviders()).not.toContain("codex");
     // ready
     writeFileSync(join(userHome, "auth.json"), "{}");
-    expect(imagegen.codexStatus()).toEqual({ state: "ready", path });
+    expect(imagegen.codexStatus()).toMatchObject({ state: "ready", path, source: "configured" });
     expect(imagegen.availableProviders()).toEqual(["comfyui", "codex", "placeholder"]);
   });
 
   it("設定のパスが無くても PATH 上の codex を自動検出する", () => {
     const { path } = installFakeCodex();
     writeFileSync(join(userHome, "auth.json"), "{}");
-    expect(imagegen.codexStatus()).toEqual({ state: "ready", path });
+    expect(imagegen.codexStatus()).toMatchObject({ state: "ready", path, source: "path" });
+  });
+
+  it("PATH に無ければ、このアプリが入れた codex（<userRoot>/tools/codex/<版>/）を自動検出する", () => {
+    const { path: fake } = installFakeCodex();
+    const own = settings.appCodexExe()!;
+    expect(own).toBe(join(userRoot, "tools", "codex", "0.166.0", "codex"));
+    mkdirSync(join(own, ".."), { recursive: true });
+    writeFileSync(own, readFileSync(fake));
+    chmodSync(own, 0o755);
+    rmSync(fake);
+    expect(imagegen.codexStatus()).toMatchObject({ state: "signed_out", path: own, source: "app" });
   });
 });
 
@@ -268,5 +280,48 @@ describe("製品版の画像生成の失敗の伝え方", () => {
     const body = await res.json();
     expect(body.code).toBe("comfyui_unreachable");
     expect(body.error).toContain("http://127.0.0.1:9/ で ComfyUI が起動しているか");
+  });
+});
+
+describe("POST /api/codex/login・/api/codex/install", () => {
+  /** `codex login` のまね：認可 URL を出し、成功なら CODEX_HOME に auth.json を作る */
+  function installFakeLogin(ok: boolean) {
+    const path = join(binDir, "codex");
+    writeFileSync(path, `#!${process.execPath}
+const fs = require("fs"), p = require("path");
+fs.writeFileSync(${JSON.stringify(join(binDir, "login-args.json"))}, JSON.stringify({ args: process.argv.slice(2), home: process.env.CODEX_HOME || null }));
+console.error("Starting local login server on http://localhost:1455.\\nIf your browser did not open, navigate to this URL to authenticate:\\n\\nhttps://auth.openai.com/oauth/authorize?response_type=code&client_id=app_x&state=abc\\n");
+${ok ? 'fs.writeFileSync(p.join(process.env.CODEX_HOME, "auth.json"), "{}"); console.log("Successfully logged in");' : `console.error("login failed at ${binDir}"); process.exit(1);`}
+`);
+    chmodSync(path, 0o755);
+    return path;
+  }
+
+  it("codex login を利用者の CODEX_HOME で実行し、認可 URL を進み具合で流し、auth.json ができたら済む", async () => {
+    installFakeLogin(true);
+    const lines = await postNdjson("/api/codex/login");
+    expect(lines[0]).toEqual({ progress: { phase: "setup", step: "login" } });
+    expect(lines.some((l) => l.progress?.url?.startsWith("https://auth.openai.com/oauth/authorize?"))).toBe(true);
+    expect(lines.at(-1)).toEqual({ result: { signedIn: true } });
+    expect(JSON.parse(readFileSync(join(binDir, "login-args.json"), "utf8"))).toEqual({ args: ["login"], home: userHome });
+    expect(existsSync(join(userHome, "auth.json"))).toBe(true);
+    expect(imagegen.codexStatus().state).toBe("ready");
+  });
+
+  it("codex login が失敗したら、出力（パスを含みうる）を出さずに決まった文言を返す", async () => {
+    installFakeLogin(false);
+    const last = (await postNdjson("/api/codex/login")).at(-1);
+    expect(last.code).toBe("codex_login_failed");
+    expect(last.error).toBe("Codex にサインインできませんでした。もう一度試してください");
+  });
+
+  it("Codex が無ければサインインは not_found", async () => {
+    const last = (await postNdjson("/api/codex/login")).at(-1);
+    expect(last).toMatchObject({ code: "not_found", status: 400 });
+  });
+
+  it("Windows 以外ではアプリから入れられない（codex_install_unsupported）", async () => {
+    const last = (await postNdjson("/api/codex/install")).at(-1);
+    expect(last).toMatchObject({ code: "codex_install_unsupported", status: 400 });
   });
 });

@@ -41,7 +41,10 @@ export type UpdateSnapshot = {
 };
 
 /** 生成の進み具合（server の Progress と同じ形） */
-export type DesktopProgress = { phase: "thinking" | "writing"; attempt: number; chars?: number; items?: number };
+export type DesktopProgress =
+  | { phase: "thinking" | "writing"; attempt: number; chars?: number; items?: number }
+  /** Codex CLI の準備（server/codex-setup.ts の SetupProgress）。url は `codex login` の認可 URL（auth.openai.com だけ） */
+  | { phase: "setup"; step: "download" | "verify" | "install" | "login"; done?: number; total?: number; url?: string };
 export type DesktopCallOptions = {
   /** 取り消し・進み具合の対応付けに使う ID（画面が作る。/^[A-Za-z0-9-]{8,64}$/） */
   callId?: string;

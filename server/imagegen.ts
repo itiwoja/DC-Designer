@@ -7,8 +7,9 @@ import { delimiter, dirname, join } from "node:path";
 import type { AssetContext, AssetRequest } from "../src/schema";
 import { httpError } from "./http-error";
 import { ImageGenError } from "./imagegen-error";
-import { codexExeName, comfyBaseUrl, dataDir, readImageSettings } from "./image-settings";
+import { appCodexExe, codexExeName, comfyBaseUrl, dataDir, readImageSettings } from "./image-settings";
 import { getSecret, hasSecret } from "./secrets";
+import { PINNED_CODEX, pinnedCodexAsset } from "./codex-pinned";
 
 /** 生成・取り込んだ画像の置き場所（/generated/<ファイル名> で配信。テストでは GENERATED_DIR で差し替える） */
 export const GENERATED_DIR = process.env.GENERATED_DIR || fileURLToPath(new URL("../public/generated/", import.meta.url));
@@ -349,7 +350,7 @@ function keepTail(buf: Buffer, chunk: Buffer): Buffer {
 const envMs = (name: string, fallback: number) => Number(process.env[name]) || fallback;
 
 /** 子プロセス（POSIX ではプロセスグループごと）に終了シグナルを送る。例外は外に出さない */
-function killTree(child: ChildProcess, sig: NodeJS.Signals): void {
+export function killTree(child: ChildProcess, sig: NodeJS.Signals): void {
   try {
     if (!child.pid) {
       child.kill(sig);
@@ -484,7 +485,7 @@ function execCodex({ bin, args, spawnOptions, spawnHint, onStdout, signal }: Exe
 // 利用者の ~/.codex には触れず、アプリ専用の CODEX_HOME に auth.json だけを写して実行する。
 // 画像は stdout の thread.started の thread_id のフォルダ（generated_images/<thread_id>）にある PNG だけを採用する
 
-const isFile = (p: string) => { try { return statSync(p).isFile(); } catch { return false; } };
+export const isFile = (p: string) => { try { return statSync(p).isFile(); } catch { return false; } };
 
 /** dir の下を深さ maxDepth まで探して、名前が name のファイルを返す */
 function findFile(dir: string, name: string, maxDepth: number): string | undefined {
@@ -499,28 +500,64 @@ function findFile(dir: string, name: string, maxDepth: number): string | undefin
   }
 }
 
-/** Codex の実行ファイル。設定のパスがあればそれ。無ければ自動検出（Windows は PATH の codex.exe → npm のグローバル配置、それ以外は PATH の codex） */
-export function resolveCodexExe(): string | undefined {
+/** Codex の見つかった場所の種類：設定で指定／PATH・npm（利用者が入れた CLI）／Codex デスクトップアプリ同梱／このアプリが入れたもの */
+export type CodexSource = "configured" | "path" | "npm" | "codex-app" | "app";
+
+/** 探索に時間のかかる場所（npm のグローバル配置・Codex アプリ）の結果を覚えておく。見つけた場所が消えたら探し直す */
+const SCAN_TTL_MS = 30_000;
+const scanCache = new Map<string, { at: number; found?: string }>();
+function cachedScan(key: string, scan: () => string | undefined): string | undefined {
+  const hit = scanCache.get(key);
+  if (hit && (hit.found ? isFile(hit.found) : Date.now() - hit.at < SCAN_TTL_MS)) return hit.found;
+  const found = scan();
+  scanCache.set(key, { at: Date.now(), found });
+  return found;
+}
+
+/**
+ * Codex の実行ファイルと見つけた場所。設定のパスがあればそれだけを見る。無ければ自動検出：
+ * PATH → npm のグローバル配置（Windows）→ Codex デスクトップアプリ同梱（Windows）→ このアプリが入れたもの
+ */
+export function locateCodexExe(): { path: string; source: CodexSource } | undefined {
   const configured = readImageSettings().codexPath;
-  if (configured) return isFile(configured) ? configured : undefined;
+  if (configured) return isFile(configured) ? { path: configured, source: "configured" } : undefined;
   const name = codexExeName();
   for (const d of (process.env.PATH || "").split(delimiter)) {
-    if (d && isFile(join(d, name))) return join(d, name);
+    if (d && isFile(join(d, name))) return { path: join(d, name), source: "path" };
   }
-  if (process.platform === "win32" && process.env.APPDATA) {
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA;
+    const localAppData = process.env.LOCALAPPDATA;
     // npm i -g @openai/codex の配置。.cmd シムや PowerShell は使わず、実体の codex.exe を探す
-    return findFile(join(process.env.APPDATA, "npm", "node_modules", "@openai", "codex"), name, 6);
+    const npm = appData && cachedScan(`npm:${appData}`, () => findFile(join(appData, "npm", "node_modules", "@openai", "codex"), name, 6));
+    if (npm) return { path: npm, source: "npm" };
+    // Codex デスクトップアプリ同梱（%LOCALAPPDATA%\OpenAI\Codex\bin\<版>\codex.exe）
+    const codexApp = localAppData && cachedScan(`codex-app:${localAppData}`, () => findFile(join(localAppData, "OpenAI", "Codex", "bin"), name, 3));
+    if (codexApp) return { path: codexApp, source: "codex-app" };
   }
+  const own = appCodexExe();
+  if (own && isFile(own)) return { path: own, source: "app" };
+}
+
+/** Codex の実行ファイル（locateCodexExe のパスだけ） */
+export function resolveCodexExe(): string | undefined {
+  return locateCodexExe()?.path;
 }
 
 /** 利用者の Codex のサインイン情報（auth.json）の場所 */
-const userAuthFile = () => join(process.env.CODEX_HOME || join(homedir(), ".codex"), "auth.json");
+export const userAuthFile = () => join(process.env.CODEX_HOME || join(homedir(), ".codex"), "auth.json");
 
-/** 製品版の Codex の状態。実行ファイルが無ければ not_found、サインイン情報が無ければ signed_out */
-export function codexStatus(): { state: "ready" | "not_found" | "signed_out"; path?: string } {
-  const path = resolveCodexExe();
-  if (!path) return { state: "not_found" };
-  return { state: isFile(userAuthFile()) ? "ready" : "signed_out", path };
+export type CodexStatus = { state: "ready" | "not_found" | "signed_out"; path?: string; source?: CodexSource; canInstall: boolean; installVersion: string };
+
+/**
+ * 製品版の Codex の状態。実行ファイルが無ければ not_found、サインイン情報が無ければ signed_out。
+ * canInstall はこの PC にアプリから入れられるか（Windows の x64 / arm64）、installVersion は入れる版
+ */
+export function codexStatus(): CodexStatus {
+  const install = { canInstall: !!pinnedCodexAsset(), installVersion: PINNED_CODEX.version };
+  const found = locateCodexExe();
+  if (!found) return { state: "not_found", ...install };
+  return { state: isFile(userAuthFile()) ? "ready" : "signed_out", path: found.path, source: found.source, ...install };
 }
 
 /** アプリ専用の CODEX_HOME（と空の作業フォルダ） */
@@ -566,7 +603,7 @@ function writeBackAuth(appAuth: string, userAuth: string, original: Buffer): voi
   } catch { /* 書き戻せなくても生成結果は返す（中身はログに出さない） */ }
 }
 
-const CODEX_ENV_KEYS = ["PATH", "SystemRoot", "WINDIR", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "HOME"];
+export const CODEX_ENV_KEYS = ["PATH", "SystemRoot", "WINDIR", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "HOME"];
 
 /** 製品版：専用 CODEX_HOME で codex exec を 1 回実行し、生成された PNG を返す */
 async function runCodexDesktop(prompt: string, signal: AbortSignal, log: (msg: string) => void): Promise<Buffer> {
