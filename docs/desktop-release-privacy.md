@@ -129,9 +129,9 @@ flowchart LR
 - **2026-11-01：製品版で画像生成（Gemini・ComfyUI・Codex CLI経由のChatGPT）を有効にした**（段階1〜3の「無効」から変更）。条件と、満たしていない点は次のとおり。実機（Windows）での確認は未実施。
   - Gemini：利用者が設定画面で入れたAPIキーを`safeStorage`（`gemini/apiKey`）へ保存し、プロンプト・画風・配色を`generativelanguage.googleapis.com`（`/v1beta/interactions`）へ送る。外部通信の許可表に1件追加。参考画像は送らない。
   - ComfyUI：送り先を`127.0.0.1`・`localhost`・`[::1]`のhttp(s)に限る（path・query・資格情報は不可、外部URLは設定不可）。ComfyUI側のworkflow・custom nodeがさらに外へ送るかはアプリで制御できず、残る差分とする。
-  - Codex（ChatGPT）：利用者が自分で導入し`codex login`したCLIの`codex.exe`を、shellなし・窓なしで直接起動する。アプリ専用の`CODEX_HOME`（`cache/codex-home`）へ実行の間だけ利用者の`auth.json`を写して終了後に削除し、更新されたトークンは利用者の`auth.json`へ書き戻す。結果は当該実行のスレッドのフォルダの画像だけを採用し、`~/.codex/generated_images`は読まない。参考画像は渡さない（文字のプロンプトのみ）。Codexは子プロセスのためworkerの外部通信ゲートを通らず、OpenAIへ直接通信する（ゲートによる強制はできない）。
+  - Codex（ChatGPT）：利用者のCLI（PATH・npm・Codexアプリ同梱を自動検出）か、設定画面から入れた固定版（公式GitHubリリース、sha256照合。取得は`github.com`の固定パスと転送先だけ許可）の`codex.exe`を、shellなし・窓なしで直接起動する。サインインも画面から`codex login`を直接起動して行う。アプリ専用の`CODEX_HOME`（`cache/codex-home`）へ実行の間だけ利用者の`auth.json`を写して終了後に削除し、更新されたトークンは利用者の`auth.json`へ書き戻す。結果は当該実行のスレッドのフォルダの画像だけを採用し、`~/.codex/generated_images`は読まない。参考画像は渡さない（文字のプロンプトのみ）。Codexは子プロセスのためworkerの外部通信ゲートを通らず、OpenAIへ直接通信する（ゲートによる強制はできない）。
   - アプリのChatGPTログインのトークンで画像を直接生成する方式は、OpenAIが`subscription_sharing_unsupported_capability`（image_generationツールは非対応）で拒否するため使わない。OpenAIのAPIキーでの画像生成・OpenRouterは製品版で使わない。
-- （未達）Codexの未知バージョンで画像egressを制御・検証できない場合は参考画像機能を無効にする。今回はバージョン検証をしておらず、参考画像をCodexへ渡さないことで代える。参考画像を付けなくても他の私有画像を探索・送信できる経路が残るなら、そのCodex連携全体を無効にする。プロンプト上の「送信しない」指示だけを防壁としない。
+- （一部未達）Codexの未知バージョンで画像egressを制御・検証できない場合は参考画像機能を無効にする。版の検証はアプリが入れた固定版だけで、利用者のCLIは検証しておらず、参考画像をCodexへ渡さないことで代える。参考画像を付けなくても他の私有画像を探索・送信できる経路が残るなら、そのCodex連携全体を無効にする。プロンプト上の「送信しない」指示だけを防壁としない。
 - （一部のみ達成：送り先のloopback限定と参考画像なしは実施。workflow・custom nodeの外部egress検査は未達）ComfyUIも指定先・workflow・custom nodeからの外部egressを検査対象にする。ローカル指定はloopbackの検証済み接続に限定し、遠隔指定・外部転送・参照画像追加は別送信として確認する。制御不能なら画像を渡さない。
 
 <a id="fonts"></a>
@@ -224,6 +224,7 @@ REQ→US→UCの上流対応は[技術仕様の対応表](./desktop-release-spec
 - 2026-10-26改訂（v0.2、決定者：ユーザー（改善案の適用を承認））：(1) AI送信確認を、mainが生成する専用の確認窓での1回に改め、ネイティブ確認ダイアログとの二重確認をやめた（安全条件は維持）。(2) フォントは段階2では端末内サブセット化せず全文字入りで埋め込む（書き出しは大きくなる。端末内サブセットは後の任意改善。`text=`廃止とOS登録の別同意は維持）。(3) Codex・ComfyUI連携は段階1〜3の製品版で無効。既存条件は有効化する場合の条件として残す。(4) 実行構成は段階1〜3が名前付きパイプlease、EXE-TBL-006・supervisor・Jobは段階4の設計。段階分けの正本は[spec](./desktop-release-spec.md)。
 - ユーザー確認済み：画像のAI送信は送信先・対象画像を提示した本人の明示確認だけを許可し、フォント取得は維持する。
 - 2026-11-01改訂（決定者：ユーザー）：Windows版の画像生成（Gemini・ComfyUI・Codex CLI経由のChatGPT）を有効にした。(1) Gemini：利用者のAPIキーを`safeStorage`に保存し、プロンプトを`generativelanguage.googleapis.com`へ送る（許可表に1件追加）。(2) ComfyUI：loopbackのみ。(3) Codex：利用者導入の`codex.exe`を直接起動し、アプリ専用`CODEX_HOME`へ実行の間だけ`auth.json`を写す。外部通信ゲートを通らずOpenAIへ直接通信する。(4) 参考画像はCodex・Geminiへ渡さない。(5) 後回し：Windows Jobオブジェクトでの起動（中断は`taskkill /T`）、Codexのバージョン検証、ComfyUI側の外部送信の制御。Windows実機での確認は未実施。
+- 2026-11-01追記（決定者：ユーザー、EXE-D-14）：設定画面から固定版のCodex CLI（公式GitHubリリース、sha256照合）を入れ、`codex login`まで行えるようにした。外部通信の許可表に`github.com`の固定パスと転送先（`release-assets.githubusercontent.com`・`objects.githubusercontent.com`）を追加。送るのはファイルの取得要求だけ。画像生成の失敗は、パス・キー・外部の応答本文を含まない決まった文言で画面に返す。Windows実機での確認は未実施。
 - [ADR-002](./adr/ADR-002-private-data-and-consent.md)：私有ストアと目的別通信・短命一回確認。main生成の専用確認窓での1回の確認とする設計判断（v0.2で二重確認を改訂）。
 - [ADR-004](./adr/ADR-004-font-acquisition.md)：作品文字を送らない全文字入りフォントの取得・埋め込み（段階2は端末内サブセットなし）と、別同意のOS登録を採用する設計判断。
 - AI設計値：AI／OSフォント登録の許可期限各5分、フォント1ファイル受信・展開後各32MiB。安全性の実証値ではなく、正式配信前に妥当性を検証する。

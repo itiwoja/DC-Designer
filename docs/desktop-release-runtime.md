@@ -268,7 +268,8 @@ sequenceDiagram
 
 満たした条件（実装済み。実機で確かめた範囲は上記）：
 
-- 任意機能。利用者が自分で導入し`codex login`したCLIの`codex.exe`を、`shell:false`・`windowsHide:true`で直接起動する（利用者がパスを指定でき、既定は自動検出）。未導入・未ログインは`not_found`／`signed_out`として画面に出し、選択肢に出さない。
+- 任意機能。`codex.exe`を`shell:false`・`windowsHide:true`で直接起動する（利用者がパスを指定でき、既定は自動検出：PATH → npmのグローバル配置 → Codexデスクトップアプリ同梱（`%LOCALAPPDATA%\OpenAI\Codex\bin`）→ アプリが入れたもの）。未導入・未ログインは`not_found`／`signed_out`として画面に出し、選択肢に出さない。
+- （2026-11-01追加）設定画面の「Codex CLI を入れる」：固定版（`server/codex-pinned.ts`、0.166.0）の公式GitHubリリースのtar.gzをworkerが取得し（外部通信ゲートに`github.com`の固定パスと転送先`release-assets.githubusercontent.com`・`objects.githubusercontent.com`を追加。転送先のホストは呼び出し側でも検証）、大きさとsha256が一致したときだけ`<userRoot>\tools\codex\<版>\codex.exe`に置く。npm・winget・PowerShellは使わない。続けて「Codex にサインイン」で`codex login`を同じく直接起動し、利用者の既定の`CODEX_HOME`に`auth.json`を作る（認可URLは`auth.openai.com`のものだけ画面へ渡す）。
 - アプリ私有領域の専用`CODEX_HOME`（`%LOCALAPPDATA%\DC-Designer\cache\codex-home`）を使い、実行の間だけ利用者の`auth.json`を写して終了後に削除する。トークンが更新されたら利用者の`auth.json`へ書き戻す。
 - 結果は当該実行のスレッドのフォルダの画像だけを採用し、`~/.codex/generated_images`は読まない。参考画像は渡さず、文字のプロンプトだけを送る。
 - ComfyUIの送り先は`127.0.0.1`・`localhost`・`[::1]`に限る。Geminiは利用者のAPIキーを`safeStorage`に保存して使う。
@@ -276,7 +277,7 @@ sequenceDiagram
 満たしていない条件（残る差分）：
 
 - Windows Jobオブジェクト内での起動（[付録](#windows-job)）はしていない。中断は`taskkill /T`で、子孫回収の保証は無い。
-- Codexのバージョン・必要機能の検証はしていない。
+- Codexのバージョン検証は、アプリが入れた固定版（sha256照合済み）についてだけ満たす。利用者が入れた・Codexアプリ同梱のCLIの版・必要機能は検証していない。
 - Codexは子プロセスのためworkerの外部通信ゲートを通らず、OpenAIへ直接通信する。未知のegressを制御・検証できていない（参考画像を渡さないことで代える）。
 - ComfyUIのworkflow・custom nodeがさらに外へ送るかは、アプリでは制御できない。
 - アプリのChatGPTログインのトークンでの直接生成は、OpenAIが`subscription_sharing_unsupported_capability`で拒否するため使わない。

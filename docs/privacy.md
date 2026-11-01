@@ -5,7 +5,7 @@ DC-Designer の Windows 版アプリと紹介サイトが、どの情報をど�
 ## まとめ
 
 - 作品・画像・資料は、お使いの PC の中（`%LOCALAPPDATA%\DC-Designer`）に保存します。開発者のサーバーへは送りません。
-- 外へ送るのは、**AI の機能を使ったとき（ChatGPT）**、**画像を生成するとき（Gemini・ChatGPT（Codex CLI）を選んだ場合だけ）**、**フォントを取得するとき（Google Fonts）**、**更新を確認するとき（GitHub Releases）** の 4 つだけです。更新の確認は、起動するたびに自動で行います。
+- 外へ送るのは、**AI の機能を使ったとき（ChatGPT）**、**画像を生成するとき（Gemini・ChatGPT（Codex CLI）を選んだ場合だけ）**、**フォントを取得するとき（Google Fonts）**、**更新を確認するとき・Codex CLI を入れるとき（GitHub）** の 4 つだけです。更新の確認は、起動するたびに自動で行います。
 - AI の操作をすると、**追加の確認なしで**その内容を ChatGPT（OpenAI）へ送ります。
 - 利用状況の解析、テレメトリ、クラッシュレポートは集めていません。紹介サイトも Cookie を使わず、閲覧数を数えていません。
 
@@ -20,6 +20,7 @@ Windows 版は、次の表の送信先にだけ通信します。画面からの
 | 「ChatGPTでログイン」でサインインするとき、サインアウトするとき | OpenAI（`auth.openai.com`） | サインインに必要な認証の情報 |
 | AI でレイアウトを作るとき、AI で修正するときなど、AI の操作をしたとき | OpenAI（`api.openai.com`） | 入力した指示文、作品の内容（文字・配置など）、その操作で使う画像（参考画像や、比べるために書き出した作品の画像など） |
 | 画像生成で「Gemini（API キー）」を選んで生成したとき | Google（`generativelanguage.googleapis.com`） | 画像の説明（プロンプト）・画風・配色の指示と、あなたが設定画面に入れた API キー。参考画像は送りません |
+| 画像生成の設定で「Codex CLI を入れる」を押したとき | GitHub（`github.com`・`release-assets.githubusercontent.com`） | 公開されている Codex CLI（固定の版）のファイルを取りにいく通信だけ。作品などの情報は送りません |
 | カタログのフォントを選んだとき、まだ PC に無いフォントを使った作品を開いたとき | Google Fonts（`fonts.googleapis.com`・`fonts.gstatic.com`） | フォントの名前など、フォントを選ぶための情報だけ。**作品の文字は送りません** |
 | 起動したとき（自動で更新を確認）、「ヘルプ → 更新を確認」を選んだとき、更新を受け取ると決めたとき | GitHub（GitHub Releases） | 公開されている最新版の情報を取りにいく通信だけ。作品などの情報は送りません。更新のファイルは、画面で受け取ると決めてから取得します |
 
@@ -36,13 +37,13 @@ Windows 版は、次の表の送信先にだけ通信します。画面からの
 
 - **Gemini（API キー）**：あなたが設定画面に入れた API キーを使います。キーは Windows の暗号化保存（safeStorage）で PC の中に保存し、画面には読み戻しません。生成するときに、作りたい画像の説明・画風・配色を Google の Gemini API へ送ります。参考画像は送りません。送った内容の扱いは Google のプライバシーポリシーに従います。
 - **ComfyUI（この PC）**：この PC（`127.0.0.1`・`localhost`・`[::1]`）で動いている ComfyUI にだけ送ります。外部の URL は設定できません。ただし、ComfyUI の workflow やカスタムノードがさらに外へ送るかどうかは、このアプリでは制御できません。
-- **ChatGPT（Codex CLI）**：あなたが自分で入れて `codex login` した Codex CLI を、このアプリが起動して使います。ChatGPT プランの枠で生成するため、画像の説明（文字のプロンプト）が Codex CLI から OpenAI へ直接送られます。参考画像は渡しません。この通信はアプリの外部通信の許可リストを通らず、Codex CLI が行います。Codex CLI を動かす間だけ、あなたの Codex のサインイン情報（`auth.json`）をアプリ専用のフォルダ（`%LOCALAPPDATA%\DC-Designer\cache\codex-home`）に写し、終わったら消します（更新されたトークンはあなたの `auth.json` へ書き戻します）。結果は、その実行で作られた画像だけを使い、あなたの `~/.codex/generated_images` は読みません。
+- **ChatGPT（Codex CLI）**：あなたの PC にある Codex CLI（PATH・npm で入れたもの・Codex アプリに入っているもの）を探して使います。無ければ、設定画面の「Codex CLI を入れる」で、公式の GitHub リリースから決まった版を取ってきて、公式のファイルと一致する（sha256 が同じ）ことを確かめてから `%LOCALAPPDATA%\DC-Designer\tools\codex` に入れます。続けて「Codex にサインイン」で `codex login` を起動し、ブラウザで ChatGPT にサインインします（サインイン情報は Codex CLI の既定の場所 `~/.codex/auth.json` に保存されます）。ChatGPT プランの枠で生成するため、画像の説明（文字のプロンプト）が Codex CLI から OpenAI へ直接送られます。参考画像は渡しません。この通信はアプリの外部通信の許可リストを通らず、Codex CLI が行います。Codex CLI を動かす間だけ、あなたの Codex のサインイン情報（`auth.json`）をアプリ専用のフォルダ（`%LOCALAPPDATA%\DC-Designer\cache\codex-home`）に写し、終わったら消します（更新されたトークンはあなたの `auth.json` へ書き戻します）。結果は、その実行で作られた画像だけを使い、あなたの `~/.codex/generated_images` は読みません。
 
-注意：この画像生成の機能は、Windows の実機での確認がまだ済んでいません。
+注意：この画像生成の機能は、Windows の実機での確認が一部だけ済んでいます（Codex CLI を入れる・サインインのボタンは未確認）。
 
 ### PC の中に保存するもの
 
-- 作品・取り込んだ画像・資料は `%LOCALAPPDATA%\DC-Designer` に保存します。アンインストールや更新では消しません。消したいときは、アプリを終了してからこのフォルダを削除してください（ChatGPT のサインイン情報と、保存した Gemini の API キーも消えます）。
+- 作品・取り込んだ画像・資料は `%LOCALAPPDATA%\DC-Designer` に保存します。アンインストールや更新では消しません。消したいときは、アプリを終了してからこのフォルダを削除してください（ChatGPT のサインイン情報と、保存した Gemini の API キー、アプリが入れた Codex CLI も消えます。Codex のサインイン情報 `~/.codex/auth.json` は消えません）。
 - ChatGPT のサインイン情報と Gemini の API キーは、Windows の保護機能（DPAPI）で暗号化して PC の中に保存します。
 - 作品・画像・サインイン情報・API キーは、ログ・更新の通信・配布物には含めません。
 

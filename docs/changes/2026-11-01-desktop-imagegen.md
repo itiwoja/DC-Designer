@@ -38,9 +38,25 @@
 ## 残り（段階4の条件から外れる点を含む）
 
 - 本物の Gemini API キーでの生成、本物の ComfyUI での生成、トークン更新が起きたときの `auth.json` の書き戻しは、実機で未確認。
-- 製品版では、Gemini・ComfyUI の失敗（キーが無効・枠切れ・ComfyUI が起動していないなど）が、画面ではすべて「内部エラーが発生しました」になる（`server/route-handlers.ts` が 4xx 以外の例外の中身を隠すため）。利用者が原因を直せるよう、案内してよい文言を返す形にするかを決める。
-- Codex の自動検出は PATH と npm のグローバル配置だけを見るため、Codex デスクトップアプリ同梱の `codex.exe` は見つけられず、設定で場所を指定する必要がある。
+- ~~製品版では、Gemini・ComfyUI の失敗が画面ではすべて「内部エラーが発生しました」になる~~ → 下の「追加」で対応。
+- ~~Codex デスクトップアプリ同梱の `codex.exe` を自動検出しない~~ → 下の「追加」で対応。
 - Windows Job オブジェクトでの起動はしていない。中断は `taskkill /T` で、子孫プロセスの回収は保証しない。
-- Codex のバージョン検証はしていない。
+- Codex のバージョン検証はしていない（下の「追加」で、アプリが入れる固定版だけは sha256 で照合する）。
 - Codex は子プロセスのため、worker の外部通信ゲートを通らない。ComfyUI 側の workflow・custom node がさらに外へ送るかも、アプリでは制御できない。
 - `docs/desktop-release-spec.md` と `docs/README.md` などに「段階1〜3は Codex・ComfyUI 無効」の記述が残る。この更新の対象外だったため、別途直す。
+
+## 追加：失敗の伝え方と、Codex CLI の自動検出・入れる・サインイン（2026-11-01）
+
+ユーザーの依頼：失敗の表示を改善する。`codex.exe` を自動で見つけ、無ければワンクリックで入れ、読み込み中の表示を出す。版は固定する（ユーザーの決定。ハッシュが一致したものだけ入れる）。
+
+- 失敗の伝え方：画像生成の失敗を `ImageGenError`（`server/imagegen-error.ts`）にし、製品版でも決まった文言と `code` を返す（`server/route-handlers.ts`）。文言にはパス・キー・外部の応答本文を入れず、詳細は開発版とログだけに残す。
+  - Gemini：キー未設定・キーが正しくない・権限が無い・利用上限（429）・Google 側の失敗（5xx）・接続できない・画像が返らない、を分ける。
+  - ComfyUI：起動していない（接続先の URL を出す。ループバックだけなので出してよい）・HTTP エラー・モデルが無い・ジョブ拒否・実行エラー・出力なし・時間切れ。
+  - Codex：見つからない・サインインしていない・利用上限・途中で失敗・時間切れ など。stderr（パスを含みうる）は画面に出さない。
+  - 画面：まとめて生成したときの「N 点の画像生成に失敗しました」に、最初の失敗の理由を足す（`src/editor/imageErrors.ts`）。
+- 自動検出：PATH → npm のグローバル配置 → Codex デスクトップアプリ同梱（`%LOCALAPPDATA%\OpenAI\Codex\bin` の下、深さ 3 まで）→ アプリが入れたもの。時間のかかる探索は結果を 30 秒覚える。設定画面に見つけた場所の種類を出す。
+- 入れる（`server/codex-setup.ts`・`server/codex-pinned.ts`）：Codex CLI 0.166.0 の公式 GitHub リリースの tar.gz（x64・arm64）を、`github.com` → 転送先（`release-assets.githubusercontent.com`・`objects.githubusercontent.com`）の順に取る。外部通信ゲートに固定パスと転送先を追加し、転送先のホストは呼び出し側でも確かめる。届いた大きさと sha256 がリリースの digest と一致したときだけ、tar の中の実行ファイルを `<userRoot>\tools\codex\0.166.0\codex.exe` に置く。中止・失敗では書きかけを消す。
+- サインイン：見つかった `codex.exe` で `codex login` を shell なし・窓なしで起動し、利用者の既定の `CODEX_HOME` に `auth.json` ができたら済み。`codex login` が出す認可 URL（`auth.openai.com/oauth/authorize?` で始まるものだけ）を画面に渡し、ブラウザが開かないときのリンクにする。待つあいだは 30 秒ごとに進み具合を送り直す（main が worker の応答を読む fetch は、本文が 300 秒途切れると切れるため）。10 分で打ち切る。
+- 読み込み中の表示：設定画面の Codex 欄に、ダウンロードの進み具合（バー・%・MB）→「確かめています」→「入れています」→ サインイン待ち を出し、中止できる。入れ終えてサインインしていなければ、続けてサインインを始める。設定の吹き出しを閉じても処理は続く（`src/editor/codexSetup.ts`）。操作は `codex.install`・`codex.login`（stream。資格情報は渡さない）。
+- 確かめたこと：単体テスト（偽の tar.gz・偽の fetch での入れる処理、sha256 不一致・想定外の転送先・中止、偽の `codex login`、許可表、進み具合の検証、画面の流れ）と型検査、`npm run desktop:build`。**Windows 実機では未確認**（本物の GitHub からの取得、Codex アプリ同梱の検出、`codex login` がブラウザを開くか、窓なしで動くか）。
+- 残り：版を上げるには `server/codex-pinned.ts` を書き換えてアプリを更新する必要がある。利用者が入れた CLI・Codex アプリ同梱の CLI の版は検証しない。1 枚の生成中の細かい進み具合（順番待ち・生成中）は出していない（従来どおり、全体の「N / M 点」とスピナー）。
