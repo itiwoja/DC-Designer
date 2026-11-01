@@ -30,9 +30,15 @@ Free code signing provided by [SignPath.io](https://about.signpath.io), certific
 
 ## プライバシー
 
-This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
+This program transfers information to other networked systems only in the following cases:
 
-- このプログラムが外へ送る情報（AI 利用時の ChatGPT〔OpenAI〕、フォント取得の Google Fonts、更新確認の GitHub Releases）と、その条件は [プライバシー](./privacy.md) にまとめています。プライバシーの正本はこの 1 つです。
+- When the user uses the AI features, the request (instructions, design content and images used for that operation) is sent to OpenAI (ChatGPT) without an additional confirmation step.
+- When a font from the catalog is needed, the font name is sent to Google Fonts. The text of the user's designs is never sent.
+- At every startup, and when the user chooses to check for updates, the program checks GitHub Releases for a newer version. Update files are downloaded only after the user agrees.
+
+No analytics, telemetry or crash reports are collected.
+
+詳しい内容（日本語）は [プライバシー](./privacy.md) にまとめています。プライバシーの正本はこの 1 つで、上の英文はその要約です。
 
 ## 問題の報告
 
