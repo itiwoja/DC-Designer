@@ -1,5 +1,5 @@
 # 01. 要件定義
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.1（2026-11-01） ／ インプット：[00_overview](00_overview.md)、ヒアリング（決定事項ログ SITE-D-01〜12）
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.2（2026-11-01） ／ インプット：[00_overview](00_overview.md)、ヒアリング（決定事項ログ SITE-D-01〜12）
 
 > **3行で**
 > 1. DC-Designer（Windows 版）の**紹介・ダウンロード用の静的サイト**を、日本語・一般利用者向けに作る。
@@ -9,7 +9,7 @@
 ## 🧭 判断してほしいこと
 | # | 種類 | 論点 | 選択肢 | おすすめ（理由） | 決まらないと止まるもの |
 |---|---|---|---|---|---|
-| SITE-Q-02 | 未決 | スクショ・動画が揃う前にサイトを公開するか | A: 揃うまで公開しない / B: 枠だけで先に公開 | A（ヒーロー画像1枚＋機能画像3枚が揃うまで公開しない。空の LP は第一印象を損なう） | SITE-REQ-008 の受け入れ、公開日 |
+| SITE-Q-02 | 決定（2026-11-01） | スクショ・動画が揃う前にサイトを公開するか | A: 揃うまで公開しない / B: 仮の画像で先に公開 | **B に決定（ユーザー、SITE-D-26）**：「仮」と分かる仮の画像で先に公開し、Remotion の素材ができたら差し替える | — |
 
 ## 全体図
 ```mermaid
@@ -21,17 +21,16 @@ flowchart LR
   P1 -->|読む| R5[SITE-REQ-005 更新履歴]
   P1 -->|読む| R6[SITE-REQ-006 ポリシー]
   OW([所有者]) --> R4[SITE-REQ-004 リリース自動反映]
-  OW --> R7[SITE-REQ-007 Cookieなし解析]
   R1 --- R8[SITE-REQ-008 スクショ・動画の枠]
 ```
-見てほしいところ：利用者側の要件は「知る → 使えるか → 入手 → 確かめる」の一本道。所有者側は運用の手間を減らす要件だけ。
+見てほしいところ：利用者側の要件は「知る → 使えるか → 入手 → 確かめる」の一本道。所有者側は運用の手間を減らす要件だけ。SITE-REQ-007（Cookie なし解析）は取り下げた（SITE-D-27）。
 
 ## 要点
 - 目的は**ダウンロード数を増やすこと**と、**未署名の exe を安心して入れてもらうこと**（[2. 目的](#2-目的成功指標kpi)）。
-- 要件は 9 件、Must 8 件・Should 1 件（[5. 要件](#5-要件)）。
+- 要件は 8 件、すべて Must（[5. 要件](#5-要件)）。SITE-REQ-007（解析）は取り下げて欠番（SITE-D-27）。
 - 公開先は GitHub Pages（`https://itiwoja.github.io/DC-Designer/`）、費用 0 円（[6. 制約](#6-制約条件)）。
 - SignPath Foundation の署名審査では、プロジェクトのサイトにコード署名ポリシーを載せることが求められる（SITE-REQ-006 の理由）。
-- 素材（スクショ・動画）は後で Remotion で作る。サイトは枠だけ用意する（SITE-REQ-008）。
+- 素材（スクショ・動画）は後で Remotion で作る。それまでは「仮」と分かる仮の画像で公開し、後から差し替える（SITE-REQ-008、SITE-D-26）。
 
 ---
 
@@ -45,9 +44,9 @@ flowchart LR
 ### 2. 目的・成功指標（KPI）
 | 指標 | 目標値 | 計測方法 |
 |---|---|---|
-| トップ → ダウンロードページへの遷移率 | 30% 以上 | Cloudflare Web Analytics のページ別閲覧数（SITE-FR-010） |
+| トップ → ダウンロードページへの遷移率 | —（測らない） | 測定手段なし（解析を入れないため、SITE-D-27） |
 | リリース公開からサイト反映まで | 15 分以内・手作業 0 回 | GitHub Actions の実行記録（SITE-FR-009） |
-| ダウンロード数 | 前月比で増加 | GitHub Releases の asset `download_count`（サイトでは計測しない） |
+| ダウンロード数（主な指標） | 前月比で増加 | GitHub Releases の asset の `download_count`（GitHub API で所有者が見る。サイトでは計測しない） |
 | モバイルの Lighthouse 性能スコア | 90 以上 | Lighthouse（SITE-NFR-001） |
 
 数値はおまかせで決めた（SITE-D-13）。
@@ -73,13 +72,13 @@ flowchart LR
 | <a id="site-req-003"></a>SITE-REQ-003 | ダウンロードした物が本物か確かめられる（SHA-256・署名の有無・SmartScreen の説明） | Must | 未署名で配っている |
 | <a id="site-req-004"></a>SITE-REQ-004 | リリースの公開・サイトの文面の変更が、手作業なしでサイトに反映される | Must | リリースの頻度が高い |
 | <a id="site-req-005"></a>SITE-REQ-005 | 版ごとの更新内容を読める | Must | ユーザー選択（掲載内容） |
-| <a id="site-req-006"></a>SITE-REQ-006 | プライバシー（アプリの通信・サイトの解析）とコード署名ポリシーを公開する | Must | SignPath の条件・ユーザー選択 |
-| <a id="site-req-007"></a>SITE-REQ-007 | Cookie を使わずに閲覧数を把握する | Should | ユーザー選択（SITE-D-09） |
-| <a id="site-req-008"></a>SITE-REQ-008 | スクリーンショット・紹介動画で機能を見せる（枠を用意し、素材は後から差し込む） | Must | ユーザー選択（掲載内容） |
+| <a id="site-req-006"></a>SITE-REQ-006 | プライバシー（アプリの通信、サイトは Cookie を使わず解析もしないこと）とコード署名ポリシーを公開する | Must | SignPath の条件・ユーザー選択 |
+| <a id="site-req-007"></a>SITE-REQ-007 | ~~Cookie を使わずに閲覧数を把握する~~ | 取り下げ（2026-11-01 ユーザー決定、SITE-D-27） | 解析は入れないことにした。ID は欠番にして振り直さない |
+| <a id="site-req-008"></a>SITE-REQ-008 | スクリーンショット・紹介動画で機能を見せる（枠を用意し、素材が揃うまでは「仮」と分かる仮の画像で公開する。素材は後から差し替える） | Must | ユーザー選択（掲載内容・SITE-D-26） |
 | <a id="site-req-009"></a>SITE-REQ-009 | 動作要件と必要なもの（Windows 10/11 x64、AI を使うなら ChatGPT Plus/Pro か API キー）を伝える | Must | 無料プラン非対応で離脱・問い合わせが出る |
 
 ### 6. 制約条件
-- **費用**：0 円（GitHub Pages・Cloudflare Web Analytics の無料枠）。
+- **費用**：0 円（GitHub Pages の無料枠）。
 - **言語**：日本語のみ。
 - **技術**：Astro、同じリポジトリの `site/`、GitHub Actions で GitHub Pages へ公開（[SITE-ADR-001](adr/SITE-ADR-001-astro.md)・[002](adr/SITE-ADR-002-github-pages.md)・[006](adr/SITE-ADR-006-same-repo.md)）。
 - **配信ポリシー**：`docs/release-policy.md` に従い、PAT や `contents: write` を持つ App を追加しない。既存の配信 CI（`release-windows.yml`）は変更しない（[SITE-ADR-003](adr/SITE-ADR-003-release-trigger.md)）。
@@ -93,10 +92,13 @@ flowchart LR
 | 使い方ガイド・ドキュメントのページ | 掲載内容で選ばれなかった。GitHub の README へリンクする |
 | アカウント・問い合わせフォーム・コメント・メルマガ | 静的サイトの範囲外。問い合わせは GitHub Issues へ |
 | macOS / Linux 版の配布 | アプリが Windows のみ（EXE-Q-03） |
-| Cookie 同意バナー | Cookie を使わない（SITE-ADR-004） |
-| スクショ・動画の制作（Remotion） | 所有者が後で作る。本設計は枠と仕様だけ |
+| 閲覧数の解析（Cloudflare Web Analytics など） | ユーザー決定（SITE-D-27、SITE-ADR-004）。ダウンロード数は GitHub Releases の `download_count` で見る |
+| Cookie 同意バナー | Cookie を使わない・解析も入れない（SITE-ADR-004） |
+| スクショ・動画の制作（Remotion） | 所有者が後で作る。本設計は枠・仮の画像・仕様だけ |
 | 独自ドメイン | ユーザー選択（github.io を使う） |
 
 ## このドキュメントで決まったこと
 - SITE-D-01〜12：サイトの種類・掲載内容・公開先・技術・置き場所・言語（決定者：ユーザー）→ [00 決定事項ログ](00_overview.md#決定事項ログ)
 - SITE-D-13：KPI の数値（Claude判断（おまかせ））
+- SITE-D-26：素材が揃う前に仮の画像で公開する（決定者：ユーザー、2026-11-01）
+- SITE-D-27：解析は入れない。SITE-REQ-007 を取り下げ（決定者：ユーザー、2026-11-01）

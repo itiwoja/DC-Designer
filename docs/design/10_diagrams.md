@@ -1,5 +1,5 @@
 # 10. ER 図 / シーケンス図 / 状態遷移図
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.1（2026-11-01） ／ インプット：[03](03_use_cases.md)、[08](08_database.md)、[09](09_api.md)
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.2（2026-11-01） ／ インプット：[03](03_use_cases.md)、[08](08_database.md)、[09](09_api.md)
 
 > **3行で**
 > 1. シーケンス図は 4 枚：リリース連動の公開・push での公開・ダウンロードと確認・ビルド失敗。
@@ -114,10 +114,11 @@ sequenceDiagram
 ### 状態遷移図：媒体（SITE-TBL-004）
 ```mermaid
 stateDiagram-v2
-  [*] --> placeholder: 枠を登録
+  [*] --> placeholder: 枠を登録（仮の画像を出す）
   placeholder --> ready: 素材を置いて status を ready に
   ready --> ready: 素材を差し替え
 ```
 
 ## このドキュメントで決まったこと
 - 新しい決定はなし（03・07・09 の決定を図にしたもの）
+- v0.2：媒体の `placeholder` で仮の画像を出すことを図に書き足した（SITE-D-26）

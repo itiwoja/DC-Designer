@@ -1,5 +1,5 @@
 # 08. コンテンツモデル（DB 設計の代わり）
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.1（2026-11-01） ／ インプット：[04_functional_spec](04_functional_spec.md)
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.2（2026-11-01） ／ インプット：[04_functional_spec](04_functional_spec.md)
 
 > **3行で**
 > 1. 静的サイトなので DB は持たない。代わりに、ビルド時に扱うデータを 7 つの「表」（SITE-TBL）として定義する。
@@ -40,8 +40,8 @@ erDiagram
 
 ## 要点
 - 表の一覧は [テーブル一覧](#テーブル一覧)。名前はコードの型名にもそのまま使う。
-- `signed` の決め方は未決（SITE-Q-01、[04](04_functional_spec.md)）。
-- 媒体の `status` は `placeholder` → `ready` の一方向（[SITE-TBL-004](#site-tbl-004)）。
+- `signed` はリリースノートの「この版はコード署名をしていません」の有無で決める（SITE-D-25、[04](04_functional_spec.md#site-fr-004)）。
+- 媒体の `status` は `placeholder` → `ready` の一方向。`placeholder` の間は仮の画像を出す（[SITE-TBL-004](#site-tbl-004)、SITE-D-26）。
 - 日時は ISO 8601（UTC）で持ち、表示のときに JST にする。
 
 ---
@@ -61,7 +61,7 @@ erDiagram
 | SITE-TBL-003 | Feature | 機能紹介 | `site/src/content/features/*.md` | FR-002 |
 | SITE-TBL-004 | Media | 媒体 | `site/src/content/media.json` ＋ `site/src/assets/media/` | FR-001, 002, 011 |
 | SITE-TBL-005 | Policy | ポリシー文書 | `docs/privacy.md`・`docs/code-signing-policy.md` | FR-007 |
-| SITE-TBL-006 | SiteConfig | サイト設定 | `site/astro.config.*` ＋ ビルド時の環境変数 | FR-008, 010, 011 |
+| SITE-TBL-006 | SiteConfig | サイト設定 | `site/astro.config.*` ＋ ビルド時の環境変数 | FR-008, 011 |
 | SITE-TBL-007 | PageText | 固定文 | `site/src/content/pages/*.md` | FR-001, 003 |
 
 ### <a id="site-tbl-001"></a>SITE-TBL-001：Release
@@ -79,7 +79,7 @@ GitHub の Release 1 件。主なフィールド：`tag`, `version`, `publishedA
 | prerelease | boolean | `prerelease` | |
 | bodyHtml | string | `body` を無害化して HTML に | SITE-FR-006 |
 | htmlUrl | string | `html_url` | GitHub の Release ページ |
-| signed | boolean | SITE-Q-01 の方法で判定 | 案 A：`body` に「この版はコード署名をしていません」が無ければ true |
+| signed | boolean | `body` の文言で判定（SITE-D-25） | `body` に「この版はコード署名をしていません」が無ければ true |
 
 </details>
 
@@ -113,7 +113,7 @@ Release に付いた配布物のうち、サイトが使う 2 種類だけ。
 | id | string | ○ | `hero` / `ogp` / `demo` / `feature-<id>` |
 | type | `image` / `video` | ○ | |
 | status | `placeholder` / `ready` | ○ | `ready` なのにファイルが無ければビルド失敗 |
-| src | string | ready のとき | `site/src/assets/media/` からの相対パス |
+| src | string | ready のとき | `site/src/assets/media/` からの相対パス。`placeholder` の間は書かず、枠の種類に合った共通の仮の画像（[06 媒体の枠](06_ux_design.md#媒体の枠)）を出す |
 | poster | string | video のとき | ポスター画像 |
 | alt | string | ○ | 代替テキスト（`placeholder` でも書く） |
 
@@ -130,8 +130,7 @@ Release に付いた配布物のうち、サイトが使う 2 種類だけ。
 |---|---|
 | site / base | `https://itiwoja.github.io` / `/DC-Designer` |
 | repo | `itiwoja/DC-Designer` |
-| unsignedMarker | `この版はコード署名をしていません`（SITE-Q-01 の案 A） |
-| PUBLIC_CF_BEACON_TOKEN | リポジトリ変数（公開されてよい値）。無ければビーコンを出さない |
+| unsignedMarker | `この版はコード署名をしていません`（SITE-D-25。配信 CI の文言を変えたらここも直す） |
 | GITHUB_TOKEN | Actions が自動で渡す。ログに出さない |
 
 ### SITE-TBL-007：PageText
@@ -143,9 +142,10 @@ Release に付いた配布物のうち、サイトが使う 2 種類だけ。
 | body | Markdown | 本文。動作要件は README（アプリ側）と食い違ったら README に合わせる |
 
 ### データ保持・削除ポリシー
-- サイトは閲覧者のデータを保存しない。閲覧数は Cloudflare 側の保持期間に従う。
+- サイトは閲覧者のデータを保存しない。解析も入れないので、閲覧数も記録しない（SITE-D-27）。
 - Release を GitHub で消したら、次のビルドでサイトからも消える。
 
 ## このドキュメントで決まったこと
 - SITE-D-20：DB を持たず、ビルド時のデータを SITE-TBL として定義する（定石・静的サイト）
 - SITE-D-21：版情報はリポジトリに保存せず毎回取り直す（定石。古い控えを公開する危険を避ける）
+- v0.2：`signed` の判定（SITE-D-25）・仮の画像（SITE-D-26）を確定し、解析のトークン `PUBLIC_CF_BEACON_TOKEN` を外した（SITE-D-27）

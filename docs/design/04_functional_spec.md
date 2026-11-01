@@ -1,16 +1,16 @@
 # 04. 機能仕様
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.1（2026-11-01） ／ インプット：[03_use_cases](03_use_cases.md)
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.2（2026-11-01） ／ インプット：[03_use_cases](03_use_cases.md)
 
 > **3行で**
-> 1. 機能は 11 件。閲覧時に動くのは「解析ビーコン」だけで、ほかはすべて**ビルド時に HTML を生成**する。
+> 1. 機能は 10 件（SITE-FR-010 解析ビーコンは取り下げ）。閲覧時に動くのはコピーボタンだけで、ほかはすべて**ビルド時に HTML を生成**する。
 > 2. 版情報は GitHub API から取り、最新の**安定版**（draft・prerelease 以外）だけをダウンロード対象にする。
-> 3. 署名の有無はリリースノートの決まった文言で判定する案を推す（SITE-Q-01）。
+> 3. 署名の有無はリリースノートの決まった文言の有無で判定する（SITE-D-25）。
 
 ## 🧭 判断してほしいこと
 | # | 種類 | 論点 | 選択肢 | おすすめ（理由） | 決まらないと止まるもの |
 |---|---|---|---|---|---|
-| SITE-Q-01 | 未決 | 版が署名済みかどうかをサイトがどう知るか | A: リリースノートの「この版はコード署名をしていません」を検出 / B: 配信 CI が判定結果の JSON を資産に追加 / C: サイト設定に手で書く | A（配信 CI を変えずに済み、文言は CI が固定で出している。CI の文言を変えたらサイトも直す取り決めにする） | SITE-FR-004 の署名表示 |
-| SITE-Q-04 | トレードオフ | ポリシーの正本を `docs/` に置いてサイトは読むだけにするか（`docs/privacy.md` を新設してよいか） | A: docs/ を正本に読み込む / B: site/ に別に書く | A（正本が 1 つで食い違わない。SignPath の条件も満たす） | SITE-FR-007、SITE-TBL-005 |
+| SITE-Q-01 | 決定（2026-11-01） | 版が署名済みかどうかをサイトがどう知るか | A: リリースノートの文言を検出 / B: 配信 CI が JSON を追加 / C: 手で書く | **A に決定（ユーザー、SITE-D-25）**：「この版はコード署名をしていません」の有無で判定。CI の文言を変えたらサイトも直す | — |
+| SITE-Q-04 | 決定（2026-11-01） | ポリシーの正本を `docs/` に置いてサイトは読むだけにするか | A: docs/ を正本に読み込む / B: site/ に別に書く | **A に決定（ユーザー、SITE-D-28）**：`docs/privacy.md` を新設し、サイトは読み込むだけ | — |
 | SITE-R-02 | リスク | 未署名のため SmartScreen の警告で離脱する | — | 進め方と SHA-256 の確かめ方を、ボタンの直下に出す（SITE-FR-005） | — |
 
 ## 全体図
@@ -27,18 +27,15 @@ flowchart TB
     F11[SITE-FR-011 共通枠・SEO・404]
   end
   F9[SITE-FR-009 自動デプロイ] --> ビルド時
-  subgraph 閲覧時
-    F10[SITE-FR-010 解析ビーコン]
-  end
 ```
-見てほしいところ：SITE-FR-008 が 4 つの機能の元データ。ここが失敗するとビルド全体を止める。
+見てほしいところ：SITE-FR-008 が 4 つの機能の元データ。ここが失敗するとビルド全体を止める。閲覧時に外部へ送るものは無い（SITE-FR-010 解析ビーコンは取り下げ）。
 
 ## 要点
-- 機能一覧と優先度は [機能一覧](#機能一覧)。Must 10 件・Should 1 件。
+- 機能一覧と優先度は [機能一覧](#機能一覧)。10 件すべて Must（SITE-FR-010 は取り下げて欠番）。
 - 安定版の選び方・SHA-256 の取り方・失敗時の扱いは [SITE-FR-008](#site-fr-008)。
 - リリースノートは外部の PR タイトルを含むので、**HTML を無害化して表示**する（[SITE-FR-006](#site-fr-006)）。
 - ポリシーは `docs/` の Markdown を正本として読み込み、リポジトリ内のリンクを GitHub の URL に書き換える（[SITE-FR-007](#site-fr-007)）。
-- 素材が無い媒体の枠は、ビルドを止めずに文字だけのカードで出す（[SITE-FR-002](#site-fr-002)）。
+- 素材が無い媒体の枠は、ビルドを止めずに「仮」と分かる仮の画像で出す。素材が揃う前でも公開する（[SITE-FR-002](#site-fr-002)、SITE-D-26）。
 
 ---
 
@@ -56,17 +53,17 @@ flowchart TB
 | SITE-FR-007 | ポリシー | プライバシー・コード署名ポリシー | UC-004 | Must |
 | SITE-FR-008 | リリース情報取得 | ビルド時に GitHub API から取得・検証 | UC-005, 006 | Must |
 | SITE-FR-009 | 自動デプロイ | main の変更・配信 CI の完了で公開 | UC-005, 006 | Must |
-| SITE-FR-010 | 解析ビーコン | Cloudflare Web Analytics（Cookie なし） | UC-007 | Should |
+| SITE-FR-010 | ~~解析ビーコン~~ | 取り下げ（2026-11-01 ユーザー決定、SITE-D-27）。解析は入れない | ~~UC-007~~ | — |
 | SITE-FR-011 | 共通枠・SEO・404 | ヘッダー・フッター・OGP・404 | UC-001 | Must |
 
 ### <a id="site-fr-001"></a>SITE-FR-001：ヒーロー 〔SITE-UC-001〕
-- 入力：最新安定版（SITE-TBL-001）、ヒーロー媒体（SITE-TBL-004 の `hero`）、キャッチ（SITE-TBL-007 の `home`）
+- 入力：最新安定版（SITE-TBL-001）、ヒーロー媒体（SITE-TBL-004 の `hero`。`placeholder` の間は仮の画像）、キャッチ（SITE-TBL-007 の `home`）
 - 処理：ボタンの文言は「Windows 版をダウンロード（v{version}）」、リンク先は exe の `browserDownloadUrl`。下に「無料・MIT ライセンス／Windows 10・11（x64）」を小さく出す
 - 出力：SCR-001 の 1 画面目
 
 ### <a id="site-fr-002"></a>SITE-FR-002：機能紹介 〔SITE-UC-001〕
 - 入力：機能（SITE-TBL-003）を `order` 順に、各機能の媒体（SITE-TBL-004）
-- 処理：`exeAvailable: false` の機能は出さない。媒体の `status` が `ready` なら画像/動画、`placeholder` なら見出しと説明だけのカード（ビルドは止めない）。動画は `muted` `loop` `playsinline`、`prefers-reduced-motion` のときは自動再生せずポスター画像を出す
+- 処理：`exeAvailable: false` の機能は出さない。媒体の `status` が `ready` なら画像/動画、`placeholder` なら枠の寸法に合わせた共通の仮の画像（「画面は準備中」と入った、実際の画面と誤解されない画像。[06 媒体の枠](06_ux_design.md#媒体の枠)）を出す（ビルドは止めない）。素材が揃う前でも公開してよい（SITE-D-26）。動画は `muted` `loop` `playsinline`、`prefers-reduced-motion` のときは自動再生せずポスター画像を出す
 - 初期の機能（`exeAvailable: true`）：AI でレイアウトを作る／レイヤーで編集できるエディタ／参考画像の再現／PowerPoint の読み込み・編集・書き出し（アニメーション・台本・発表者ビュー）／Instagram 投稿／PDF を開いて編集／SVG・PNG・PPTX・JSON の書き出し
 
 ### <a id="site-fr-003"></a>SITE-FR-003：動作要件 〔SITE-UC-001, SITE-UC-002〕
@@ -82,7 +79,7 @@ flowchart TB
 ### <a id="site-fr-004"></a>SITE-FR-004：ダウンロード 〔SITE-UC-002〕
 - 入力：最新安定版（SITE-TBL-001）、exe の資産（SITE-TBL-002 `kind: installer`）
 - 出力：版・公開日（`YYYY年M月D日`、JST）・サイズ（MB、小数 1 桁。Windows のエクスプローラーと同じく 1 MB = 1,048,576 バイト）・署名状況・ダウンロードボタン・「すべての版（GitHub Releases）」へのリンク
-- 署名状況：`signed` が `false` なら「⚠ この版はコード署名をしていません」、`true` なら「SignPath Foundation の署名つき」。判定は SITE-Q-01
+- 署名状況：`signed` が `false` なら「⚠ この版はコード署名をしていません」、`true` なら「SignPath Foundation の署名つき」。判定はリリースノートの `body` に「この版はコード署名をしていません」があれば `false`、無ければ `true`（SITE-D-25）。配信 CI のこの文言を変えるときは SITE-TBL-006 の `unsignedMarker` も直す
 
 ### <a id="site-fr-005"></a>SITE-FR-005：SHA-256 と確認手順 〔SITE-UC-002〕
 - 出力：SHA-256（64 桁の小文字 16 進数、コピーボタンつき）と、照合のコマンド
@@ -102,7 +99,7 @@ flowchart TB
 ### <a id="site-fr-007"></a>SITE-FR-007：ポリシー 〔SITE-UC-004〕
 - 入力：`docs/privacy.md`（新設）・`docs/code-signing-policy.md`（既存）（SITE-TBL-005）
 - 処理：Markdown を HTML にする。相対リンク（`./release-policy.md`、`../SECURITY.md` など）は `https://github.com/itiwoja/DC-Designer/blob/main/<path>` に書き換える。ただしサイトのページになっている文書（2 件）へのリンクはサイト内のページへ
-- `docs/privacy.md` に書くこと：アプリが送る先（AI 利用時の ChatGPT・OpenRouter・OpenAI・Gemini、フォント取得の Google Fonts、更新確認の GitHub Releases）と、**AI の操作は追加の確認なしで送信する**こと（今の動き、SITE-D-12）。サイト自体は Cookie を使わず Cloudflare Web Analytics で閲覧数を数えること
+- `docs/privacy.md` に書くこと：アプリが送る先（AI 利用時の ChatGPT・OpenRouter・OpenAI・Gemini、フォント取得の Google Fonts、更新確認の GitHub Releases）と、**AI の操作は追加の確認なしで送信する**こと（今の動き、SITE-D-12）。サイト自体は Cookie を使わず、解析もしない（閲覧数を数えない）こと（SITE-D-27）
 - 署名ポリシーの古い文面は SITE-R-01（[11_tech_spec](11_tech_spec.md#12-リスクと対策)）
 
 ### <a id="site-fr-008"></a>SITE-FR-008：リリース情報取得 〔SITE-UC-005, SITE-UC-006〕
@@ -111,7 +108,7 @@ flowchart TB
   2. `draft: true` を捨てる。`prerelease: false` のうち `publishedAt` が最新のものを「最新安定版」にする
   3. 最新安定版の資産から `DC-Designer-Setup-<version>.exe`（installer）と `SHA256SUMS.txt`（checksums）を探す。`latest.yml` は使わない
   4. SITE-API-002 で `SHA256SUMS.txt` を取得し、exe のファイル名の行から値を取る
-  5. 署名状況を判定する（SITE-Q-01）
+  5. 署名状況を判定する（リリースノートの文言の有無、SITE-D-25）
 - エラー（すべてビルド失敗。公開中のサイトは残る）：
 
 | 条件 | ビルドのメッセージ |
@@ -130,9 +127,8 @@ flowchart TB
 
 同時に走ったら後のものだけ残す（`concurrency: pages`、実行中は取り消さない）。詳細は [07](07_architecture.md#デプロイ構成)。
 
-### <a id="site-fr-010"></a>SITE-FR-010：解析ビーコン 〔SITE-UC-007〕
-- ビルド時の変数 `PUBLIC_CF_BEACON_TOKEN` があるときだけ、全ページの `</body>` 前にビーコンを出す。無ければ何も出さない
-- Cookie・localStorage を使わない。閲覧者ごとの識別はしない
+### <a id="site-fr-010"></a>SITE-FR-010：解析ビーコン 〔SITE-UC-007〕 取り下げ（2026-11-01 ユーザー決定、SITE-D-27）
+- 解析は入れないことにしたため取り下げ。ページに解析のスクリプトを出さない。ID は欠番にして振り直さない
 
 ### <a id="site-fr-011"></a>SITE-FR-011：共通枠・SEO・404 〔SITE-UC-001〕
 - ヘッダー：ロゴ・「機能」「ダウンロード」「更新履歴」・GitHub へのリンク。フッター：プライバシー・コード署名ポリシー・SECURITY・MIT ライセンス・GitHub Issues
@@ -144,15 +140,18 @@ flowchart TB
 |---|---|---|
 | 全ページの閲覧 | ○ | ○ |
 | サイトの更新（push・手動実行） | × | ○（GitHub の権限で制御） |
-| 閲覧数を見る | × | ○（Cloudflare のアカウント） |
 
 ### ステータス定義
 | 対象 | 値 | 意味 |
 |---|---|---|
-| 媒体（SITE-TBL-004 `status`） | `placeholder` / `ready` | 素材なし / 素材あり。`placeholder` → `ready` の一方向 |
+| 媒体（SITE-TBL-004 `status`） | `placeholder` / `ready` | 素材なし（仮の画像を出す） / 素材あり。`placeholder` → `ready` の一方向 |
 | Release | `draft` / `prerelease` / 安定版 | GitHub の値をそのまま使う。サイトでは変えない |
 
 ## このドキュメントで決まったこと
 - SITE-D-12：プライバシーは今の動き（AI 送信は追加確認なし）に合わせる（決定者：ユーザー）
 - SITE-D-15：更新履歴は直近 10 版を開き、古い版は畳む（Claude判断（おまかせ））
 - SITE-D-16：リリースノートの生 HTML は捨てる（定石・安全のため）
+- SITE-D-25：署名の有無はリリースノートの文言で判定（決定者：ユーザー、2026-11-01）
+- SITE-D-26：素材が揃う前は仮の画像で公開（決定者：ユーザー、2026-11-01）
+- SITE-D-27：解析は入れない。SITE-FR-010 を取り下げ（決定者：ユーザー、2026-11-01）
+- SITE-D-28：ポリシーは `docs/` が正本（決定者：ユーザー、2026-11-01）

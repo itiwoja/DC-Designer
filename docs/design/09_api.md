@@ -1,10 +1,10 @@
 # 09. API 設計（利用する外部インターフェース）
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.1（2026-11-01） ／ インプット：[04](04_functional_spec.md)、[06](06_ux_design.md)、[08](08_database.md)
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.2（2026-11-01） ／ インプット：[04](04_functional_spec.md)、[06](06_ux_design.md)、[08](08_database.md)
 
 > **3行で**
-> 1. サイトは API を**提供しない**。ここでは、サイトが**使う**外部インターフェース 4 つを定義する。
+> 1. サイトは API を**提供しない**。ここでは、サイトが**使う**外部インターフェース 3 つを定義する（SITE-API-003 解析ビーコンは取り下げ）。
 > 2. ビルド時に使うのは GitHub の Release 一覧と SHA256SUMS.txt。どちらかが失敗したらビルドを止める。
-> 3. 閲覧時に使うのは解析ビーコンと exe のダウンロードだけ。
+> 3. 閲覧時に使うのは exe のダウンロードだけ。
 
 ## 🧭 判断してほしいこと
 なし
@@ -20,7 +20,6 @@ flowchart LR
   end
   B -->|SITE-API-001| GA[(api.github.com)]
   B -->|SITE-API-002| GD[(github.com releases/download)]
-  P -->|SITE-API-003| CF[(cloudflareinsights.com)]
   P -->|SITE-API-004 リンク| GD
 ```
 見てほしいところ：閲覧時のブラウザは GitHub API を叩かない（回数制限と失敗表示を考えなくてよい）。
@@ -44,7 +43,7 @@ flowchart LR
 |---|---|---|---|---|---|
 | SITE-API-001 | ビルド → GitHub | GET | `https://api.github.com/repos/itiwoja/DC-Designer/releases?per_page=100` | Release 一覧 | FR-008、TBL-001・002 |
 | SITE-API-002 | ビルド → GitHub | GET | SHA256SUMS.txt の `browser_download_url` | SHA-256 | FR-008、TBL-002 |
-| SITE-API-003 | ブラウザ → Cloudflare | GET/POST | `https://static.cloudflareinsights.com/beacon.min.js` → `https://cloudflareinsights.com/cdn-cgi/rum` | 閲覧の計測 | FR-010、SCR 全部 |
+| SITE-API-003 | — | — | — | ~~閲覧の計測~~ 取り下げ（2026-11-01 ユーザー決定、SITE-D-27） | ~~FR-010~~ |
 | SITE-API-004 | ブラウザ → GitHub | GET | exe の `browser_download_url` | ダウンロード（ただのリンク） | FR-001・004、SCR-001・002 |
 
 ### <a id="site-api-001"></a>SITE-API-001：GET /repos/itiwoja/DC-Designer/releases
@@ -91,10 +90,8 @@ flowchart LR
 - 処理：exe の名前と一致する行を探し、先頭の 64 桁を小文字にして使う。見つからない・形式が違うならビルド失敗。
 - リダイレクト（`objects.githubusercontent.com`）に従う。
 
-### SITE-API-003：Cloudflare Web Analytics ビーコン
-- ページに置くもの：`<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token":"${PUBLIC_CF_BEACON_TOKEN}"}'></script>`
-- 送られるもの：ページの URL・参照元・ブラウザの種類・表示速度。Cookie・localStorage は使わない。
-- CSP：`script-src` と `connect-src` に宛先を許可（SITE-NFR-006）。
+### SITE-API-003：解析ビーコン 取り下げ（2026-11-01 ユーザー決定、SITE-D-27）
+- 解析は入れないことにしたため取り下げ。ページに解析のスクリプトを置かず、CSP にも外部の宛先を許可しない（SITE-NFR-006）。ID は欠番にして振り直さない。
 
 ### SITE-API-004：exe のダウンロード
 - `<a href="{browserDownloadUrl}">`。`download` 属性は付けない（別オリジンでは効かない）。
@@ -103,3 +100,4 @@ flowchart LR
 ## このドキュメントで決まったこと
 - SITE-D-22：再試行 3 回（1・2・4 秒）（Claude判断（おまかせ））
 - SITE-D-23：閲覧時のブラウザは GitHub API を叩かない（ユーザー選択「リリース公開で自動再ビルド」の帰結）
+- v0.2：SITE-API-003 を取り下げ（SITE-D-27）

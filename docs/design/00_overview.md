@@ -1,5 +1,5 @@
 # 00. プロジェクト概要
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.1（2026-11-01） ／ インプット：リポジトリの README、ヒアリング（2026-11-01）
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.2（2026-11-01） ／ インプット：リポジトリの README、ヒアリング（2026-11-01）
 
 > **3行で**
 > 1. DC-Designer の紹介・ダウンロード用の静的サイト（日本語）を、`site/` に Astro で作り、GitHub Pages で公開する。
@@ -7,23 +7,23 @@
 > 3. ここには用語集・決定事項ログ・トレーサビリティ表を置く。読む入口は [README](README.md)。
 
 ## 🧭 判断してほしいこと
-[README](README.md#-判断してほしいこと全ドキュメントから集約) に集約（SITE-Q-01〜04、SITE-R-01〜04）。
+[README](README.md#-判断してほしいこと全ドキュメントから集約) に集約（SITE-R-01〜04）。SITE-Q-01〜04 は 2026-11-01 にユーザーが決定（SITE-D-25〜28）。
 
 ## 全体図
 ```mermaid
 flowchart LR
-  REQ[SITE-REQ 9件] --> US[SITE-US 9件] --> UC[SITE-UC 7件] --> FR[SITE-FR 11件]
+  REQ[SITE-REQ 8件] --> US[SITE-US 8件] --> UC[SITE-UC 6件] --> FR[SITE-FR 10件]
   FR --> SCR[SITE-SCR 6画面]
-  FR --> API[SITE-API 4件]
+  FR --> API[SITE-API 3件]
   FR --> TBL[SITE-TBL 7表]
   REQ --> NFR[SITE-NFR 17件]
 ```
-見てほしいところ：ID はすべて `SITE-` 付き。既存の Windows 版の設計書（`EXE-`、`docs/adr/ADR-001〜005`）とぶつからない。
+見てほしいところ：ID はすべて `SITE-` 付き。既存の Windows 版の設計書（`EXE-`、`docs/adr/ADR-001〜005`）とぶつからない。件数は有効なものだけ。解析の ID（REQ-007・US-008・UC-007・FR-010・API-003）は取り下げて欠番にした（振り直さない）。
 
 ## 要点
 - [エレベーターピッチ](#エレベーターピッチ)と[スコープ](#スコープ)。
 - [用語集](#用語集)：「安定版」「署名状況」「媒体」などの意味をここで固定。
-- [決定事項ログ](#決定事項ログ)：ユーザー決定 13 件・おまかせ 4 件・定石 7 件・提案 1 件（SITE-ADR-005）。
+- [決定事項ログ](#決定事項ログ)：ユーザー決定 17 件・おまかせ 4 件・定石 7 件（v0.2 で SITE-D-25〜28 を追加、SITE-D-09 は取り下げて D-27 に置き換え）。
 - [トレーサビリティ表](#トレーサビリティ表)：REQ から画面・API・表までたどれる。
 
 ---
@@ -37,8 +37,8 @@ flowchart LR
 | In | Out（Won't） |
 |---|---|
 | トップ・ダウンロード・更新履歴・プライバシー・コード署名ポリシー・404 | Web 版エディタ・英語版・使い方ガイド・アカウント・フォーム |
-| リリースとの自動連動・Cookie なし解析 | macOS / Linux・Cookie バナー・独自ドメイン |
-| 媒体の枠と仕様 | 媒体の制作（Remotion で後から） |
+| リリースとの自動連動・Cookie を使わない | macOS / Linux・Cookie バナー・独自ドメイン・閲覧数の解析（SITE-D-27） |
+| 媒体の枠と仕様・「仮」と分かる仮の画像 | 媒体の制作（Remotion で後から） |
 
 ### 用語集
 | 用語 | コード上の名前 | 定義 |
@@ -53,22 +53,21 @@ flowchart LR
 | 署名状況 | `signed` | その版の exe に SignPath Foundation の署名があるか |
 | 機能 | `Feature` | トップの機能カード 1 枚分（SITE-TBL-003） |
 | 媒体 | `Media` | スクショ・動画・OGP 画像（SITE-TBL-004） |
-| 枠（プレースホルダー） | `status: placeholder` | 素材がまだ無い媒体 |
+| 枠（プレースホルダー） | `status: placeholder` | 素材がまだ無い媒体。「仮」と分かる仮の画像を出す（SITE-D-26） |
 | ポリシー | `Policy` | プライバシー・コード署名ポリシー（SITE-TBL-005） |
-| ビーコン | — | Cloudflare Web Analytics の計測スクリプト |
 
 ### 決定事項ログ
 | ID | 決定内容 | 決定者 | 理由 | 影響範囲 | ADR |
 |---|---|---|---|---|---|
 | SITE-D-01 | サイトは紹介・ダウンロード用の LP（Web 版は作らない） | ユーザー | 小さく早く作る | 全体 | — |
-| SITE-D-02 | 載せるもの：機能紹介とスクショ・動画、ダウンロード、更新履歴・ポリシー | ユーザー | — | REQ-001〜008 | — |
+| SITE-D-02 | 載せるもの：機能紹介とスクショ・動画、ダウンロード、更新履歴・ポリシー | ユーザー | — | REQ-001〜008（007 は取り下げ） | — |
 | SITE-D-03 | 公開先は GitHub Pages | ユーザー | github.io を使う | 07 | [002](adr/SITE-ADR-002-github-pages.md) |
 | SITE-D-04 | 一般利用者向け・日本語のみ | ユーザー | アプリが日本語 | 06 | — |
 | SITE-D-05 | Astro で作る | ユーザー | — | 07 | [001](adr/SITE-ADR-001-astro.md) |
 | SITE-D-06 | 同じリポジトリの `site/` | ユーザー | リリースと連動しやすい | 07 | [006](adr/SITE-ADR-006-same-repo.md) |
 | SITE-D-07 | リリース公開で自動再ビルド | ユーザー | 手作業をなくす | FR-008・009 | [003](adr/SITE-ADR-003-release-trigger.md) |
 | SITE-D-08 | ドメインは `itiwoja.github.io/DC-Designer/` | ユーザー | — | 07 | [002](adr/SITE-ADR-002-github-pages.md) |
-| SITE-D-09 | Cookie なしの解析を入れる。細かい数値はおまかせ | ユーザー | — | FR-010、05 | [004](adr/SITE-ADR-004-analytics.md) |
+| SITE-D-09 | （取り下げ）当初は Cookie なしの解析を入れるとした。2026-11-01 に解析は入れないと決定（SITE-D-27） | ユーザー | SITE-D-27 で置き換え | FR-010、05 | [004](adr/SITE-ADR-004-analytics.md) |
 | SITE-D-10 | 公開するブランチは main | ユーザー | 文面の修正を早く出せる | FR-009 | — |
 | SITE-D-11 | スクショ・動画は後で Remotion で作る | ユーザー | — | REQ-008、06 | — |
 | SITE-D-12 | プライバシーは今の動き（AI 送信は追加確認なし）に合わせる | ユーザー | 実際の挙動と一致させる | FR-007 | — |
@@ -84,11 +83,15 @@ flowchart LR
 | SITE-D-22 | API の再試行は 3 回（1・2・4 秒） | Claude判断（おまかせ） | 一時的な障害に耐える | 09 | — |
 | SITE-D-23 | 閲覧時のブラウザは GitHub API を叩かない | ユーザー（D-07 の帰結） | 回数制限を避ける | 09 | — |
 | SITE-D-24 | 設計書は `docs/design/`、ID は `SITE-` 付き | 定石 | 既存の設計書と ID をぶつけない | 全体 | — |
+| SITE-D-25 | 署名の有無はリリースノートの「この版はコード署名をしていません」の有無で判定する（SITE-Q-01 案 A、2026-11-01） | ユーザー | 配信 CI を変えずに済む。CI の文言を変えたらサイトも直す | FR-004・008、TBL-001・006 | — |
+| SITE-D-26 | 素材が揃う前に、「仮」と分かる仮の画像で先に公開する。Remotion の素材ができたら差し替える（SITE-Q-02 案 B、2026-11-01） | ユーザー | 公開を素材待ちで止めない | REQ-008、FR-001・002、06、TBL-004 | — |
+| SITE-D-27 | 解析は入れない。解析そのものをスコープから外す（SITE-Q-03、2026-11-01） | ユーザー | — | REQ-007・US-008・UC-007・FR-010・API-003 を取り下げ、05、07 | [004](adr/SITE-ADR-004-analytics.md) |
+| SITE-D-28 | ポリシーは `docs/` を正本にし `docs/privacy.md` を新設。サイトは読み込むだけ（SITE-Q-04 案 A、2026-11-01） | ユーザー | 正本が 1 つで食い違わない。SignPath の条件も満たす | FR-007、TBL-005 | [005](adr/SITE-ADR-005-policy-source.md) |
 
-未決の提案：[SITE-ADR-005](adr/SITE-ADR-005-policy-source.md)（ポリシーの正本、SITE-Q-04）。
+未決の論点は無い（SITE-Q-01〜04 は SITE-D-25〜28 で決定）。
 
 ### ID 体系
-`SITE-REQ` 要件 ／ `SITE-US` ストーリー ／ `SITE-UC` ユースケース ／ `SITE-FR` 機能 ／ `SITE-NFR` 非機能 ／ `SITE-SCR` 画面 ／ `SITE-TBL` データ ／ `SITE-API` 外部 IF ／ `SITE-ADR` 判断 ／ `SITE-D` 決定 ／ `SITE-Q` 未決 ／ `SITE-R` リスク。本文の表では `SITE-` を省くことがある（例：FR-004 = SITE-FR-004）。
+`SITE-REQ` 要件 ／ `SITE-US` ストーリー ／ `SITE-UC` ユースケース ／ `SITE-FR` 機能 ／ `SITE-NFR` 非機能 ／ `SITE-SCR` 画面 ／ `SITE-TBL` データ ／ `SITE-API` 外部 IF ／ `SITE-ADR` 判断 ／ `SITE-D` 決定 ／ `SITE-Q` 判断を求めた論点（決まったら SITE-D へ） ／ `SITE-R` リスク。取り下げた ID は欠番にし、振り直さない。本文の表では `SITE-` を省くことがある（例：FR-004 = SITE-FR-004）。
 
 ### トレーサビリティ表
 | REQ | US | UC | FR | SCR | API | TBL |
@@ -99,7 +102,7 @@ flowchart LR
 | REQ-004 | US-007, 009 | UC-005, 006 | FR-008, 009 | 全画面 | API-001, 002 | TBL-001, 002, 006 |
 | REQ-005 | US-005 | UC-003 | FR-006 | SCR-003 | API-001 | TBL-001 |
 | REQ-006 | US-006 | UC-004 | FR-007 | SCR-004, 005 | — | TBL-005 |
-| REQ-007 | US-008 | UC-007 | FR-010 | 全画面 | API-003 | TBL-006 |
+| ~~REQ-007~~（取り下げ、SITE-D-27） | ~~US-008~~ | ~~UC-007~~ | ~~FR-010~~ | — | ~~API-003~~ | — |
 | REQ-008 | US-001 | UC-001 | FR-002 | SCR-001 | — | TBL-004 |
 | REQ-009 | US-002 | UC-001, 002 | FR-003 | SCR-001, 002 | — | TBL-007 |
 

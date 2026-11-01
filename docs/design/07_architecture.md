@@ -1,16 +1,16 @@
 # 07. システムアーキテクチャ
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.1（2026-11-01） ／ インプット：[04](04_functional_spec.md)、[05](05_non_functional.md)
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.2（2026-11-01） ／ インプット：[04](04_functional_spec.md)、[05](05_non_functional.md)
 
 > **3行で**
 > 1. Astro で静的に生成し、GitHub Actions から GitHub Pages へ公開する。サーバーも DB も持たない。
 > 2. リリースとの連動は、配信 CI（release-windows）の完了を `workflow_run` で受ける。配信 CI そのものは変えない。
-> 3. 閲覧時に外部へ出るのは、Cloudflare Web Analytics のビーコンと、GitHub Releases からのダウンロードだけ。
+> 3. 閲覧時に外部へ出るのは、GitHub Releases からのダウンロードだけ。解析は入れない（SITE-D-27）。
 
 ## 🧭 判断してほしいこと
 | # | 種類 | 論点 | 選択肢 | おすすめ（理由） | 決まらないと止まるもの |
 |---|---|---|---|---|---|
-| SITE-Q-03 | 未決 | Cloudflare のアカウントを作り、Web Analytics にサイトを登録してトークンをリポジトリ変数に入れるか | A: 入れる / B: 当面入れない | A（解析はユーザー選択。未設定でもビーコンを出さずに公開できるので、公開は止まらない） | SITE-FR-010 だけ |
-| SITE-Q-04 | トレードオフ | ポリシーの正本を `docs/` に置いてサイトは読むだけにするか（`docs/privacy.md` を新設してよいか） | A: docs/ を正本に読み込む / B: site/ に別に書く | A（正本が 1 つで食い違わない。SignPath の条件も満たす） | SITE-FR-007、SITE-TBL-005 |
+| SITE-Q-03 | 決定（2026-11-01） | Cloudflare Web Analytics のトークンを用意するか | A: 入れる / B: 当面入れない | **解析は入れないに決定（ユーザー、SITE-D-27）**。解析そのものをスコープから外し、SITE-FR-010 を取り下げ | — |
+| SITE-Q-04 | 決定（2026-11-01） | ポリシーの正本を `docs/` に置いてサイトは読むだけにするか | A: docs/ を正本に読み込む / B: site/ に別に書く | **A に決定（ユーザー、SITE-D-28）**：`docs/privacy.md` を新設し、サイトは読み込むだけ | — |
 
 ## 全体図
 C4 レベル 1：コンテキスト
@@ -18,12 +18,11 @@ C4 レベル 1：コンテキスト
 flowchart LR
   V([閲覧者]) -->|HTTPS| S[DC-Designer 紹介サイト<br>GitHub Pages]
   V -->|exe をダウンロード| GR[(GitHub Releases)]
-  S -.ビーコン.-> CWA[(Cloudflare Web Analytics)]
   O([所有者]) -->|push・タグ| GH[GitHub リポジトリ]
   GH -->|Actions でビルド・公開| S
   GH -.API でリリース情報.-> GR
 ```
-見てほしいところ：サイトは exe を置かない。ダウンロードは常に GitHub Releases から。
+見てほしいところ：サイトは exe を置かない。ダウンロードは常に GitHub Releases から。閲覧時にサイトから外部へ送るものは無い。
 
 ## 要点
 - コンテナは「サイトのソース」「サイトのワークフロー」「GitHub Pages」の 3 つ（[レベル 2](#レベル2コンテナ図)）。
@@ -63,7 +62,7 @@ flowchart TB
   POL[lib/policies.ts<br>SITE-FR-007 docs読込・リンク書換] --> PAGES
   MD[lib/markdown.ts<br>無害化] --> LR
   MD --> POL
-  PAGES --> LAY[layouts/Base<br>ヘッダー・フッター・CSP・ビーコン]
+  PAGES --> LAY[layouts/Base<br>ヘッダー・フッター・CSP]
   ISL[components/CopyButton<br>唯一の島] --> PAGES
 ```
 
@@ -75,7 +74,7 @@ flowchart TB
 | 画像 | `astro:assets`（AVIF/WebP をビルドで生成） | SITE-NFR-003 | — |
 | ホスティング | GitHub Pages（Actions から公開） | 0 円・リポジトリと同じ場所 | Cloudflare Workers、Vercel → [SITE-ADR-002](adr/SITE-ADR-002-github-pages.md) |
 | CI | GitHub Actions、Node 24（配信 CI と同じ） | 既存の CI と揃える | — |
-| 解析 | Cloudflare Web Analytics | Cookie なし・無料・Pages でも使える | GoatCounter、Umami、なし → [SITE-ADR-004](adr/SITE-ADR-004-analytics.md) |
+| 解析 | なし（入れない） | ユーザー決定（SITE-D-27）。外部への送信・Cookie・設定がいらない | Cloudflare Web Analytics（取り消し）、GoatCounter、Umami → [SITE-ADR-004](adr/SITE-ADR-004-analytics.md) |
 | 置き場所 | 同じリポジトリの `site/`（独自の `package.json`） | リリースと連動しやすい | 別リポジトリ → [SITE-ADR-006](adr/SITE-ADR-006-same-repo.md) |
 
 `site/` はアプリの `package.json` と依存を共有しない（アプリの配布物検査の許可リストに入らないようにする。ADR-005 と整合）。
@@ -108,7 +107,6 @@ concurrency: { group: pages, cancel-in-progress: false }
 |---|---|---|---|
 | GitHub REST API | ビルド時 | Release 一覧（SITE-API-001） | ビルド失敗 |
 | GitHub Releases | ビルド時・閲覧時 | SHA256SUMS.txt（SITE-API-002）・exe（SITE-API-004） | ビルド失敗 ／ 閲覧者が再試行 |
-| Cloudflare Web Analytics | 閲覧時 | ページの閲覧（SITE-API-003） | 計測が欠けるだけ |
 
 ### ログ・監視・エラー通知
 - ビルドのログは Actions に残る（既定の保持期間）。失敗は GitHub の通知で所有者に届く。
@@ -120,11 +118,11 @@ concurrency: { group: pages, cancel-in-progress: false }
 | [SITE-ADR-001](adr/SITE-ADR-001-astro.md) | Astro で静的生成 | 承認 |
 | [SITE-ADR-002](adr/SITE-ADR-002-github-pages.md) | GitHub Pages で配信 | 承認 |
 | [SITE-ADR-003](adr/SITE-ADR-003-release-trigger.md) | リリース連動は `workflow_run` | 承認 |
-| [SITE-ADR-004](adr/SITE-ADR-004-analytics.md) | Cloudflare Web Analytics | 承認 |
-| [SITE-ADR-005](adr/SITE-ADR-005-policy-source.md) | ポリシーは docs/ を正本に読み込む | 提案（SITE-Q-04） |
+| [SITE-ADR-004](adr/SITE-ADR-004-analytics.md) | 解析は入れない（Cloudflare Web Analytics 案を取り消し） | 取り消し（2026-11-01） |
+| [SITE-ADR-005](adr/SITE-ADR-005-policy-source.md) | ポリシーは docs/ を正本に読み込む | 承認 |
 | [SITE-ADR-006](adr/SITE-ADR-006-same-repo.md) | 同じリポジトリの site/ | 承認 |
 
 ## このドキュメントで決まったこと
-- 上の ADR のうち 5 件（SITE-ADR-005 は提案のまま、SITE-Q-04）
+- 上の ADR 6 件（v0.2：SITE-ADR-004 を取り消して解析は入れない〔SITE-D-27〕、SITE-ADR-005 を承認〔SITE-D-28〕）
 - SITE-D-18：`site/` はアプリと依存を共有しない（定石・配布物の境界を守るため）
 - SITE-D-19：Pages の環境に承認は付けない（定石。公開してよいかは main へのマージで判断済み）
