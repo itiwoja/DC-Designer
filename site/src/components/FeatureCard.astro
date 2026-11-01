@@ -1,0 +1,22 @@
+---
+import { render, type CollectionEntry } from "astro:content";
+import Media from "./Media.astro";
+
+interface Props {
+  feature: CollectionEntry<"features">;
+}
+const { feature } = Astro.props;
+const { Content } = await render(feature);
+---
+<li class="card">
+  {feature.data.mediaId && (
+    <div class="card__media">
+      <Media mediaId={feature.data.mediaId} kind="feature" sizes="(min-width: 768px) 520px, 100vw" />
+    </div>
+  )}
+  <div class="card__body">
+    <h3>{feature.data.title}</h3>
+    <div class="card__text"><Content /></div>
+    {feature.data.exeNote && <p class="card__note">{feature.data.exeNote}</p>}
+  </div>
+</li>

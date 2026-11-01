@@ -1,0 +1,14 @@
+---
+import { getReleaseData } from "../lib/releases";
+
+interface Props {
+  large?: boolean;
+  note?: boolean;
+}
+const { large = false, note = true } = Astro.props;
+const { latest } = await getReleaseData();
+---
+<div class="download-cta">
+  <a class:list={["btn", { "btn--large": large }]} href={latest.installer.browserDownloadUrl}>Windows 版をダウンロード（v{latest.version}）</a>
+  {note && <p class="hero__note">無料・MIT ライセンス／Windows 10・11（x64）</p>}
+</div>

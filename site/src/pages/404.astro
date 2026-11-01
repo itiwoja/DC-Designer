@@ -1,0 +1,14 @@
+---
+import Base from "../layouts/Base.astro";
+import { url } from "../layouts/paths";
+---
+<Base title="ページが見つかりません" description="お探しのページは見つかりませんでした。">
+  <div class="container not-found">
+    <h1>ページが見つかりません</h1>
+    <p>アドレスが違うか、ページが移動した可能性があります。</p>
+    <div class="actions">
+      <a class="btn" href={url("/")}>トップへ</a>
+      <a class="btn btn--ghost" href={url("/download/")}>ダウンロードへ</a>
+    </div>
+  </div>
+</Base>

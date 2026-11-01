@@ -1,0 +1,33 @@
+---
+import Base from "../../layouts/Base.astro";
+import { getReleaseData } from "../../lib/releases";
+import { formatDateJa, versionAnchor } from "../../lib/format";
+
+const { releases } = await getReleaseData();
+const OPEN_COUNT = 10;
+---
+<Base title="更新履歴" description="DC-Designer の公開した版ごとの変更点です。">
+  <div class="container prose section">
+    <h1>更新履歴</h1>
+    {releases.map((r, i) => {
+      const heading = (
+        <h2 id={versionAnchor(r.version)}>
+          <span>v{r.version}</span>
+          <time datetime={r.publishedAt}>{formatDateJa(r.publishedAt)}</time>
+          {r.prerelease && <span class="badge">プレリリース</span>}
+        </h2>
+      );
+      const body = (
+        <>
+          <div class="release__body" set:html={r.bodyHtml} />
+          <p class="release__link"><a href={r.htmlUrl}>GitHub で見る →</a></p>
+        </>
+      );
+      return i < OPEN_COUNT ? (
+        <article class="release">{heading}{body}</article>
+      ) : (
+        <article class="release"><details><summary>{heading}</summary>{body}</details></article>
+      );
+    })}
+  </div>
+</Base>

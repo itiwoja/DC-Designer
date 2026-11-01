@@ -1,0 +1,16 @@
+---
+import Base from "../../layouts/Base.astro";
+import { getPolicy } from "../../lib/policies";
+import { formatDateJa } from "../../lib/format";
+
+const policy = await getPolicy("code-signing");
+---
+<Base title={policy.title} description="DC-Designer のコード署名ポリシーです。">
+  <div class="container section">
+    <article class="prose policy">
+      <h1>{policy.title}</h1>
+      {policy.updatedAt && <p class="policy__updated">最終更新：{formatDateJa(policy.updatedAt)}</p>}
+      <div set:html={policy.bodyHtml} />
+    </article>
+  </div>
+</Base>

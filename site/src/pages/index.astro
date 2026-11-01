@@ -1,0 +1,47 @@
+---
+import Base from "../layouts/Base.astro";
+import Media from "../components/Media.astro";
+import DownloadButton from "../components/DownloadButton.astro";
+import FeatureCard from "../components/FeatureCard.astro";
+import Requirements from "../components/Requirements.astro";
+import { getCollection, getEntry } from "astro:content";
+
+const features = (await getCollection("features")).filter((f) => f.data.exeAvailable).sort((a, b) => a.data.order - b.data.order);
+const home = await getEntry("pages", "home");
+// home.md の本文：最初の段落がキャッチ、残りが説明
+const [catchCopy, ...rest] = (home?.body ?? "").trim().split(/\n\s*\n/);
+---
+<Base title="ポスターを、AIの下書きからレイヤーで仕上げる" description="DC-Designer は、AI が作った下書きをレイヤーで自分の手で仕上げられるポスター作成アプリ（Windows 版）です。無料・MIT ライセンス。">
+  <div class="container">
+    <section class="hero" aria-labelledby="hero-title">
+      <div>
+        <h1 id="hero-title">{catchCopy}</h1>
+        {rest.length > 0 && <p class="hero__lead">{rest.join(" ")}</p>}
+        <DownloadButton large />
+      </div>
+      <div class="hero__media">
+        <Media mediaId="hero" kind="hero" loading="eager" sizes="(min-width: 900px) 560px, 100vw" />
+      </div>
+    </section>
+
+    <section class="section" id="features" aria-labelledby="features-title">
+      <h2 id="features-title">機能</h2>
+      <ul class="cards">
+        {features.map((f) => <FeatureCard feature={f} />)}
+      </ul>
+      <div class="demo">
+        <h3>デモ</h3>
+        <div class="demo__frame"><Media mediaId="demo" kind="demo" sizes="(min-width: 960px) 960px, 100vw" /></div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="req-title">
+      <h2 id="req-title">動作要件</h2>
+      <Requirements />
+    </section>
+
+    <section class="section cta-end" aria-label="ダウンロード">
+      <DownloadButton large />
+    </section>
+  </div>
+</Base>
