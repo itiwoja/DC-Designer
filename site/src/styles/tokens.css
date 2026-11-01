@@ -64,7 +64,7 @@
   --text-lg: 1.25rem;
   --text-2xl: clamp(1.5rem, 1rem + 2vw, 2rem);
   --text-page: clamp(1.75rem, 1.2rem + 2.5vw, 2.5rem);
-  --text-hero: clamp(2.25rem, 1.5rem + 3.5vw, 3.5rem);
+  --text-hero: clamp(2.5rem, 1.25rem + 3.75vw, 4.25rem);
   --weight-regular: 400;
   --weight-bold: 700;
   /* Mochiy Pop One は 400 しかない。太くすると偽の太字になるので 400 のまま使う */
@@ -115,7 +115,9 @@
   --card-bg: var(--color-surface);
   --card-border: var(--color-border);
   --card-radius: var(--radius-card);
-  --shape-size-hero: clamp(48px, 8vw, 120px);
+  --shape-size-hero: clamp(48px, 8vw, 120px); /* 404 だけ */
+  --hero-min-height: max(560px, calc(100svh - 64px)); /* ヒーロー帯の高さ（ヘッダー 64px を除く） */
+  --hero-form-size: clamp(120px, 14vw, 200px);
   --shape-size-mark: 12px;
 }
 

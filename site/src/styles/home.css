@@ -10,47 +10,26 @@
 }
 
 /* ---------- SEC-001-01 ヒーロー ---------- */
-/* 背景のパーティクル（MOT-004）：画面の横幅いっぱいに敷く。重なりは 画像と図形 < 粒 < 文字・ボタン（クリックは通す）。
-   画像の上でも輪が見えるように、粒は画像より前に出す */
-.hero-band { position: relative; overflow: clip; }
+/* 背景のパーティクル（MOT-004）：帯いっぱいに敷く。重なりは 粒 < 文字・ボタン（クリックは通す）。
+   帯の高さは ヘッダーを除いた画面いっぱい。文字の塊は帯の上下中央 */
+.hero-band { position: relative; overflow: clip; min-height: var(--hero-min-height); display: grid; align-items: center; }
 .hero-particles { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
-.hero-band .hero__text { position: relative; z-index: 2; }
-.hero { --hero-shape: calc(var(--shape-size-hero) * 0.6); display: grid; gap: var(--space-6); padding-block: var(--space-7); }
+.hero-band .container { position: relative; z-index: 2; }
+.hero { padding-block: var(--space-7); }
+.hero__text { width: fit-content; max-width: 100%; margin-inline: auto; text-align: center; }
 .hero h1 { font-size: var(--text-hero); margin-bottom: var(--space-4); }
-.hero__lead { margin-bottom: var(--space-5); }
-/* 図形の場所は枠の余白（図形の 3/4）で先に確保する。図形は画像の角に 1/4 だけかかり、横にはみ出さない */
-.hero__visual {
-  --hero-pad: calc(var(--hero-shape) * 0.75);
-  position: relative;
-  padding: var(--hero-pad) var(--hero-pad) var(--hero-shape);
-}
-.hero__visual .hero__shape { position: absolute; width: var(--hero-shape); height: var(--hero-shape); }
-.hero__visual .hero__shape--circle { top: 0; right: 0; }
-.hero__visual .hero__shape--triangle { left: 0; bottom: var(--hero-pad); }
-/* 768 未満：■ は画像にかけない（枠の下余白に置く） */
-.hero__visual .hero__shape--square { right: 0; bottom: 0; }
+.hero__line { display: block; }
+/* 説明は見出しより広げない（文字の塊が横に伸びると MOT-005 の形を置く余白が無くなる） */
+.hero__lead { max-width: 34em; margin: 0 auto var(--space-5); word-break: auto-phrase; text-wrap: pretty; }
+.hero__actions { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-3); }
+.hero__note { margin: var(--space-3) 0 0; color: var(--color-text-muted); font-size: var(--text-sm); }
 @media (min-width: 768px) {
-  .hero { --hero-shape: var(--shape-size-hero); }
-  .hero__visual { padding: var(--hero-pad); }
-  .hero__visual .hero__shape--triangle { bottom: 0; }
-}
-@media (min-width: 1024px) {
-  .hero { grid-template-columns: 5fr 6fr; align-items: center; gap: var(--space-7); }
+  .hero__actions { flex-direction: row; justify-content: center; gap: var(--space-4); }
 }
 
-/* MOT-002 読み込み時に 1 回：●→▲→■ の順に --stagger ずつ遅らせる。見出し・ボタンは動かさない */
-@keyframes shape-enter {
-  from { opacity: 0; transform: translateY(16px) scale(0.6); }
-  to { opacity: 1; transform: none; }
-}
-.hero__visual .hero__shape {
-  animation: shape-enter var(--dur-enter) var(--ease-bounce) both;
-}
-.hero__visual .hero__shape--triangle { animation-delay: var(--stagger); }
-.hero__visual .hero__shape--square { animation-delay: calc(var(--stagger) * 2); }
-@media (prefers-reduced-motion: reduce) {
-  .hero__visual .hero__shape { animation: none; }
-}
+/* 画面画像：帯のすぐ下・中央・最大 960px */
+.hero-media { max-width: 960px; padding-top: var(--space-6); }
+.hero-media .media-frame { margin-top: 0; }
 
 /* ---------- 共通：セクションの間 ---------- */
 .home-section + .home-section { padding-top: 0; }

@@ -33,25 +33,24 @@ const minorNotes = notesIn(minors);
 const home = await getEntry("pages", "home");
 // home.md の本文：最初の段落がキャッチ、残りが説明
 const [catchCopy, ...rest] = (home?.body ?? "").trim().split(/\n\s*\n/);
+// 見出しは「、」と「から」の後で改行（区切りが無ければ 1 行のまま）
+const titleLines = (catchCopy ?? "").split(/(?<=、|から)/).filter(Boolean);
 ---
 <Base title="ポスターを、AIの下書きからレイヤーで仕上げる" description="DC-Designer は、AI が作った下書きをレイヤーで自分の手で仕上げられるポスター作成アプリ（Windows 版）です。無料・MIT ライセンス。">
   <div class="hero-band">
     <HeroParticles />
     <div class="container">
-    <section class="hero" aria-labelledby="hero-title">
-      <div class="hero__text">
-        <h1 id="hero-title">{catchCopy}</h1>
-        {rest.length > 0 && <p class="hero__lead">{rest.join(" ")}</p>}
-        <DownloadButton large />
-      </div>
-      <div class="hero__visual">
-        <Media mediaId="hero" kind="hero" loading="eager" sizes="(min-width: 1024px) 560px, (min-width: 768px) 700px, 100vw" />
-        <Shape shape="circle" size="hero" class="hero__shape hero__shape--circle" />
-        <Shape shape="triangle" size="hero" class="hero__shape hero__shape--triangle" />
-        <Shape shape="square" size="hero" class="hero__shape hero__shape--square" />
-      </div>
-    </section>
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero__text" data-hero-text>
+          <h1 id="hero-title">{titleLines.map((line) => <span class="hero__line">{line}</span>)}</h1>
+          {rest.length > 0 && <p class="hero__lead">{rest.join(" ")}</p>}
+          <DownloadButton large variant="hero"><a class="btn btn--large btn--ghost" href="#features">機能を見る</a></DownloadButton>
+        </div>
+      </section>
     </div>
+  </div>
+  <div class="container hero-media">
+    <div class="media-frame"><Media mediaId="hero" kind="hero" loading="lazy" sizes="(min-width: 1024px) 960px, 100vw" /></div>
   </div>
 
   <div class="container">

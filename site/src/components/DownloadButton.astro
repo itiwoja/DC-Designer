@@ -1,17 +1,30 @@
 ---
 // CMP-003 主ボタン（ダウンロード）。variant="band" は群青の帯（CMP-014）の上：版番号・補足文なし。
+// variant="hero" はヒーロー用：ボタン列（スロットにゴースト）と補足 1 行を別々に出す（外枠なし）。
 import { getReleaseData } from "../lib/releases";
 
 interface Props {
   large?: boolean;
   note?: boolean;
-  variant?: "default" | "band";
+  variant?: "default" | "band" | "hero";
 }
 const { large = false, note = true, variant = "default" } = Astro.props;
 const { latest } = await getReleaseData();
 const band = variant === "band";
+const hero = variant === "hero";
+const noteText = "無料・MIT ライセンス／Windows 10・11（x64）";
 ---
-<div class:list={["download-cta", { "download-cta--band": band }]}>
-  <a class:list={["btn", { "btn--large": large, "btn--on-band": band }]} href={latest.installer.browserDownloadUrl}>{band ? "Windows 版をダウンロード" : `Windows 版をダウンロード（v${latest.version}）`}</a>
-  {note && !band && <p class="download-cta__note">無料・MIT ライセンス／Windows 10・11（x64）</p>}
-</div>
+{hero ? (
+  <>
+    <div class="hero__actions" data-hero-actions>
+      <a class:list={["btn", { "btn--large": large }]} href={latest.installer.browserDownloadUrl}>{`Windows 版をダウンロード（v${latest.version}）`}</a>
+      <slot />
+    </div>
+    {note && <p class="hero__note">{noteText}</p>}
+  </>
+) : (
+  <div class:list={["download-cta", { "download-cta--band": band }]}>
+    <a class:list={["btn", { "btn--large": large, "btn--on-band": band }]} href={latest.installer.browserDownloadUrl}>{band ? "Windows 版をダウンロード" : `Windows 版をダウンロード（v${latest.version}）`}</a>
+    {note && !band && <p class="download-cta__note">{noteText}</p>}
+  </div>
+)}
