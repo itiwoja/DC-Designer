@@ -38,6 +38,7 @@ flowchart LR
 - [段階分け](./desktop-release-spec.md#phases)：実装順は段階1〜4（社内確認用→正式配信候補→任意のCodex連携）。正本はspec。
 - [要件・技術仕様](./desktop-release-spec.md)：範囲、利用者操作、IDの対応、配布物の合格基準。
 - [画像保護・フォント取得](./desktop-release-privacy.md)：送信確認、保存先、資格情報、通信の制約。
+- [プライバシー](./privacy.md)：利用者向けの、外へ送る情報と送信先のまとめ（プライバシーの正本。紹介サイトと署名ポリシーはここを参照）。
 - [製品用の実行構成](./desktop-release-runtime.md)：画面・API接続、OAuth、Windowsプロセス、通常終了・障害復旧。
 - [配布・更新ポリシー](./release-policy.md)：`main` → `release` → タグ、本人だけの公開承認、混入検査。
 - [更新UIの詳細](./desktop-update-design.md)：毎回起動時に案内し、同意後取得・保存して再起動。既存の操作方針は変更しない。
