@@ -9,7 +9,6 @@ import { createRuntime, type WorkerChild } from "../desktop/runtime";
 describe("AI 操作の操作表", () => {
   const table: [string, string, string, number, boolean][] = [
     ["ai.plan", "POST", "/api/plan", 40, false],
-    ["ai.planInstagram", "POST", "/api/plan/instagram", 40, true],
     ["ai.reproduce", "POST", "/api/reproduce", 40, true],
     ["ai.reproduceRefine", "POST", "/api/reproduce/refine", 40, true],
     ["ai.edit", "POST", "/api/edit", 40, false],
@@ -166,7 +165,7 @@ describe("ChatGPT の資格情報を使う操作の印", () => {
     const all = { ...DESKTOP_OPERATIONS, ...DESKTOP_INTERNAL_OPERATIONS } as Record<string, { chatgpt?: true }>;
     const marked = Object.keys(all).filter((k) => all[k].chatgpt).sort();
     expect(marked).toEqual([
-      "ai.edit", "ai.notes", "ai.plan", "ai.planInstagram", "ai.reproduce", "ai.reproduceRefine", "ai.slide", "ai.summarize",
+      "ai.edit", "ai.notes", "ai.plan", "ai.reproduce", "ai.reproduceRefine", "ai.slide", "ai.summarize",
       "auth.complete", "auth.logout", "auth.start", "chatgpt.model", "fonts.suggest", "status.get",
     ]);
   });

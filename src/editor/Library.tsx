@@ -3,7 +3,7 @@ import { findPendingAssets, PosterSpecSchema, type PosterSpec } from "../schema"
 import { THEMES } from "../themes";
 import { download } from "../render/svg";
 import { api, deckBySlide, type Deck, type GeneratedFile, type SavedPoster } from "./api";
-import { modeEditorUrl, modeHomeUrl, modeOfDeck, MODES, readLastId, readModeParam } from "./mode";
+import { isShownDeck, modeEditorUrl, modeHomeUrl, modeOfDeck, MODES, readLastId, readModeParam } from "./mode";
 import { BLANK_SLIDE_SPEC, BLANK_SPEC, openDeckInEditor, openInEditor } from "./nav";
 import { readCurrentId, STORAGE_KEY, writeCurrentId, writeSynced } from "./storage";
 import { safeFileName } from "./specOps";
@@ -84,8 +84,8 @@ export function Library() {
     finally { setBusy(false); }
   };
 
-  /** このモードのデッキ（slides は Instagram 以外、instagram は Instagram のみ。poster は無し） */
-  const modeDecks = useMemo(() => (mode === "poster" ? [] : (decks ?? []).filter((d) => modeOfDeck(d) === mode)), [decks, mode]);
+  /** このモードのデッキ（slides はスライドのデッキ。以前の版の Instagram の投稿は出さない。poster は無し） */
+  const modeDecks = useMemo(() => (mode === "poster" ? [] : (decks ?? []).filter((d) => isShownDeck(d) && modeOfDeck(d) === mode)), [decks, mode]);
   const posterById = useMemo(() => new Map((posters ?? []).map((p) => [p.id, p])), [posters]);
   /** スライド ID → それが入っているプロジェクト（デッキ） */
   const deckOfSlide = useMemo(() => deckBySlide(decks), [decks]);
@@ -137,7 +137,6 @@ export function Library() {
   const clearEditing = () => { writeCurrentId(null); writeSynced(false); try { localStorage.removeItem(STORAGE_KEY); } catch { /* 無視 */ } };
 
   const createNew = () => act(async () => {
-    if (mode === "instagram") { location.href = modeHomeUrl("instagram"); return; } // 比率はモードのホームで選ぶ
     if (mode === "slides") {
       const deck = await api.createDeck("無題のプレゼンテーション", [BLANK_SLIDE_SPEC]);
       openInEditor(await api.poster(deck.slides[0].id), "slides");
@@ -145,7 +144,7 @@ export function Library() {
     }
     openInEditor(await api.createPoster(BLANK_SPEC), "poster");
   });
-  const newLabel = mode === "poster" ? "＋ 新規ポスター" : mode === "slides" ? "＋ 新規プレゼンテーション" : "＋ 新規投稿";
+  const newLabel = mode === "poster" ? "＋ 新規ポスター" : "＋ 新規プレゼンテーション";
   const rename = (p: SavedPoster, title: string) => {
     setRenaming(null);
     if (title.trim() === p.spec.meta.title) return;
@@ -293,10 +292,10 @@ export function Library() {
                       <div className="lib-info">
                         {renaming === d.id
                           ? <RenameInput value={d.name} label={`${itemLabel}名`} onDone={(name) => renameDeck(d, name)} onCancel={() => setRenaming(null)} />
-                          : <strong className="lib-title" title="ダブルクリックで名前を変更" onDoubleClick={() => setRenaming(d.id)}><Ico name={d.kind === "instagram" ? "carousel" : "slides"} size={13} /> {d.name}</strong>}
+                          : <strong className="lib-title" title="ダブルクリックで名前を変更" onDoubleClick={() => setRenaming(d.id)}><Ico name="slides" size={13} /> {d.name}</strong>}
                         <small>更新 {fmtDate(lastUpdated(d))}</small>
                         <small>
-                          {mode === "instagram" ? "投稿画像" : "スライド"} {d.slides.length} 枚
+                          スライド {d.slides.length} 枚
                           {pending > 0 && <> ・ <span className="warn">画像 {pending} 点未生成</span></>}
                         </small>
                       </div>
@@ -305,7 +304,7 @@ export function Library() {
                         <button className="small" disabled={busy} onClick={() => setRenaming(d.id)}>名前変更</button>
                         <button className="small" disabled={busy} onClick={() => act(() => api.duplicateDeck(d.id))}>複製</button>
                         <button className="small" onClick={() => exportDeckJson(d)} disabled={!cover}>JSON</button>
-                        <button className="small" aria-expanded={open} onClick={() => setExpanded(open ? null : d.id)}>{mode === "instagram" ? (open ? "画像を閉じる" : "画像一覧") : open ? "スライドを閉じる" : "スライド一覧"}</button>
+                        <button className="small" aria-expanded={open} onClick={() => setExpanded(open ? null : d.id)}>{open ? "スライドを閉じる" : "スライド一覧"}</button>
                         <button className="small danger" disabled={busy} onClick={() => removeDeck(d)}>削除</button>
                       </div>
                     </div>

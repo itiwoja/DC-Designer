@@ -1,16 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState, type DragEvent } from "react";
 import type { PosterSpec } from "../schema";
-import { IG_MAX_IMAGES, IG_RATIO_KEYS, IG_RATIOS, type IgRatio } from "../instagram";
 import type { Deck } from "./api";
 import { SpecFrame } from "./ui";
 import { Ico } from "./uiIcons";
 
 /**
- * PPTX エディターモードのスライド一覧（キャンバス下の帯）。Instagram の投稿では、カルーセルの画像の一覧になる（投影の代わりに比率の切り替え）。
+ * PPTX エディターモードのスライド一覧（キャンバス下の帯）。
  * 全スライドの中身は手元にあるので、サムネイルもサーバーを介さずその中身を描く（開いているスライドは編集中の内容）
  */
 export function DeckStrip({
-  deck, slides, currentSpec, open, currentId, width, height, thumbHeight, disabled, onOpen, onAdd, onDuplicate, onRemove, onMove, onReorder, onExport, onFonts, onToggle, onPresent, onPresentView, instagram,
+  deck, slides, currentSpec, open, currentId, width, height, thumbHeight, disabled, onOpen, onAdd, onDuplicate, onRemove, onMove, onReorder, onExport, onFonts, onToggle, onPresent, onPresentView,
 }: {
   deck: Deck;
   /** スライド ID → 中身（開いているスライドの分は currentSpec を使う） */
@@ -38,12 +37,9 @@ export function DeckStrip({
   onPresent: () => void;
   /** 今のスライドから、発表者ビュー付きでスライドショーを始める */
   onPresentView: () => void;
-  /** Instagram の投稿のとき: 今の比率（どれにも当たらなければ undefined）と、比率の切り替え */
-  instagram?: { ratio: IgRatio | undefined; onRatio: (r: IgRatio) => void };
 }) {
   const index = deck.slides.findIndex((s) => s.id === currentId);
-  const unit = instagram ? "画像" : "スライド";
-  const full = !!instagram && deck.slides.length >= IG_MAX_IMAGES;
+  const unit = "スライド";
   const listRef = useRef<HTMLOListElement>(null);
   // 開いているスライドが見える位置まで一覧を横にスクロールする。
   // scrollIntoView は overflow: hidden の親（帯やキャンバスの枠）まで縦に動かして見出しが隠れることがあるので、一覧だけを動かす
@@ -108,7 +104,7 @@ export function DeckStrip({
   return (
     <div className={"deck-strip" + (open ? "" : " collapsed")} role="region" aria-label={`${unit}一覧`}>
       <div className="deck-head">
-        <strong title={deck.name}><Ico name={instagram ? "carousel" : "slides"} size={14} /> {deck.name}</strong>
+        <strong title={deck.name}><Ico name="slides" size={14} /> {deck.name}</strong>
         <span className="deck-pos">{index >= 0 ? `${index + 1} / ${deck.slides.length}` : `${deck.slides.length} 枚`}</span>
         <span className="spacer" />
         <div className="deck-actions" inert={!open}>
@@ -116,26 +112,13 @@ export function DeckStrip({
           <button onClick={() => onMove(-1)} disabled={disabled || index <= 0} title={`この${unit}を前へ`} aria-label="前へ移動"><Ico name="chevronLeft" size={14} /></button>
           <button onClick={() => onMove(1)} disabled={disabled || index < 0 || index >= deck.slides.length - 1} title={`この${unit}を後ろへ`} aria-label="後ろへ移動"><Ico name="chevronRight" size={14} /></button>
         </div>
-        <button onClick={onAdd} disabled={disabled || full} title={full ? `Instagram の投稿は ${IG_MAX_IMAGES} 枚までです` : `この${unit}の後ろに白紙の${unit}を追加`}><Ico name="plus" size={14} /> 追加</button>
-        <button onClick={onDuplicate} disabled={disabled || index < 0 || full} title={full ? `Instagram の投稿は ${IG_MAX_IMAGES} 枚までです` : `この${unit}を複製`}><Ico name="copy" size={14} /> 複製</button>
+        <button onClick={onAdd} disabled={disabled} title={`この${unit}の後ろに白紙の${unit}を追加`}><Ico name="plus" size={14} /> 追加</button>
+        <button onClick={onDuplicate} disabled={disabled || index < 0} title={`この${unit}を複製`}><Ico name="copy" size={14} /> 複製</button>
         <button onClick={onRemove} disabled={disabled || index < 0 || deck.slides.length <= 1} title={`この${unit}を削除`} aria-label={`この${unit}を削除`}><Ico name="trash" size={14} /></button>
-        {instagram && (
-          <select
-            className="deck-ratio" aria-label="画像の比率" title="全画像の比率（Instagram のカルーセルは全枚が同じ比率になります）" disabled={disabled}
-            value={instagram.ratio ?? ""} onChange={(e) => e.target.value && instagram.onRatio(e.target.value as IgRatio)}
-          >
-            {!instagram.ratio && <option value="">{width}×{height}</option>}
-            {IG_RATIO_KEYS.map((k) => <option key={k} value={k} title={IG_RATIOS[k].note}>{IG_RATIOS[k].label}</option>)}
-          </select>
-        )}
         <button onClick={onFonts} disabled={disabled} title={`雰囲気に合うフォントを ChatGPT に提案してもらい、全${unit}に適用する`}><Ico name="type" size={14} /> フォント</button>
-        {!instagram && <>
-          <button onClick={onPresent} title="1 枚目から画面いっぱいに投影（F5。Shift+F5 で今のスライドから）"><Ico name="monitor" size={14} /> 投影</button>
-          <button onClick={onPresentView} title="今のスライドから、別ウィンドウの発表者ビュー（台本・次のスライド・経過時間）付きで投影（Alt+F5）"><Ico name="notes" size={14} /> 発表者ビュー</button>
-        </>}
-        {instagram
-          ? <button className="primary" onClick={onExport} disabled={disabled} title="全画像を幅 1080px の PNG で書き出す（複数枚なら番号付きで ZIP にまとめる）">PNG で書き出し</button>
-          : <button className="primary" onClick={onExport} disabled={disabled} title="全スライドを 1 つの PowerPoint に書き出す">PPTX で書き出し</button>}
+        <button onClick={onPresent} title="1 枚目から画面いっぱいに投影（F5。Shift+F5 で今のスライドから）"><Ico name="monitor" size={14} /> 投影</button>
+        <button onClick={onPresentView} title="今のスライドから、別ウィンドウの発表者ビュー（台本・次のスライド・経過時間）付きで投影（Alt+F5）"><Ico name="notes" size={14} /> 発表者ビュー</button>
+        <button className="primary" onClick={onExport} disabled={disabled} title="全スライドを 1 つの PowerPoint に書き出す">PPTX で書き出し</button>
         </div>
         <button className="icon" onClick={() => onToggle(!open)} title={open ? `${unit}一覧を畳む` : `${unit}一覧を開く`} aria-label={open ? `${unit}一覧を畳む` : `${unit}一覧を開く`} aria-expanded={open}><Ico name={open ? "chevronDown" : "chevronUp"} size={14} /></button>
       </div>

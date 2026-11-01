@@ -3,14 +3,13 @@ import { importPptx } from "../import/pptx";
 import { importPdf } from "../import/pdf";
 import { PDF_FILE_ACCEPT } from "../import/pdfDocument";
 import { findPendingAssets } from "../schema";
-import { blankInstagramSpec, IG_RATIO_KEYS, IG_RATIOS, type IgRatio } from "../instagram";
 import { api, AUTH_CHANNEL, deckBySlide, type Deck, type SavedPoster, type Status } from "./api";
 import type { DesktopResult } from "../../desktop/bridge";
 import { DESKTOP_ACCOUNT_CHANGED, isSignInCancelled, signInOutcome } from "./accountView";
 import { useDesktopSigningIn } from "./DesktopAccount";
 import { desktopBridge, useDesktopVersion } from "./desktop";
 import { BLANK_SLIDE_SPEC, BLANK_SPEC, IMPORT_NOTICE_KEY, HOME_URL, openDeckInEditor, openInEditor } from "./nav";
-import { MODE_KEYS, MODES, modeHomeUrl, modeLibraryUrl, modeOfDeck, readLastId, type AppMode } from "./mode";
+import { isShownDeck, MODE_KEYS, MODES, modeHomeUrl, modeLibraryUrl, modeOfDeck, readLastId, type AppMode } from "./mode";
 import { PosterFrame, ThemeMenu, useLoadWithRetry } from "./ui";
 import { PPTX_ACCEPT } from "./specOps";
 import { Ico } from "./uiIcons";
@@ -21,7 +20,7 @@ import { useFileDrop } from "./useFileDrop";
 const RECENT_MAX = 8;
 
 /** モードごとのアイコンの色（start-ico の修飾クラス） */
-const MODE_ICO: Record<AppMode, string> = { poster: "", slides: " alt", instagram: " ig" };
+const MODE_ICO: Record<AppMode, string> = { poster: "", slides: " alt" };
 
 /** 「3 分前」「昨日」のような相対表記。古いものは日付 */
 function fmtAgo(iso: string) {
@@ -88,7 +87,7 @@ export function Home({ mode }: { mode?: AppMode }) {
   const posterById = useMemo(() => new Map((posters ?? []).map((p) => [p.id, p])), [posters]);
   const deckOfSlide = useMemo(() => deckBySlide(decks), [decks]);
 
-  /** そのモードの成果物だけを更新順に並べる（poster: 単体のポスター、slides: スライドのデッキ、instagram: Instagram のデッキ） */
+  /** そのモードの成果物だけを更新順に並べる（poster: 単体のポスター、slides: スライドのデッキ。以前の版の Instagram の投稿は出さない） */
   const recent = useMemo<Recent[]>(() => {
     if (!posters || !decks || !mode) return [];
     const items: Recent[] = [];
@@ -99,7 +98,7 @@ export function Home({ mode }: { mode?: AppMode }) {
       }
     } else {
       for (const d of decks) {
-        if (modeOfDeck(d) !== mode) continue;
+        if (!isShownDeck(d) || modeOfDeck(d) !== mode) continue;
         const slides = d.slides.map((s) => posterById.get(s.id)).filter((p): p is SavedPoster => !!p);
         const updatedAt = slides.reduce((a, p) => (p.updatedAt > a ? p.updatedAt : a), d.updatedAt);
         items.push({ kind: "deck", id: d.id, title: d.name, updatedAt, deck: d, cover: slides[0], pending: slides.reduce((a, p) => a + findPendingAssets(p.spec).length, 0) });
@@ -111,8 +110,8 @@ export function Home({ mode }: { mode?: AppMode }) {
   /** モード選択画面に出す、モードごとの成果物数 */
   const counts = useMemo<Record<AppMode, number> | null>(() => {
     if (!posters || !decks) return null;
-    const c: Record<AppMode, number> = { poster: posters.filter((p) => !deckOfSlide.has(p.id)).length, slides: 0, instagram: 0 };
-    for (const d of decks) c[modeOfDeck(d)]++;
+    const c: Record<AppMode, number> = { poster: posters.filter((p) => !deckOfSlide.has(p.id)).length, slides: 0 };
+    for (const d of decks) if (isShownDeck(d)) c[modeOfDeck(d)]++;
     return c;
   }, [posters, decks, deckOfSlide]);
 
@@ -123,7 +122,7 @@ export function Home({ mode }: { mode?: AppMode }) {
     const p = id ? posterById.get(id) : undefined;
     if (!p) return null;
     const deck = deckOfSlide.get(p.id);
-    if (modeOfDeck(deck) !== mode) return null;
+    if ((deck && !isShownDeck(deck)) || modeOfDeck(deck) !== mode) return null;
     return { poster: p, deck };
   }, [mode, posters, posterById, deckOfSlide]);
 
@@ -140,11 +139,6 @@ export function Home({ mode }: { mode?: AppMode }) {
   const startBlankDeck = () => act("白紙のプロジェクトを用意中", async () => {
     const deck = await api.createDeck("無題のプレゼンテーション", [BLANK_SLIDE_SPEC]);
     openInEditor(await api.poster(deck.slides[0].id), "slides");
-  });
-  /** 白紙の Instagram 投稿（画像 1 枚）。エディタの「新規作成」は Instagram 投稿を作る状態で開く */
-  const startInstagram = (ratio: IgRatio) => act("白紙の投稿を用意中", async () => {
-    const deck = await api.createDeck("無題の投稿", [blankInstagramSpec(ratio)], "instagram");
-    openInEditor(await api.poster(deck.slides[0].id), "instagram");
   });
   const openPptx = (file: File) => act(`${file.name} を読み込み中`, async () => {
     const res = await importPptx(file, file.name, {
@@ -342,22 +336,6 @@ export function Home({ mode }: { mode?: AppMode }) {
             </label>
           </section>
         )}
-        {mode === "instagram" && (
-          <section className="home-section" aria-label="新しく作る">
-            <p className="hint small">画像の比率を選んでください。複数枚（カルーセル）の投稿は全枚が同じ比率になります。比率はあとから変えられます。</p>
-            <div className="home-starts ig-ratios">
-              {IG_RATIO_KEYS.map((k) => {
-                const r = IG_RATIOS[k];
-                return (
-                  <button key={k} className="home-start" disabled={!!busy} onClick={() => startInstagram(k)}>
-                    <span className="ig-ratio-box" aria-hidden><span style={{ width: 36 * Math.min(1, r.w / r.h), height: 36 * Math.min(1, r.h / r.w) }} /></span>
-                    <strong>{r.label}</strong><small>{r.w}×{r.h}・{r.note}</small>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        )}
 
         {current && (
           <section className="home-section">
@@ -366,7 +344,7 @@ export function Home({ mode }: { mode?: AppMode }) {
               {thumb(current.poster, <span className="badge">編集中</span>)}
               <span className="home-continue-body">
                 <strong>{current.deck ? current.deck.name : current.poster.spec.meta.title || "無題のポスター"}</strong>
-                {current.deck && <span>{current.deck.kind === "instagram" ? "画像" : "スライド"}「{current.poster.spec.meta.title || "無題"}」（{current.deck.slides.findIndex((s) => s.id === current.poster.id) + 1} / {current.deck.slides.length} 枚目）</span>}
+                {current.deck && <span>スライド「{current.poster.spec.meta.title || "無題"}」（{current.deck.slides.findIndex((s) => s.id === current.poster.id) + 1} / {current.deck.slides.length} 枚目）</span>}
                 <small>更新 {fmtAgo(current.poster.updatedAt)}</small>
               </span>
             </button>
@@ -392,7 +370,7 @@ export function Home({ mode }: { mode?: AppMode }) {
                 <li key={r.kind + r.id}>
                   <button className="home-card" onClick={() => openRecent(r)} title="エディタで開く" disabled={r.kind === "deck" && !r.cover}>
                     {thumb(r.kind === "poster" ? r.poster : r.cover, r.kind === "deck" ? <span className="badge muted">{r.deck.slides.length} 枚</span> : undefined)}
-                    <strong className="lib-title">{r.kind === "deck" && <Ico name={r.deck.kind === "instagram" ? "carousel" : "slides"} size={13} />}{r.title}</strong>
+                    <strong className="lib-title">{r.kind === "deck" && <Ico name="slides" size={13} />}{r.title}</strong>
                     <small>{fmtAgo(r.updatedAt)}{r.pending > 0 && <> ・ <span className="warn">画像 {r.pending} 点未生成</span></>}</small>
                   </button>
                 </li>

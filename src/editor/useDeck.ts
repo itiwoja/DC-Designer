@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import JSZip from "jszip";
 import { TRANS_EFFECT_LABEL } from "../transition";
 import { importPptx } from "../import/pptx";
-import { buildDeckPptx, download, renderSpecPng } from "../render/export";
-import { IG_MAX_IMAGES, IG_RATIOS, resizeCanvas, type IgRatio } from "../instagram";
+import { buildDeckPptx, download } from "../render/export";
 import { preloadImages } from "../render/useRenderReady";
 import { applyFonts, specTexts } from "../fonts";
 import { slideContent } from "../notes";
@@ -45,7 +43,6 @@ const imageSrcs = (spec: PosterSpec) => {
 /**
  * PPTX エディターモード（デッキ）: スライドの切り替え・追加・複製・削除・並べ替え、全スライドの書き出し、
  * フォントの一括適用、.pptx の読み込み。
- * Instagram の投稿（kind: "instagram"）も同じ仕組みで、スライドの代わりにカルーセルの画像を並べる
  */
 export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported, setBusyProgress, setSpec, resetSpec, stashHistory, setSelected, fitView }: {
   spec: PosterSpec;
@@ -171,22 +168,14 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
     putSlides((m) => m.delete(id));
   };
 
-  const instagram = deck?.kind === "instagram";
   /** 1 枚の呼び方 */
-  const unit = instagram ? "画像" : "スライド";
-  /** Instagram のカルーセルは 20 枚まで */
-  const full = instagram && !!deck && deck.slides.length >= IG_MAX_IMAGES;
+  const unit = "スライド";
 
   const deckAction = (label: string, fn: (d: Deck) => Promise<void>) => {
     if (!deck || busy) return;
     return run(label, () => fn(deck));
   };
-  const checkFull = () => {
-    if (!full) return false;
-    notify({ kind: "info", text: `Instagram の投稿に入れられる画像は ${IG_MAX_IMAGES} 枚までです` });
-    return true;
-  };
-  const addSlide = () => !checkFull() && deckAction(`${unit}を追加中`, async (d) => {
+  const addSlide = () => deckAction(`${unit}を追加中`, async (d) => {
     const blank = PosterSpecSchema.parse({
       meta: { title: `${d.name} ${d.slides.length + 1}`, width: W, height: H },
       theme: spec.theme,
@@ -197,7 +186,7 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
     setDeck(r.deck);
     await openSlide(r.poster.id);
   });
-  const duplicateSlide = () => !checkFull() && deckAction(`${unit}を複製中`, async (d) => {
+  const duplicateSlide = () => deckAction(`${unit}を複製中`, async (d) => {
     // 保存を待たずに、編集中の内容をそのまま複製する
     const cur = specRef.current;
     const copy = { ...cur, meta: { ...cur.meta, title: `${cur.meta.title} のコピー` } };
@@ -284,53 +273,6 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
     download(blob, name);
     exported(name);
   });
-
-  /** Instagram: 全画像を PNG（幅 1080px）で書き出す。1 枚なら PNG、複数なら番号付きの PNG をまとめた ZIP */
-  const exportImages = () => deckAction("画像を書き出し中", async (d) => {
-    const specs = deckSpecs(d);
-    const base = safeFileName(d.name);
-    const pngs: Blob[] = [];
-    for (const [i, s] of specs.entries()) {
-      setBusyProgress(i, specs.length);
-      pngs.push(await renderSpecPng(s, 1080 / s.meta.width));
-    }
-    setBusyProgress(specs.length, specs.length);
-    if (pngs.length === 1) {
-      download(pngs[0], `${base}.png`);
-      exported(`${base}.png`);
-      return;
-    }
-    const zip = new JSZip();
-    const digits = String(pngs.length).length;
-    pngs.forEach((b, i) => zip.file(`${base}_${String(i + 1).padStart(Math.max(2, digits), "0")}.png`, b));
-    download(await zip.generateAsync({ type: "blob" }), `${base}.zip`);
-    exported(`${base}.zip（PNG ${pngs.length} 枚）`);
-  });
-
-  /** Instagram: 全画像の比率を変える（レイヤーは新しい大きさに合わせて並べ直す。「元に戻す」は通知から） */
-  const changeRatio = async (ratio: IgRatio) => {
-    if (!deck || busy) return;
-    const { w, h, label } = IG_RATIOS[ratio];
-    if (!await ask({
-      title: `${label} に変えますか？`,
-      message: `${deck.slides.length} 枚すべてを ${w}×${h} にし、文字や画像の位置・大きさを新しい比率に合わせて並べ直します。はみ出しや重なりが出たら、チャットで「レイアウトを整えて」と頼むと直せます。`,
-      ok: "変更する",
-    })) return;
-    const before = new Map<string, PosterSpec>();
-    for (const s of deck.slides) {
-      const old = specOf(s.id);
-      if (!old) continue;
-      before.set(s.id, old);
-      updateSlide(s.id, resizeCanvas(old, w, h));
-    }
-    setSelected(null);
-    requestAnimationFrame(fitView);
-    notify({
-      kind: "success",
-      text: `${deck.slides.length} 枚を ${label}（${w}×${h}）にしました`,
-      action: { label: "元に戻す", run: () => { for (const [id, old] of before) updateSlide(id, old); requestAnimationFrame(fitView); } },
-    });
-  };
 
   // フォントの提案 → 全スライドに適用
   const [fontDialog, setFontDialog] = useState<{ texts: string[]; current: { display?: string; body?: string } } | null>(null);
@@ -496,7 +438,7 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
       const old = specOf(slide.id);
       if (!old) return;
       try {
-        const res = await api.edit(old, instruction, undefined, signal, undefined, chat, instagram || undefined, { number: i + 1, total, guide }, references, deckSubject(d));
+        const res = await api.edit(old, instruction, undefined, signal, undefined, chat, { number: i + 1, total, guide }, references, deckSubject(d));
         if (signal.aborted) return;
         if (i === cur && res.reply) guide = res.reply;
         if (!res.spec || !diffLayers(old, res.spec).hasChanges || specOf(slide.id) !== old) return;
@@ -538,7 +480,6 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
    */
   const addSlideByAI = async (signal: AbortSignal, instruction: string, position: number, chat?: ChatContext, references?: RefImage[]): Promise<{ text: string; changes?: string; spec?: PosterSpec }> => {
     if (!deck) throw new Error("スライドのデッキを開いていません");
-    if (full) return { text: `Instagram の投稿に入れられる画像は ${IG_MAX_IMAGES} 枚までです` };
     const d = deck;
     const total = d.slides.length;
     const specs = d.slides.map((s) => specOf(s.id));
@@ -549,7 +490,7 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
       return sp ? [{ number: n, title: sp.meta.title, spec: sp }] : [];
     });
     const changed = watchWork(!!desktopBridge(), () => [deckRef.current, ...d.slides.map((s) => specOf(s.id))]);
-    const res = await api.planSlide({ instruction, position, total, title: d.name, outline, samples, references, subject: deckSubject(d), ...(instagram ? { instagram } : {}) }, chat, signal);
+    const res = await api.planSlide({ instruction, position, total, title: d.name, outline, samples, references, subject: deckSubject(d) }, chat, signal);
     if (changed()) throw new Error(WORK_CHANGED_MESSAGE);
     if (signal.aborted) throw new Error("aborted");
     const r = await api.addDeckSlide(d.id, { spec: res.spec, after: d.slides[Math.max(position - 2, 0)].id });
@@ -621,6 +562,6 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
   return {
     deck, slides, specOf, deckOpen, toggleDeck, openSlide, updateSlide, addSlide, duplicateSlide, removeSlide, deleteSlides, moveSlide, reorderSlide, exportDeck,
     fontDialog, setFontDialog, openFontDialog, applyDeckFonts, applyTransitionToAll, renumberDeckPages, writeNotes, addSlideByAI, editAcrossDeck, importPptxFile,
-    instagram, full, exportImages, changeRatio, openNewDeck, deckReady, renameDeck,
+    deckReady, renameDeck,
   };
 }

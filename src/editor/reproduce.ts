@@ -120,16 +120,3 @@ export function withOverlay(spec: PosterSpec, overlay: Layer | string): PosterSp
   return { ...spec, layers: [...withoutOverlay(spec).layers, layer] };
 }
 
-/**
- * 画像を w:h の比率に中央で切り抜く（解像度は元のまま）。比率がほぼ同じならそのまま返す。
- * Instagram の再現で、ChatGPT が作った 2:3 などの画像を投稿の比率にそろえる
- */
-export async function fitToRatio(img: HTMLImageElement, w: number, h: number) {
-  const iw = img.naturalWidth, ih = img.naturalHeight;
-  const target = w / h;
-  if (Math.abs(iw / ih - target) < 0.005 * target) return img;
-  const sw = iw / ih > target ? ih * target : iw;
-  const sh = iw / ih > target ? ih : iw / target;
-  const c = drawTo(img, sw, sh, (iw - sw) / 2, (ih - sh) / 2, sw, sh);
-  return loadImage(URL.createObjectURL(await toBlob(c)));
-}

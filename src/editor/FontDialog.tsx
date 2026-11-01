@@ -9,7 +9,6 @@ const TARGET_LABELS: Record<FontStatus["target"], string> = { windows: "この P
 /** デッキ（PPTX エディター）とポスターで変わる文言 */
 const SUBJECTS = {
   slides: { target: "全スライド", fallback: "見出しのサンプル", installWhy: "書き出した PPTX を PowerPoint で同じ見た目で開くのに必要。PowerPoint を開いている場合は再起動後に反映" },
-  instagram: { target: "全画像", fallback: "見出しのサンプル", installWhy: "PNG の書き出しには不要。PC のほかのアプリで同じフォントを使って手直しするときに必要。開いているアプリは再起動後に反映" },
   poster: { target: "このポスター", fallback: "無題のポスター", installWhy: "書き出した SVG をほかのアプリで開いたり、同じフォントで手直ししたりするのに必要。開いているアプリは再起動後に反映" },
 } as const;
 

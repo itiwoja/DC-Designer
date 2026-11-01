@@ -249,7 +249,7 @@ type FontProposal = z.infer<typeof Proposal>;
 
 const catalogText = (fonts: FontEntry[]) => fonts.map((f) => `- ${f.family}（${FONT_ROLE_LABELS[f.role]}・ウェイト ${f.weights.join("/")}）: ${f.mood}`).join("\n");
 
-const SUBJECT = { slides: { who: "プレゼン資料", what: "スライド資料" }, poster: { who: "ポスター・チラシ", what: "ポスター" }, instagram: { who: "SNS（Instagram）投稿", what: "Instagram の投稿画像" } } as const;
+const SUBJECT = { slides: { who: "プレゼン資料", what: "スライド資料" }, poster: { who: "ポスター・チラシ", what: "ポスター" } } as const;
 export type FontSubject = keyof typeof SUBJECT;
 
 const system = (kind: FontSubject, fonts: FontEntry[]) => `あなたは日本語タイポグラフィに詳しい${SUBJECT[kind].who}のデザイナーです。
