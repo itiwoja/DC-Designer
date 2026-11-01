@@ -51,3 +51,4 @@
 - 2026-11-01 書体を Mochiy Pop One に・ヒーローに粒（[変更レポート](changes/2026-11-01-pop-font-particles.md)）
 - 2026-11-01 ヒーローを中央・全画面の粒の演出に作り直し（[変更レポート](changes/2026-11-01-hero-particle-redesign.md)）
 - 2026-11-01 ヘッダーとボタンを作り直し（[変更レポート](changes/2026-11-01-header-buttons.md)）
+- 2026-11-01 機能をポスター作成とスライド作成の 2 つに（[変更レポート](changes/2026-11-01-two-features.md)）
