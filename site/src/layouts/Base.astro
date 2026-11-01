@@ -5,7 +5,7 @@ import Shape from "../components/Shape.astro";
 import Icon from "../components/Icon.astro";
 import { getEntry } from "astro:content";
 import { getImage } from "astro:assets";
-import { REPO_URL } from "../lib/config";
+import { AUTHOR_URL, REPO_URL, SITE_CONFIG } from "../lib/config";
 import { url } from "./paths";
 
 interface Props {
@@ -107,7 +107,7 @@ const footerItems = [
             <Shape shape="square" size="mark" />
           </div>
         </div>
-        <small>DC-Designer は MIT ライセンスのオープンソースです。</small>
+        <small>DC-Designer は MIT ライセンスのオープンソースです。作成：<a href={AUTHOR_URL}>@{SITE_CONFIG.author}</a>（GitHub）</small>
       </div>
     </footer>
   </body>

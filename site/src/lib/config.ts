@@ -3,6 +3,8 @@ export const SITE_CONFIG = {
   site: "https://itiwoja.github.io",
   base: "/DC-Designer",
   repo: "itiwoja/DC-Designer",
+  /** 作成者の GitHub アカウント（フッターに出す） */
+  author: "itiwoja",
   /** 配信 CI（release-windows.yml）が未署名の版のリリースノートに書く文言。CI の文言を変えたらここも直す（SITE-D-25） */
   unsignedMarker: "この版はコード署名をしていません",
   /**
@@ -13,6 +15,7 @@ export const SITE_CONFIG = {
 } as const;
 
 export const REPO_URL = `https://github.com/${SITE_CONFIG.repo}`;
+export const AUTHOR_URL = `https://github.com/${SITE_CONFIG.author}`;
 export const RELEASES_URL = `${REPO_URL}/releases`;
 /** exe と SHA256SUMS.txt のダウンロード URL が必ず始まる形（SITE-D-32） */
 export const downloadPrefix = (version: string) => `${REPO_URL}/releases/download/v${version}/`;
