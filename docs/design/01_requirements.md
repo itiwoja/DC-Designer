@@ -1,5 +1,5 @@
 # 01. 要件定義
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.3（2026-11-01） ／ インプット：[00_overview](00_overview.md)、ヒアリング（決定事項ログ SITE-D-01〜12）
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.4（2026-11-01） ／ インプット：[00_overview](00_overview.md)、ヒアリング（決定事項ログ SITE-D-01〜12）
 
 > **3行で**
 > 1. DC-Designer（Windows 版）の**紹介・ダウンロード用の静的サイト**を、日本語・一般利用者向けに作る。
@@ -75,14 +75,14 @@ flowchart LR
 | <a id="site-req-006"></a>SITE-REQ-006 | プライバシー（アプリの通信、サイトは Cookie を使わず解析もしないこと）とコード署名ポリシーを公開する | Must | SignPath の条件・ユーザー選択 |
 | <a id="site-req-007"></a>SITE-REQ-007 | ~~Cookie を使わずに閲覧数を把握する~~ | 取り下げ（2026-11-01 ユーザー決定、SITE-D-27） | 解析は入れないことにした。ID は欠番にして振り直さない |
 | <a id="site-req-008"></a>SITE-REQ-008 | スクリーンショット・紹介動画で機能を見せる（枠を用意し、素材が揃うまでは「仮」と分かる仮の画像で公開する。素材は後から差し替える） | Must | ユーザー選択（掲載内容・SITE-D-26） |
-| <a id="site-req-009"></a>SITE-REQ-009 | 動作要件と必要なもの（Windows 10/11 x64、AI を使うなら ChatGPT Plus/Pro か API キー）を伝える | Must | 無料プラン非対応で離脱・問い合わせが出る |
+| <a id="site-req-009"></a>SITE-REQ-009 | 動作要件と必要なもの（Windows 10/11 x64、AI を使うなら ChatGPT Plus/Pro などのサインイン。無料プランと API キーでは使えない）を伝える | Must | 無料プラン非対応で離脱・問い合わせが出る |
 
 ### 6. 制約条件
 - **費用**：0 円（GitHub Pages の無料枠）。
 - **言語**：日本語のみ。
 - **技術**：Astro、同じリポジトリの `site/`、GitHub Actions で GitHub Pages へ公開（[SITE-ADR-001](adr/SITE-ADR-001-astro.md)・[002](adr/SITE-ADR-002-github-pages.md)・[006](adr/SITE-ADR-006-same-repo.md)）。
 - **配信ポリシー**：`docs/release-policy.md` に従い、PAT や `contents: write` を持つ App を追加しない。既存の配信 CI（`release-windows.yml`）は変更しない（[SITE-ADR-003](adr/SITE-ADR-003-release-trigger.md)）。
-- **正確さ**：機能紹介は **exe 版で使える機能だけ**を書く（Codex・ComfyUI 連携は exe 版では無効）。対応 OS は「確認した版だけ対応と表示」（EXE-Q-03）。
+- **正確さ**：機能紹介は **exe 版で使える機能だけ**を書く（exe 版では Codex・ComfyUI 連携、OpenAI・Gemini の画像生成、OpenRouter は無効。写真・イラストはダミー画像になる）。対応 OS は「確認した版だけ対応と表示」（EXE-Q-03）。
 
 ### 7. スコープ外（Won't）
 | やらないこと | 理由 |

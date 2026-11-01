@@ -1,5 +1,5 @@
 # 02. ユーザーストーリー
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.3（2026-11-01） ／ インプット：[01_requirements](01_requirements.md)
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.4（2026-11-01） ／ インプット：[01_requirements](01_requirements.md)
 
 > **3行で**
 > 1. 一般利用者のストーリーは 6 件。「何ができるか → 使えるか → ダウンロード → 安全か確かめる」の順。
@@ -65,7 +65,7 @@ flowchart LR
 
 ### <a id="site-us-002"></a>SITE-US-002：自分の環境で使えるか知る 〔SITE-REQ-009〕 優先度：Must
 **一般利用者として、無駄にインストールしないために、自分の PC と契約で使えるかを知りたい。**
-- Given トップかダウンロードページ When 動作要件を見る Then 「Windows 10 / 11（x64）」と「AI を使うには ChatGPT Plus/Pro のサインインか API キーが必要、無料プランは非対応」が書いてある
+- Given トップかダウンロードページ When 動作要件を見る Then 「Windows 10 / 11（x64）」と「AI を使うには ChatGPT Plus/Pro などのサインインが必要（無料プランと API キーでは使えない）」が書いてある
 - Given 同上 When 読む Then 「手動の編集・保存・書き出しはサインインなしで使える」も分かる
 
 ### <a id="site-us-003"></a>SITE-US-003：最新版をダウンロードする 〔SITE-REQ-002〕 優先度：Must

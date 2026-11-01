@@ -1,5 +1,5 @@
 # 08. コンテンツモデル（DB 設計の代わり）
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.3（2026-11-01） ／ インプット：[04_functional_spec](04_functional_spec.md)
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.4（2026-11-01） ／ インプット：[04_functional_spec](04_functional_spec.md)
 
 > **3行で**
 > 1. 静的サイトなので DB は持たない。代わりに、ビルド時に扱うデータを 7 つの「表」（SITE-TBL）として定義する。
@@ -30,6 +30,7 @@ erDiagram
     string id PK
     int order
     bool exeAvailable
+    string exeNote
   }
   MEDIA {
     string id PK
@@ -105,6 +106,7 @@ Release に付いた配布物のうち、サイトが使う 2 種類だけ。
 | title | string | ○ | 見出し（20 字まで） |
 | order | number | ○ | 表示順 |
 | exeAvailable | boolean | ○ | exe 版で使えるか。false は表示しない |
+| exeNote | string | — | exe 版での制限（有料プランが必要、写真は生成しないなど）。カードに注記として出す（60 字まで、SITE-D-33） |
 | mediaId | string | — | SITE-TBL-004 の id |
 
 ### <a id="site-tbl-004"></a>SITE-TBL-004：Media

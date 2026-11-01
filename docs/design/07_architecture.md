@@ -1,5 +1,5 @@
 # 07. システムアーキテクチャ
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.3（2026-11-01） ／ インプット：[04](04_functional_spec.md)、[05](05_non_functional.md)
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.4（2026-11-01） ／ インプット：[04](04_functional_spec.md)、[05](05_non_functional.md)
 
 > **3行で**
 > 1. Astro で静的に生成し、GitHub Actions から GitHub Pages へ公開する。サーバーも DB も持たない。
@@ -79,7 +79,7 @@ flowchart TB
 
 `site/` はアプリの `package.json` と依存を共有しない（アプリの配布物検査の許可リストに入らないようにする。ADR-005 と整合）。
 
-CSP（SITE-NFR-006）を `<meta>` で入れるため、インラインの CSS・JS を出さない設定にする（SITE-D-31）：`build.inlineStylesheets: 'never'`、スクリプトもインライン化させない（`vite.build.assetsInlineLimit: 0` など）、コピーボタンは `.astro` 内の `<script>` にして島（`client:*`。インラインのスクリプトとフレームワークのランタイムを出す）を使わない。フォントはシステムフォント。守れているかは、ビルド後の HTML を検査するテストで確かめる（[11 §11](11_tech_spec.md#11-テスト方針)）。
+CSP（SITE-NFR-006）を `<meta>` で入れるため、インラインの CSS・JS を出さない設定にする（SITE-D-31）：`build.inlineStylesheets: 'never'`、スクリプトもインライン化させない（`vite.build.assetsInlineLimit: 0` など）、コピーボタンは `.astro` 内の `<script>` にして島（`client:*`。インラインのスクリプトとフレームワークのランタイムを出す）を使わない。フォントはシステムフォント。`404.html` は存在しない URL ならどの階層でも返されるので、資産は相対パスでなく base（`/DC-Designer/`）を付けた絶対パスで読む（Astro の既定の出力で満たす。404 のテストで確かめる）。守れているかは、ビルド後の HTML を検査するテストで確かめる（[11 §11](11_tech_spec.md#11-テスト方針)）。
 
 ### デプロイ構成
 | 項目 | 値 |

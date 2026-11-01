@@ -1,5 +1,5 @@
 # 11. 技術仕様書
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.3（2026-11-01） ／ インプット：[01](01_requirements.md)〜[10](10_diagrams.md)
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.4（2026-11-01） ／ インプット：[01](01_requirements.md)〜[10](10_diagrams.md)
 
 > **3行で**
 > 1. Astro で作る日本語の静的 LP を、同じリポジトリの `site/` に置き、GitHub Actions で `https://itiwoja.github.io/DC-Designer/` に公開する。
@@ -9,9 +9,9 @@
 ## 🧭 判断してほしいこと
 | # | 種類 | 論点 | おすすめ | 詳細 |
 |---|---|---|---|---|
-| SITE-R-01 | リスク | `docs/code-signing-policy.md` のプライバシー節が古い（AI 送信の確認窓は撤去済み） | サイトに載せる前に正本を今の動きに直し、プライバシー節は `docs/privacy.md` へのリンクだけにする（SITE-D-30。本設計の範囲外） | [12](#12-リスクと対策) |
+| SITE-R-01 | リスク（解消済み） | `docs/code-signing-policy.md` のプライバシー節が古かった（確認窓は撤去済み、OpenRouter・Gemini も載っていた） | PR #44 で解消（`docs/privacy.md` を新設、SITE-D-30） | [12](#12-リスクと対策) |
 | SITE-R-02 | リスク | 未署名で SmartScreen の警告が出て離脱する | 手順と SHA-256 をボタン直下に出す | [04](04_functional_spec.md) |
-| SITE-R-03 | リスク | 機能紹介が exe 版と食い違う（Codex・ComfyUI は exe で無効など） | `exeAvailable` で出し分け、README の変更時に見直す | [08](08_database.md) |
+| SITE-R-03 | リスク | 機能紹介が exe 版と食い違う（exe では Codex・ComfyUI、画像生成、OpenRouter が無効など） | `exeAvailable` で出し分け、制限は `exeNote` でカードに出す。README の変更時に見直す | [08](08_database.md) |
 | SITE-R-04 | リスク | 配信 CI の名前を変えると自動連動が切れる | 名前を変えるときは `site.yml` も直す | [12](#12-リスクと対策) |
 | SITE-R-05 | リスク | 署名を始めるときに `signedSince` を書き忘れると、署名済みの版が「未署名」と出る | 署名つきの最初の版を出す手順に入れる | [12](#12-リスクと対策) |
 
@@ -61,7 +61,7 @@ SITE-SCR-001〜006（[06](06_ux_design.md)）。どの画面からも 1 クリ�
 ### 7. 非機能要件への対応方針
 | NFR | 実現手段 |
 |---|---|
-| SITE-NFR-001〜004 性能 | 静的生成・島はコピーボタンだけ・画像を AVIF/WebP に・動画は遅延読み込み |
+| SITE-NFR-001〜004 性能 | 静的生成・閲覧時の JS はコピーボタンの `<script>` 1 本だけ（島は使わない）・画像を AVIF/WebP に・動画は遅延読み込み |
 | SITE-NFR-009・010 反映 | `workflow_run`・push の paths で必要なときだけビルド |
 | SITE-NFR-012〜014 | セマンティックな HTML・コントラスト・360px から 1 列 |
 | SITE-NFR-015 コスト | GitHub Pages の無料枠 |
@@ -91,16 +91,16 @@ SITE-SCR-001〜006（[06](06_ux_design.md)）。どの画面からも 1 クリ�
 | レベル | 観点 |
 |---|---|
 | 単体 | 安定版の選び方（draft・prerelease の除外）、SHA256SUMS の解析（`*` 付き・空白 2 つの両方、不一致・形式不正）、署名判定（未署名の文言あり・なし × `signedSince` 未設定・より前・以上）、リンクの書き換え、無害化（`<script>`・`javascript:` が消える） |
-| ビルド | 媒体 `ready` でファイルが無いと失敗、`placeholder` は仮の画像で通る、content のスキーマ違反で失敗、出力の HTML にインラインの `<script>`・`<style>`・`style=` が無い（SITE-D-31） |
+| ビルド | 媒体 `ready` でファイルが無いと失敗、`placeholder` は仮の画像で通る、content のスキーマ違反で失敗、出力の HTML に `src` の無い `<script>`（`type` を問わない）・`<style>`・`style=` が無い（SITE-D-31）、ダウンロード URL の接頭辞とリリースノートの SHA-256 の照合（SITE-D-32） |
 | 表示 | 6 画面を 360px・1280px で撮って確認、Lighthouse・axe（SITE-NFR-001・012） |
 | 連動 | `workflow_dispatch` で版情報が最新の Release と一致すること、ポリシーの最終更新日がそのファイルの最終コミット日と一致すること |
 
 ### 12. リスクと対策
 | # | リスク | 対策 |
 |---|---|---|
-| SITE-R-01 | 署名ポリシーの正本のプライバシー節が「本人が確認した内容を送る」のまま。サイトに載せると今の動き（確認なしで送信）と食い違い、SignPath の審査者にも誤った説明になる | 公開前に `docs/code-signing-policy.md` を直す（アプリ側の文書なので本設計の範囲外）。そのときプライバシー節は `docs/privacy.md` へのリンクだけにする（SITE-D-30）。SITE-ADR-005（承認）によりサイトは正本を読むだけ |
+| SITE-R-01（解消済み） | 署名ポリシーの正本のプライバシー節が「本人が確認した内容を送る」のままで、Windows 版で使わない OpenRouter・Gemini も載っていた | PR #44 で解消。`docs/privacy.md` を正本にし、署名ポリシーは SignPath 向けの英文の要約とリンクだけにした（SITE-D-30）。SITE-ADR-005（承認）によりサイトは正本を読むだけ |
 | SITE-R-02 | 未署名で SmartScreen の警告 | SITE-FR-005 |
-| SITE-R-03 | 機能紹介と exe の差 | SITE-TBL-003 の `exeAvailable` |
+| SITE-R-03 | 機能紹介と exe の差 | SITE-TBL-003 の `exeAvailable`・`exeNote`。デモ動画も exe 版の範囲で撮る |
 | SITE-R-04 | 配信 CI の名前（`release-windows`）を変えると連動が切れる | ワークフロー名を変えるときは `site.yml` も直す取り決め（SITE-ADR-003） |
 | SITE-R-05 | 署名を始めるときに `signedSince` を書き忘れると、署名済みの版が「未署名」と出る（逆に「署名つき」と誤ることはない） | 署名つきの最初の版を出す手順に「`signedSince` を書く」を入れる（SITE-D-29） |
 

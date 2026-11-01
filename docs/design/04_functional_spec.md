@@ -1,5 +1,5 @@
 # 04. 機能仕様
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.3.1（2026-11-01） ／ インプット：[03_use_cases](03_use_cases.md)
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.4（2026-11-01） ／ インプット：[03_use_cases](03_use_cases.md)
 
 > **3行で**
 > 1. 機能は 10 件（SITE-FR-010 解析ビーコンは取り下げ）。閲覧時に動くのはコピーボタンだけで、ほかはすべて**ビルド時に HTML を生成**する。
@@ -63,8 +63,9 @@ flowchart TB
 
 ### <a id="site-fr-002"></a>SITE-FR-002：機能紹介 〔SITE-UC-001〕
 - 入力：機能（SITE-TBL-003）を `order` 順に、各機能の媒体（SITE-TBL-004）、デモ動画（SITE-TBL-004 の `demo`。機能カードの下に 1 本）
-- 処理：`exeAvailable: false` の機能は出さない。媒体の `status` が `ready` なら画像/動画、`placeholder` なら枠の寸法に合わせた共通の仮の画像（「画面は準備中」と入った、実際の画面と誤解されない画像。[06 媒体の枠](06_ux_design.md#媒体の枠)）を出す（ビルドは止めない）。素材が揃う前でも公開してよい（SITE-D-26）。動画は `muted` `loop` `playsinline`、`prefers-reduced-motion` のときは自動再生せずポスター画像を出す
+- 処理：`exeAvailable: false` の機能は出さない。`exeNote` があればカードに注記として出す（SITE-D-33）。媒体の `status` が `ready` なら画像/動画、`placeholder` なら枠の寸法に合わせた共通の仮の画像（「画面は準備中」と入った、実際の画面と誤解されない画像。[06 媒体の枠](06_ux_design.md#媒体の枠)）を出す（ビルドは止めない）。素材が揃う前でも公開してよい（SITE-D-26）。動画は `muted` `loop` `playsinline`、`prefers-reduced-motion` のときは自動再生せずポスター画像を出す
 - 初期の機能（`exeAvailable: true`）：AI でレイアウトを作る／レイヤーで編集できるエディタ／参考画像の再現／PowerPoint の読み込み・編集・書き出し（アニメーション・台本・発表者ビュー）／Instagram 投稿／PDF を開いて編集／SVG・PNG・PPTX・JSON の書き出し
+- 初期の注記（`exeNote`）：「AI でレイアウトを作る」「参考画像の再現」に「ChatGPT Plus / Pro などのサインインが必要です。Windows 版では写真・イラストは生成せず、仮の画像が入るので、自分の画像に差し替えてください」
 
 ### <a id="site-fr-003"></a>SITE-FR-003：動作要件 〔SITE-UC-001, SITE-UC-002〕
 | 項目 | 表示する内容 |
@@ -74,7 +75,7 @@ flowchart TB
 | 画像生成 | Windows 版では使えない（OpenAI・Gemini・ComfyUI・Codex を止めている。`server/imagegen.ts`）。画像の枠はダミー画像になる |
 | サインイン不要で使えるもの | 白紙からの手動編集・保存・書き出し |
 
-正本は SITE-TBL-007 の `requirements`。README と食い違ったら README（アプリ側）に合わせる。ただし README は開発版（`npm run dev`）の説明も含むので、Windows 版で使えるものだけを書く（製品版は `DC_DESIGNER_DESKTOP=1` で AI を ChatGPT プランに固定し、外への通信を `server/egress.ts` の許可表に限っている）。
+正本は SITE-TBL-007 の `requirements`。README と食い違ったら README（アプリ側）に合わせる。ただし README は開発版（`npm run dev`）の説明も含むので、Windows 版で使えるものだけを書く（製品版は `DC_DESIGNER_DESKTOP=1` で AI を ChatGPT プランに固定している。外への通信は、worker が `server/egress.ts` の許可表、画面が `desktop/appProtocol.ts` での遮断、更新確認が main プロセスの electron-updater〔GitHub Releases〕に分かれる）。
 
 ### <a id="site-fr-004"></a>SITE-FR-004：ダウンロード 〔SITE-UC-002〕
 - 入力：最新安定版（SITE-TBL-001）、exe の資産（SITE-TBL-002 `kind: installer`）
@@ -87,23 +88,24 @@ flowchart TB
 ### <a id="site-fr-005"></a>SITE-FR-005：SHA-256 と確認手順 〔SITE-UC-002〕
 - 出力：SHA-256（64 桁の小文字 16 進数、コピーボタンつき）と、照合のコマンド
   ```powershell
-  Get-FileHash .\DC-Designer-Setup-1.0.6.exe -Algorithm SHA256
+  Get-FileHash "$env:USERPROFILE\Downloads\DC-Designer-Setup-1.0.6.exe" -Algorithm SHA256
   ```
+- 「ダウンロード」フォルダーに保存した前提のコマンドなので、「保存先を変えた場合は、パスを直してください」と添える
 - 照合の注意：`Get-FileHash` は大文字で表示するので、「大文字・小文字は区別せずに見比べてください」と添える
 - 未署名のとき：SmartScreen の画面で「詳細情報」→「実行」と進める手順を、画像なしの番号付きリストで出す
 - 値が合わないとき：「実行しないで、GitHub Issues か SECURITY.md の窓口に知らせてください」
 - コピーボタンは閲覧時の小さなスクリプト（Clipboard API）。使えない環境では値を選択できる文字として出すだけ
 
 ### <a id="site-fr-006"></a>SITE-FR-006：更新履歴 〔SITE-UC-003〕
-- 入力：draft 以外の Release（SITE-API-001 で取れる直近 100 件まで。prerelease は「プレリリース」の札を付けて含める。100 件に届いたらページ送りを足す）
+- 入力：draft 以外の Release（SITE-API-001 で取れる直近 100 件まで。prerelease は「プレリリース」の札を付けて含める。100 件を超えたら古い方を捨てる。SITE-TBL-001 と同じ上限で、当面は届かない）
 - 処理：`body`（Markdown）を HTML に変換し、**生の HTML は捨てる**（許可するのは見出し・段落・リスト・リンク・強調・コード・引用だけ）。リンクは `https:` だけ残す。直近 10 版を開いた状態、それより古い版は `<details>` で畳む
 - 出力：版ごとに見出し（`v1.0.6`、アンカー `#v1-0-6`）・公開日・本文・GitHub の Release へのリンク
 
 ### <a id="site-fr-007"></a>SITE-FR-007：ポリシー 〔SITE-UC-004〕
-- 入力：`docs/privacy.md`（新設）・`docs/code-signing-policy.md`（既存）（SITE-TBL-005）
+- 入力：`docs/privacy.md`・`docs/code-signing-policy.md`（SITE-TBL-005）
 - 処理：Markdown を HTML にする。相対リンク（`./release-policy.md`、`../SECURITY.md` など）は `https://github.com/itiwoja/DC-Designer/blob/main/<path>` に書き換える。ただしサイトのページになっている文書（2 件）へのリンクはサイト内のページへ
-- `docs/privacy.md` に書くこと：Windows 版のアプリが送る先（AI 利用時の ChatGPT プラン〔OpenAI の `auth.openai.com`・`api.openai.com`〕、フォント取得の Google Fonts、更新確認の GitHub Releases。製品版の許可表 `server/egress.ts` と一致させる。OpenRouter・Gemini・画像生成は Windows 版では使わないので書かない）と、**AI の操作は追加の確認なしで送信する**こと（今の動き、SITE-D-12）。サイト自体は Cookie を使わず、所有者は解析もしない（閲覧数を数えない）こと（SITE-D-27）。ただし、サイトの配信（GitHub Pages）と exe のダウンロード（GitHub Releases）では、GitHub が閲覧者の IP アドレスなどを GitHub のプライバシー方針に従って記録すること（「何も記録されない」とは書かない）
-- 署名ポリシーの古い文面は SITE-R-01（[11_tech_spec](11_tech_spec.md#12-リスクと対策)）。直すときに `docs/code-signing-policy.md` のプライバシー節は `docs/privacy.md` へのリンクだけにし、プライバシーの正本を 1 つにする（SITE-D-30）
+- `docs/privacy.md` に書くこと：Windows 版のアプリが送る先（AI 利用時の ChatGPT プラン〔OpenAI の `auth.openai.com`・`api.openai.com`〕、フォント取得の Google Fonts、更新確認の GitHub Releases。worker の許可表 `server/egress.ts`〔AI・フォント〕と、main プロセスの electron-updater〔更新確認。起動のたびに自動で行う〕の両方に合わせる。OpenRouter・Gemini・画像生成は Windows 版では使わないので書かない）と、**AI の操作は追加の確認なしで送信する**こと（今の動き、SITE-D-12）。サイト自体は Cookie を使わず、所有者は解析もしない（閲覧数を数えない）こと（SITE-D-27）。ただし、サイトの配信（GitHub Pages）と exe のダウンロード（GitHub Releases）では、GitHub が閲覧者の IP アドレスなどを GitHub のプライバシー方針に従って記録すること（「何も記録されない」とは書かない）
+- 署名ポリシーの古い文面（SITE-R-01）は PR #44 で解消した。`docs/code-signing-policy.md` のプライバシー節は、SignPath 向けの英文の要約と `docs/privacy.md` へのリンクだけにし、プライバシーの正本を 1 つにする（SITE-D-30）
 
 ### <a id="site-fr-008"></a>SITE-FR-008：リリース情報取得 〔SITE-UC-005, SITE-UC-006〕
 - 処理：
@@ -112,12 +114,15 @@ flowchart TB
   3. 最新安定版の資産から `DC-Designer-Setup-<version>.exe`（installer）と `SHA256SUMS.txt`（checksums）を探す。`latest.yml` は使わない
   4. SITE-API-002 で `SHA256SUMS.txt` を取得し、exe のファイル名の行から値を取る（行の形は [SITE-API-002](09_api.md#site-api-002sha256sumstxt-の取得)。実物は `<64桁> *<ファイル名>`）
   5. 署名状況を判定する（リリースノートの文言の有無と `signedSince`、SITE-D-25・29）
+  6. 改ざん・取り違えの検査（SITE-D-32）：exe と `SHA256SUMS.txt` の `browserDownloadUrl` が `https://github.com/itiwoja/DC-Designer/releases/download/v{version}/` で始まること、`SHA256SUMS.txt` の値とリリースノートの `SHA-256: \`<64桁>\`` 行の値が一致することを確かめる
 - エラー（すべてビルド失敗。公開中のサイトは残る）：
 
 | 条件 | ビルドのメッセージ |
 |---|---|
 | API が 2xx 以外・通信失敗（再試行は 5xx と通信失敗だけ 3 回まで。403・429 などの 4xx はすぐ失敗。[SITE-API-001](09_api.md#site-api-001)） | `GitHub API の取得に失敗しました（HTTP {status}）` |
 | 安定版が 0 件 | `公開済みの安定版がありません` |
+| ダウンロード URL が想定の接頭辞で始まらない | `ダウンロード先が想定と違います（{url}）` |
+| リリースノートに `SHA-256:` 行が無い、または `SHA256SUMS.txt` の値と違う | `SHA-256 がリリースノートと一致しません` |
 | exe か SHA256SUMS.txt が無い | `v{version} に {name} がありません` |
 | SHA256SUMS.txt に exe の行が無い・64 桁の 16 進数でない | `v{version} の SHA-256 を読めません` |
 

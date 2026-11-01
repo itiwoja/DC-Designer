@@ -6,7 +6,7 @@
 コード署名ポリシーはすでに `docs/code-signing-policy.md` にあり、SignPath の審査ではサイトにも載せる必要がある。同じ文書を 2 か所に持つと食い違う。
 
 ## 決定
-`docs/code-signing-policy.md` と、新設する `docs/privacy.md` を正本にし、サイトはビルド時に読み込むだけにする。相対リンクは GitHub の URL に書き換える。
+`docs/code-signing-policy.md` と、`docs/privacy.md`（PR #44 で新設） を正本にし、サイトはビルド時に読み込むだけにする。相対リンクは GitHub の URL に書き換える。
 
 ## 代替案
 | 案 | 良い点 | 悪い点 | 不採用の理由 |

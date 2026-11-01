@@ -1,5 +1,5 @@
 # 06. 画面・UX設計
-- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.3（2026-11-01） ／ インプット：[04_functional_spec](04_functional_spec.md)
+- プロジェクト：DC-Designer 紹介サイト ／ 版数：v0.4（2026-11-01） ／ インプット：[04_functional_spec](04_functional_spec.md)
 
 > **3行で**
 > 1. 画面は 6 つ：トップ・ダウンロード・更新履歴・プライバシー・コード署名ポリシー・404。
@@ -88,7 +88,7 @@ flowchart LR
 | SmartScreen の警告が出たら 1.詳細情報 2.実行        |
 +--------------------------------------------------+
 | 本物か確かめる  SHA-256: 3f2a…  [コピー]           |
-|   Get-FileHash .\DC-Designer-Setup-1.0.6.exe …    |
+|   Get-FileHash "$env:USERPROFILE\Downloads\…" … |
 |   合わないときは実行せずに知らせてください          |
 +--------------------------------------------------+
 | 動作要件（SITE-FR-003）                            |
