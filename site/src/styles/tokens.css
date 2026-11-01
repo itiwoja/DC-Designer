@@ -116,6 +116,10 @@
   --btn-bg-hover: var(--color-action-hover);
   --btn-fg: var(--color-on-action);
   --btn-radius: var(--radius-button);
+  /* ヘッダーのすりガラス（UI-D-54） */
+  --header-bg: color-mix(in srgb, var(--color-surface) 60%, transparent);
+  --header-bg-solid: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  --header-blur: 12px;
   --card-bg: var(--color-surface);
   --card-border: var(--color-border);
   --card-radius: var(--radius-card);

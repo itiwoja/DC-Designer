@@ -13,6 +13,12 @@
 /* 背景のパーティクル（MOT-004）：帯いっぱいに敷く。重なりは 粒 < 文字・ボタン（クリックは通す）。
    帯の高さは ヘッダーを除いた画面いっぱい。文字の塊は帯の上下中央 */
 .hero-band { position: relative; overflow: clip; min-height: var(--hero-min-height); display: grid; align-items: center; }
+/* 帯をヘッダー（＋3 色の帯）の下まで潜らせ、すりガラス越しに粒が見えるようにする（UI-D-54）。文字の塊の位置は今のまま */
+.hero-band {
+  margin-top: calc(-1 * (var(--header-height) + var(--header-stripe)));
+  padding-top: calc(var(--header-height) + var(--header-stripe));
+  min-height: calc(var(--hero-min-height) + var(--header-height) + var(--header-stripe));
+}
 .hero-particles { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
 .hero-band .container { position: relative; z-index: 2; }
 .hero { padding-block: var(--space-7); }
