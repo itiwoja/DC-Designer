@@ -59,7 +59,8 @@ const footerItems = [
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta http-equiv="Content-Security-Policy" content={csp} />
+    {/* 開発サーバーは CSS を <style> で埋め込むので、CSP は本番のビルドだけに付ける */}
+    {import.meta.env.PROD && <meta http-equiv="Content-Security-Policy" content={csp} />}
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
