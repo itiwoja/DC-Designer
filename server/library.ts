@@ -102,7 +102,8 @@ type GeneratedFile = { name: string; src: string; size: number; mtime: string; u
 
 /** 生成・取り込み済みの画像と、それを使っているポスター。extraSpecs は保存前の編集中 spec など */
 export function listGenerated(extraSpecs: unknown[] = []): GeneratedFile[] {
-  const refs = listPosters().map((p) => ({ id: p.id, files: referencedFiles(p.spec) }));
+  // テンプレートだけが使っている画像も使用中として扱う（usedBy はテンプレートの id）
+  const refs = [...listPosters().map((p) => ({ id: p.id, files: referencedFiles(p.spec) })), ...templates.all().map((t) => ({ id: t.id, files: referencedFiles(t.specs) }))];
   const extra = referencedFiles(extraSpecs);
   return readdirSync(GENERATED_DIR)
     .filter((f) => !f.startsWith("."))
@@ -115,7 +116,7 @@ export function listGenerated(extraSpecs: unknown[] = []): GeneratedFile[] {
     .sort((a, b) => b.mtime.localeCompare(a.mtime));
 }
 
-/** 画像を削除する。どのポスターからも使われていないものだけ */
+/** 画像を削除する。どのポスター・テンプレートからも使われていないものだけ */
 export function deleteGenerated(names: string[], extraSpecs: unknown[] = []): string[] {
   const used = new Set(listGenerated(extraSpecs).filter((f) => f.usedBy.length).map((f) => f.name));
   const deleted: string[] = [];
@@ -229,4 +230,54 @@ export function removeDeckSlide(id: string, posterId: string): DeckView {
   d.slides = d.slides.filter((s) => s !== posterId);
   try { deletePoster(posterId); } catch { /* 既に無い */ }
   return saveDeck(d);
+}
+
+// ---------- テンプレート ----------
+// 保存したデザインのひな形。poster は 1 枚、slides はデッキ丸ごと（spec を並び順で持つ）。data/templates/<id>.json
+
+export type Template = { id: string; name: string; mode: "poster" | "slides"; createdAt: string; updatedAt: string; specs: PosterSpec[] };
+
+const templates = jsonStore<Template>(join(DATA_DIR, "templates"), "テンプレートが見つかりません");
+const NAME_MAX = 100;
+
+export const listTemplates = () => templates.all();
+
+/** 名前を整える。文字列で空でなければ trim して長さを切り、そうでなければ null */
+const cleanName = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim().slice(0, NAME_MAX) : null);
+
+/** 保存済みのポスター 1 枚（posterId）かデッキ丸ごと（deckId）からテンプレートを作る */
+export function createTemplate(body: { posterId?: unknown; deckId?: unknown; name?: unknown }): Template {
+  const hasPoster = body.posterId !== undefined && body.posterId !== null;
+  const hasDeck = body.deckId !== undefined && body.deckId !== null;
+  if (hasPoster === hasDeck) throw httpError(400, "posterId か deckId のどちらか一方が必要です");
+  let mode: Template["mode"];
+  let specs: PosterSpec[];
+  let fallback: string;
+  if (hasPoster) {
+    const p = posters.read(String(body.posterId));
+    mode = "poster"; specs = [p.spec]; fallback = p.spec.meta.title.trim() || "無題のテンプレート";
+  } else {
+    const d = viewDeck(decks.read(String(body.deckId)), true);
+    specs = d.slides.flatMap((s) => (s.spec ? [s.spec] : []));
+    if (!specs.length) throw httpError(400, "スライドがありません");
+    mode = "slides"; fallback = d.name.trim() || "無題のテンプレート";
+  }
+  const t = now();
+  return templates.write({ id: newId(), name: cleanName(body.name) ?? fallback.slice(0, NAME_MAX), mode, createdAt: t, updatedAt: t, specs });
+}
+
+export function renameTemplate(id: string, name: unknown): Template {
+  const n = cleanName(name);
+  if (!n) throw httpError(400, "名前を入力してください");
+  return templates.write({ ...templates.read(id), name: n, updatedAt: now() });
+}
+
+export const deleteTemplate = (id: string) => templates.remove(id);
+
+/** テンプレートから新しく作る（テンプレートは残る）。slides はデッキと 1 枚目のポスターも返す */
+export function useTemplate(id: string): { poster: SavedPoster; deck?: DeckView } {
+  const t = templates.read(id);
+  if (t.mode === "poster") return { poster: createPoster(t.specs[0]) };
+  const deck = createDeck(t.name, t.specs);
+  return { deck, poster: getPoster(deck.slides[0].id) };
 }

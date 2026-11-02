@@ -38,6 +38,12 @@ export type DeckSlide = { id: string; title: string; updatedAt: string; spec?: P
 export type DeckKind = "slides" | "instagram";
 export type Deck = { id: string; name: string; kind?: DeckKind; createdAt: string; updatedAt: string; slides: DeckSlide[] };
 
+/**
+ * テンプレート（よく使うデザイン）。mode: poster はポスター 1 枚（specs は 1 件）、slides はデッキ丸ごと（specs はスライドの並び順）。
+ * 保存先は data/templates/<id>.json。成果物（posters・decks）とは別に持つ
+ */
+export type Template = { id: string; name: string; mode: "poster" | "slides"; createdAt: string; updatedAt: string; specs: PosterSpec[] };
+
 /** スライド ID → それが入っているデッキ（プロジェクト） */
 export const deckBySlide = (decks: Deck[] | null) => new Map((decks ?? []).flatMap((d) => d.slides.map((s) => [s.id, d] as const)));
 
@@ -178,6 +184,14 @@ export const api = {
   updateDeck: (id: string, body: { name?: string; slides?: string[] }) => put<Deck>(`/api/decks/${id}`, body),
   addDeckSlide: (id: string, body: { spec?: PosterSpec; after?: string }) => post<{ deck: Deck; poster: SavedPoster }>(`/api/decks/${id}/slides`, body),
   removeDeckSlide: (id: string, posterId: string) => del<Deck>(`/api/decks/${id}/slides/${posterId}`),
+  // ---------- テンプレート（よく使うデザイン） ----------
+  templates: () => get<{ templates: Template[] }>("/api/templates"),
+  /** 保存済みのポスター 1 枚（posterId）か、デッキ丸ごと（deckId）をテンプレートにする。name が無ければ元のタイトル・デッキ名 */
+  createTemplate: (body: { posterId: string; name?: string } | { deckId: string; name?: string }) => post<Template>("/api/templates", body),
+  renameTemplate: (id: string, name: string) => put<Template>(`/api/templates/${id}`, { name }),
+  deleteTemplate: (id: string) => del<{ ok: true }>(`/api/templates/${id}`),
+  /** テンプレートから新しく作る。poster のテンプレートは poster だけ、slides のテンプレートは deck と 1 枚目の poster が返る */
+  useTemplate: (id: string) => post<{ poster: SavedPoster; deck?: Deck }>(`/api/templates/${id}/use`, {}),
   /** Blob（PPTX から取り出した画像など）を取り込む */
   uploadBlob: async (blob: Blob, mediaType: string) =>
     post<{ src: string }>("/api/upload", { mediaType, data: (await readDataUrl(blob)).split(",")[1] }),
