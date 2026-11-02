@@ -1,6 +1,7 @@
 import { api, type AIProvider, type Status } from "./api";
 import { DesktopAccountBar } from "./DesktopAccount";
 import { desktopBridge } from "./desktop";
+import { FeedbackButton } from "./FeedbackDialog";
 import { Menu } from "./ui";
 import { Ico } from "./uiIcons";
 
@@ -169,6 +170,7 @@ export function AccountBar({ status, imageChoices, imageProvider, onImageProvide
           </div>
         )}
       </Menu>
+      <FeedbackButton />
     </div>
   );
 }

@@ -328,11 +328,13 @@ function buildMenu(): void {
     ],
   };
   const menu: MenuItemConstructorOptions[] = [edit, view, fonts];
+  const help: MenuItemConstructorOptions[] = [{ label: "要望・不具合を送る…", click: () => { sendToEditor(IPC.feedbackOpen, null); } }];
   // 更新はインストール版だけ（開発中の electron . では確認しない）
   if (updates) {
     const u = updates;
-    menu.push({ label: "ヘルプ", submenu: [{ label: "更新を確認", click: () => { void u.check({ manual: true }); } }] });
+    help.push({ label: "更新を確認", click: () => { void u.check({ manual: true }); } });
   }
+  menu.push({ label: "ヘルプ", submenu: help });
   if (!app.isPackaged) menu.push({ label: "開発", submenu: [{ role: "toggleDevTools" }, { role: "reload" }] });
   Menu.setApplicationMenu(Menu.buildFromTemplate(menu));
 }

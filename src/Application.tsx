@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import { DesktopRuntime } from "./editor/DesktopRuntime";
+import { FeedbackMenuHost } from "./editor/FeedbackDialog";
 import { readModeParam } from "./editor/mode";
 import { ConfirmHost } from "./editor/ui";
 
@@ -22,6 +23,7 @@ export function Application({ params }: { params: URLSearchParams }) {
           : <Home mode={readModeParam() ?? undefined} />}
       </Suspense>
       {view !== "render" && <ConfirmHost />}
+      {view !== "render" && <FeedbackMenuHost />}
     </DesktopRuntime>
   );
 }

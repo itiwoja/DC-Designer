@@ -100,6 +100,11 @@ export type DesktopBridge = {
     /** 解除関数を返す */
     onStateChanged(cb: (s: UpdateSnapshot) => void): () => void;
   };
+  /** 要望・不具合のフォーム。メニュー「ヘルプ → 要望・不具合を送る…」で main が開く合図を送る */
+  feedback: {
+    /** 解除関数を返す */
+    onOpen(cb: () => void): () => void;
+  };
 };
 
 /** IPC channel 名（preload と main だけが使う） */
@@ -128,4 +133,6 @@ export const IPC = {
   progress: "dc:api-progress",
   /** 画面 → main：callId */
   cancel: "dc:api-cancel",
+  /** main → 画面：要望フォームを開く（値なし） */
+  feedbackOpen: "dc:feedback-open",
 } as const;

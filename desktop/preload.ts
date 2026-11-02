@@ -59,6 +59,9 @@ const bridge: DesktopBridge = {
     respond: (promptId, action) => ipcRenderer.invoke(IPC.updateRespond, promptId, action),
     onStateChanged: (cb) => subscribe<UpdateSnapshot>(IPC.updateState, cb),
   },
+  feedback: {
+    onOpen: (cb) => subscribe<unknown>(IPC.feedbackOpen, () => cb()),
+  },
 };
 
 contextBridge.exposeInMainWorld("dcDesktop", bridge);
