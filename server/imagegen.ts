@@ -487,28 +487,46 @@ function execCodex({ bin, args, spawnOptions, spawnHint, onStdout, signal }: Exe
 
 export const isFile = (p: string) => { try { return statSync(p).isFile(); } catch { return false; } };
 
-/** dir の下を深さ maxDepth まで探して、名前が name のファイルを返す */
-function findFile(dir: string, name: string, maxDepth: number): string | undefined {
+/** dir の下を深さ maxDepth まで探して、名前が name のファイルをすべて返す */
+function findFiles(dir: string, name: string, maxDepth: number, out: string[] = []): string[] {
   let entries;
-  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return undefined; }
-  for (const e of entries) if (e.isFile() && e.name.toLowerCase() === name) return join(dir, e.name);
-  if (maxDepth <= 0) return undefined;
-  for (const e of entries) {
-    if (!e.isDirectory()) continue;
-    const found = findFile(join(dir, e.name), name, maxDepth - 1);
-    if (found) return found;
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return out; }
+  for (const e of entries) if (e.isFile() && e.name.toLowerCase() === name) out.push(join(dir, e.name));
+  if (maxDepth > 0) for (const e of entries) if (e.isDirectory()) findFiles(join(dir, e.name), name, maxDepth - 1, out);
+  return out;
+}
+
+/** dir の下を深さ maxDepth まで探して、名前が name のファイルを返す（最初に見つかったもの） */
+function findFile(dir: string, name: string, maxDepth: number): string | undefined {
+  return findFiles(dir, name, maxDepth)[0];
+}
+
+/**
+ * dir の下を深さ maxDepth まで探して、名前が name のファイルのうち更新日時がいちばん新しいものを返す。
+ * Codex アプリの版のフォルダ名はハッシュで版を読めず、版を聞くには実行ファイルを起動する必要があるため、更新日時で選ぶ
+ */
+export function findNewestFile(dir: string, name: string, maxDepth: number): string | undefined {
+  let best: { path: string; mtime: number } | undefined;
+  for (const p of findFiles(dir, name, maxDepth)) {
+    let mtime;
+    try { mtime = statSync(p).mtimeMs; } catch { continue; }
+    if (!best || mtime > best.mtime) best = { path: p, mtime };
   }
+  return best?.path;
 }
 
 /** Codex の見つかった場所の種類：設定で指定／PATH・npm（利用者が入れた CLI）／Codex デスクトップアプリ同梱／このアプリが入れたもの */
 export type CodexSource = "configured" | "path" | "npm" | "codex-app" | "app";
 
-/** 探索に時間のかかる場所（npm のグローバル配置・Codex アプリ）の結果を覚えておく。見つけた場所が消えたら探し直す */
+/**
+ * 探索に時間のかかる場所（npm のグローバル配置・Codex アプリ）の結果を SCAN_TTL_MS のあいだ覚えておく。
+ * 見つけた場所が消えたらすぐ探し直す。見つかっていても期限が来たら探し直す（Codex アプリが新しい版を足したときに切り替えるため）
+ */
 const SCAN_TTL_MS = 30_000;
 const scanCache = new Map<string, { at: number; found?: string }>();
 function cachedScan(key: string, scan: () => string | undefined): string | undefined {
   const hit = scanCache.get(key);
-  if (hit && (hit.found ? isFile(hit.found) : Date.now() - hit.at < SCAN_TTL_MS)) return hit.found;
+  if (hit && Date.now() - hit.at < SCAN_TTL_MS && (!hit.found || isFile(hit.found))) return hit.found;
   const found = scan();
   scanCache.set(key, { at: Date.now(), found });
   return found;
@@ -531,8 +549,8 @@ export function locateCodexExe(): { path: string; source: CodexSource } | undefi
     // npm i -g @openai/codex の配置。.cmd シムや PowerShell は使わず、実体の codex.exe を探す
     const npm = appData && cachedScan(`npm:${appData}`, () => findFile(join(appData, "npm", "node_modules", "@openai", "codex"), name, 6));
     if (npm) return { path: npm, source: "npm" };
-    // Codex デスクトップアプリ同梱（%LOCALAPPDATA%\OpenAI\Codex\bin\<版>\codex.exe）
-    const codexApp = localAppData && cachedScan(`codex-app:${localAppData}`, () => findFile(join(localAppData, "OpenAI", "Codex", "bin"), name, 3));
+    // Codex デスクトップアプリ同梱（%LOCALAPPDATA%\OpenAI\Codex\bin\<版>\codex.exe）。古い版が残っていたら更新日時の新しいほう
+    const codexApp = localAppData && cachedScan(`codex-app:${localAppData}`, () => findNewestFile(join(localAppData, "OpenAI", "Codex", "bin"), name, 3));
     if (codexApp) return { path: codexApp, source: "codex-app" };
   }
   const own = appCodexExe();
