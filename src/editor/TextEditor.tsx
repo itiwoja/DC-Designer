@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useLayoutEffect, useRef, useState, type MouseEve
 import type { TextLayerT } from "../schema";
 import { resolveColor, resolveFont, type Theme } from "../themes";
 import { paintRange, rangeColor, withText } from "../textRuns";
+import { syntheticWeight } from "../fonts";
 
 /** SVG の font-weight 属性と同じく、範囲外の値は通常の太さとして扱う */
 const cssWeight = (w: number | undefined) => {
@@ -66,8 +67,9 @@ export function TextEditor({ layer, theme, svg, at, px, onChange, onDone }: {
 
   const size = layer.size ?? 32;
   const lh = layer.lineHeight ?? 1.25;
-  const fontFamily = resolveFont(layer.font, theme, cssWeight(layer.weight));
-  const fontWeight = cssWeight(layer.weight);
+  // 表示（TextBlock）と同じ face で打つ。足りない太さの線は字幅を変えないので、カーソル位置は face で合う
+  const fontWeight = syntheticWeight(theme.fonts[layer.font ?? "body"] ?? layer.font ?? theme.fonts.body, cssWeight(layer.weight)).face;
+  const fontFamily = resolveFont(layer.font, theme, fontWeight);
   // SVG は 1 行目のベースラインを size*0.88 に置く。CSS の行ボックスでのベースライン位置との差だけずらす
   const offset = (() => {
     const ctx = document.createElement("canvas").getContext("2d");
