@@ -182,6 +182,8 @@ export function App() {
   const clipboard = useRef<Layer[]>([]);
   /** AI の変更箇所を一瞬ハイライトする */
   const [flash, setFlash] = useState<string[]>([]);
+  /** AI が変えた・足したレイヤーを少しの間だけ光らせる */
+  const flashLayers = (ids: string[]) => { setFlash(ids); setTimeout(() => setFlash([]), 1800); };
   /** 画像生成中の "レイヤーID|パス" */
   const [generating, setGenerating] = useState<Set<string>>(new Set());
   const generatingIds = useMemo(() => new Set([...generating].map((k) => k.split("|")[0])), [generating]);
@@ -319,8 +321,7 @@ export function App() {
     const next = res.spec;
     const d = diffLayers(target, next);
     setSpec(next);
-    setFlash([...d.added, ...d.changed]);
-    setTimeout(() => setFlash([]), 1800);
+    flashLayers([...d.added, ...d.changed]);
     return res;
   };
 
@@ -443,6 +444,66 @@ export function App() {
   /** チャットで依頼する対象（未選択ならポスター全体） */
   const chatScope = selLayers.length ? (multi ? `${selLayers.length} 件のレイヤー` : layerName(selLayers[0])) : null;
   /**
+   * AI の修正（api.edit）の結果をデッキ・ポスターに当て、チャットの返答を作る。
+   * 別のスライドへの指示ならそのスライドを開いてから当て、ほかのスライドは開かずに書き換える。まとめ元のスライドは確認してから消す
+   */
+  const applyEditResult = async (res: Awaited<ReturnType<typeof api.edit>>, cur: PosterSpec, ctx: DeckEditContext | undefined, signal: AbortSignal): Promise<Omit<ChatMsg, "id" | "role">> => {
+    const next = res.spec;
+    if (!next) return { text: res.reply || "変更はありませんでした" };
+    // 別のスライドを書き換える指示なら、そのスライドを開いてから適用する（履歴に積まれるので Ctrl+Z / 元に戻す が効く）
+    const target = ctx && res.target && res.target !== ctx.current ? deck?.slides[res.target - 1] : undefined;
+    // 「3枚目と5枚目を直して」: 開いていないほかのスライドは、開かずに書き換えて裏で保存する
+    const others = (res.others ?? []).flatMap((e) => {
+      const slide = deck?.slides[e.target - 1];
+      const old = slide && slide.id !== (target?.id ?? posterIdRef.current) ? specOf(slide.id) : undefined;
+      return slide && old && diffLayers(old, e.spec).hasChanges ? [{ n: e.target, posterId: slide.id, before: old, spec: e.spec }] : [];
+    });
+    let before = cur;
+    if (target) {
+      if (signal.aborted) throw new Error("aborted");
+      before = await openSlide(target.id);
+    }
+    for (const o of others) updateSlide(o.posterId, o.spec);
+    const d = diffLayers(before, next);
+    if (!d.hasChanges && !others.length) {
+      return { text: res.reply ? `${res.reply}\n（ポスターに変更はありませんでした。もう少し具体的に指示してみてください）` : "変更はありませんでした。指示をもう少し具体的にしてみてください" };
+    }
+    if (d.hasChanges) {
+      setSpec(next);
+      flashLayers([...d.added, ...d.changed]);
+    }
+    const parts = [d.changed.length && `${d.changed.length} 件変更`, d.added.length && `${d.added.length} 件追加`, d.removed && `${d.removed} 件削除`, d.themeChanged && "テーマ変更", d.metaChanged && "ポスター設定変更", d.reordered && "重ね順変更", d.notesChanged && "台本変更", d.transitionChanged && "画面切り替え変更"].filter(Boolean);
+    if ((d.notesChanged || others.some((o) => o.before.notes !== o.spec.notes)) && isSlides) toggleNotes(true);
+    const main = d.hasChanges ? `${target || others.length ? `スライド ${res.target ?? ctx?.current}: ` : ""}${parts.join("・") || "変更"}` : "";
+    const changes = [main, others.length && `スライド ${others.map((o) => o.n).join("・")} も変更`].filter(Boolean).join("・");
+    const reply = { text: res.reply || "修正しました", changes, before, posterId: posterIdRef.current, ...(others.length ? { others: others.map(({ posterId, before }) => ({ posterId, before })) } : {}) };
+    // 「スライド18,19を1枚にまとめて」: まとめ元のスライドを、確認してから削除する
+    const merged = (res.remove ?? []).map((n) => ({ n, slide: deck?.slides[n - 1] })).filter((r) => r.slide && r.slide.id !== posterIdRef.current);
+    if (merged.length) {
+      const nums = merged.map((r) => r.n).join("・");
+      const ok = await ask({
+        title: `スライド ${nums} を削除しますか？`,
+        message: `内容をスライド ${res.target ?? ctx?.current} にまとめました。まとめ元の${merged.map((r) => `「${r.slide!.title}」`).join("")}を削除します。この操作は取り消せません（残しておく場合は「キャンセル」）。`,
+        ok: "削除", danger: true,
+      });
+      if (ok) {
+        await deleteSlides(merged.map((r) => r.slide!.id));
+        reply.changes += `・スライド ${nums} を削除`;
+      }
+    }
+    if (autoImages && others.some((o) => findPendingAssets(o.spec).length)) {
+      chat.push({ role: "assistant", ...reply });
+      await generateAcross([posterIdRef.current!, ...others.map((o) => o.posterId)], signal);
+      return { text: "画像も生成しました" };
+    }
+    if (autoImages && findPendingAssets(next).length) {
+      chat.push({ role: "assistant", ...reply });
+      await generatePending(next, signal);
+      return { text: "画像も生成しました" };
+    }
+    return reply;
+  };
+  /**
    * 入力欄の文を送る（送ったら空にし、失敗したら戻す）。
    * regen: 履歴の発言への返答の作り直し。入力欄には触らず、base（AI が変更する前の spec）から考え直させる
    */
@@ -497,61 +558,7 @@ export function App() {
       const ctx = await deckEditContext(text);
       const res = await api.edit(cur, requestText, ids, signal, ctx, context, undefined, references, workSubject(deck, posterIdRef.current, cur.meta.title));
       if (changed()) throw new Error(WORK_CHANGED_MESSAGE);
-      const next = res.spec;
-      if (!next) return { text: res.reply || "変更はありませんでした" };
-      // 別のスライドを書き換える指示なら、そのスライドを開いてから適用する（履歴に積まれるので Ctrl+Z / 元に戻す が効く）
-      const target = ctx && res.target && res.target !== ctx.current ? deck?.slides[res.target - 1] : undefined;
-      // 「3枚目と5枚目を直して」: 開いていないほかのスライドは、開かずに書き換えて裏で保存する
-      const others = (res.others ?? []).flatMap((e) => {
-        const slide = deck?.slides[e.target - 1];
-        const old = slide && slide.id !== (target?.id ?? posterIdRef.current) ? specOf(slide.id) : undefined;
-        return slide && old && diffLayers(old, e.spec).hasChanges ? [{ n: e.target, posterId: slide.id, before: old, spec: e.spec }] : [];
-      });
-      let before = cur;
-      if (target) {
-        if (signal.aborted) throw new Error("aborted");
-        before = await openSlide(target.id);
-      }
-      for (const o of others) updateSlide(o.posterId, o.spec);
-      const d = diffLayers(before, next);
-      if (!d.hasChanges && !others.length) {
-        return { text: res.reply ? `${res.reply}\n（ポスターに変更はありませんでした。もう少し具体的に指示してみてください）` : "変更はありませんでした。指示をもう少し具体的にしてみてください" };
-      }
-      if (d.hasChanges) {
-        setSpec(next);
-        setFlash([...d.added, ...d.changed]);
-        setTimeout(() => setFlash([]), 1800);
-      }
-      const parts = [d.changed.length && `${d.changed.length} 件変更`, d.added.length && `${d.added.length} 件追加`, d.removed && `${d.removed} 件削除`, d.themeChanged && "テーマ変更", d.metaChanged && "ポスター設定変更", d.reordered && "重ね順変更", d.notesChanged && "台本変更", d.transitionChanged && "画面切り替え変更"].filter(Boolean);
-      if ((d.notesChanged || others.some((o) => o.before.notes !== o.spec.notes)) && isSlides) toggleNotes(true);
-      const main = d.hasChanges ? `${target || others.length ? `スライド ${res.target ?? ctx?.current}: ` : ""}${parts.join("・") || "変更"}` : "";
-      const changes = [main, others.length && `スライド ${others.map((o) => o.n).join("・")} も変更`].filter(Boolean).join("・");
-      const reply = { text: res.reply || "修正しました", changes, before, posterId: posterIdRef.current, ...(others.length ? { others: others.map(({ posterId, before }) => ({ posterId, before })) } : {}) };
-      // 「スライド18,19を1枚にまとめて」: まとめ元のスライドを、確認してから削除する
-      const merged = (res.remove ?? []).map((n) => ({ n, slide: deck?.slides[n - 1] })).filter((r) => r.slide && r.slide.id !== posterIdRef.current);
-      if (merged.length) {
-        const nums = merged.map((r) => r.n).join("・");
-        const ok = await ask({
-          title: `スライド ${nums} を削除しますか？`,
-          message: `内容をスライド ${res.target ?? ctx?.current} にまとめました。まとめ元の${merged.map((r) => `「${r.slide!.title}」`).join("")}を削除します。この操作は取り消せません（残しておく場合は「キャンセル」）。`,
-          ok: "削除", danger: true,
-        });
-        if (ok) {
-          await deleteSlides(merged.map((r) => r.slide!.id));
-          reply.changes += `・スライド ${nums} を削除`;
-        }
-      }
-      if (autoImages && others.some((o) => findPendingAssets(o.spec).length)) {
-        chat.push({ role: "assistant", ...reply });
-        await generateAcross([posterIdRef.current!, ...others.map((o) => o.posterId)], signal);
-        return { text: "画像も生成しました" };
-      }
-      if (autoImages && findPendingAssets(next).length) {
-        chat.push({ role: "assistant", ...reply });
-        await generatePending(next, signal);
-        return { text: "画像も生成しました" };
-      }
-      return reply;
+      return applyEditResult(res, cur, ctx, signal);
     });
   };
   /** / コマンドの実行（restore は失敗したときに入力欄へ元の文を戻す。regen は作り直す発言） */
@@ -613,8 +620,7 @@ export function App() {
     const d = diffLayers(before, next);
     if (!d.hasChanges) return { text: left.length ? `変更はありませんでした。${rest}` : "すでに A4 に整っています" };
     setSpec(next);
-    setFlash([...d.added, ...d.changed]);
-    setTimeout(() => setFlash([]), 1800);
+    flashLayers([...d.added, ...d.changed]);
     const parts = [d.metaChanged && "用紙を A4 に", d.changed.length && `${d.changed.length} 件変更`, d.added.length && `${d.added.length} 件追加`, d.removed && `${d.removed} 件削除`].filter(Boolean);
     return { text: [reply, ...done, rest].filter(Boolean).join("\n"), changes: parts.join("・") || "変更", before, posterId: posterIdRef.current };
   };
