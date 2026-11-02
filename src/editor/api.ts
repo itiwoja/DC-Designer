@@ -54,7 +54,7 @@ export type ChatContext = { memory?: string; history: ChatTurn[] };
 
 /** AI 修正の資料全体のスライド（番号は 1 始まり） */
 /** spec があるスライドは書き換え・統合の対象、texts だけのスライドは参考（文字の要約） */
-export type DeckEditContext = { current: number; total: number; slides: { number: number; title?: string; spec?: PosterSpec; texts?: string[]; notes?: string }[]; /** スライド一覧で複数選択中のスライド番号 */ selected?: number[] };
+export type DeckEditContext = { current: number; total: number; slides: { number: number; title?: string; spec?: PosterSpec; texts?: string[]; notes?: string; /** texts だけのスライドの配色: テーマ名と、よく使われている色（多い順） */ theme?: string; colors?: string[] }[]; /** スライド一覧で複数選択中のスライド番号 */ selected?: number[] };
 /** 編集後のデッキの並びの 1 枠。数値 = 元のスライド番号（1 始まり。2 回目以降は複製）、{ spec } = 新しく作るスライド */
 export type DeckSlot = number | { spec: PosterSpec };
 

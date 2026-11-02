@@ -35,6 +35,7 @@ import { openPresenterWindow } from "./PresenterView";
 import { HOME_URL, IMPORT_NOTICE_KEY, loadInitialSpec, PENDING_BRIEF_KEY } from "./nav";
 import { modeHomeUrl, modeLibraryUrl, modeOfDeck, MODES, readModeParam, writeLastId, type AppMode } from "./mode";
 import { slideRefs } from "./slideRefs";
+import { slidePalette } from "./slidePalette";
 import { routeChatRequest } from "./chatRoute";
 import { slashSuggestions, SlashMenu, type SlashCommand } from "./slashCommands";
 import {
@@ -421,7 +422,7 @@ export function App() {
   const workRefs = () => [posterIdRef.current, ...(deck ? deck.slides.map((s) => specOf(s.id)) : [specOf(posterIdRef.current ?? "")])];
   /**
    * 資料全体を把握できるよう、PPTX の全スライドを渡す。現在のスライドは api.edit の spec に含まれる。
-   * 言及したスライドは spec 全体（書き換えや統合の対象になる）、それ以外は文字と台本だけ（参考）にして、枚数が多くても AI の入力を抑える
+   * 言及したスライドは spec 全体（書き換えや統合の対象になる）、それ以外は文字・台本・配色だけ（参考）にして、枚数が多くても AI の入力を抑える
    */
   const deckEditContext = async (text: string): Promise<DeckEditContext | undefined> => {
     if (!deck) return undefined;
@@ -434,7 +435,7 @@ export function App() {
     const slides = await Promise.all(deck.slides.flatMap((s, i) => i + 1 === current ? [] : [{ slide: s, number: i + 1 }]).map(async ({ slide, number }) => {
       const spec = (await api.poster(slide.id)).spec;
       const notes = spec.notes?.trim().slice(0, 300);
-      return full.has(number) ? { number, title: slide.title, spec } : { number, title: slide.title, texts: slideContent(spec).texts.map((t) => t.slice(0, 120)), ...(notes ? { notes } : {}) };
+      return full.has(number) ? { number, title: slide.title, spec } : { number, title: slide.title, theme: spec.theme, colors: slidePalette(spec), texts: slideContent(spec).texts.map((t) => t.slice(0, 120)), ...(notes ? { notes } : {}) };
     }));
     return { current, total: deck.slides.length, slides, ...(selected.length ? { selected } : {}) };
   };
