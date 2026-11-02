@@ -57,7 +57,7 @@ type ごとのフィールド:
 - "text": { text(改行は\\n), font: ${themeTokens.fonts}, size, weight(400-900), lineHeight?, letterSpacing?(em),
             align: "left"|"center"|"right", fill: Paint,
             colorRuns?: [{start, end, color}](一部の文字だけ色を変える。text の文字位置 [start,end)。改行も 1 文字。範囲外は fill), outlines?: [{color, width}](外側から。ステッカー風縁取り),
-            skewX?(斜体風), fit?: "shrink"(枠からはみ出す場合に縮小。長い見出しには必ず付ける) }
+            skewX?(斜体風), underline?: true(下線), fit?: "shrink"(枠からはみ出す場合に縮小。長い見出しには必ず付ける) }
 - "image": { src?: 保存済み画像URL, asset?: { prompt(英語), transparent?(切り抜き素材ならtrue), aspect: "square"|"portrait"|"landscape", style? }, fit: "cover"|"contain", radius?, blur? }
 - "component": { component: 名前, props: {...} }   ※下記カタログ
 - "group": { children: Layer[] }  ※子の座標はグループ原点からの相対
