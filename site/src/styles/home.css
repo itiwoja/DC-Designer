@@ -98,7 +98,7 @@
   .cta-band__title { flex: 1; }
 }
 
-/* ---------- SEC-001-07 DC-Designer とは（3 ステップ） ---------- */
+/* ---------- SEC-001-07 使い方（3 ステップ） ---------- */
 .steps { list-style: none; margin: var(--space-6) 0 0; padding: 0; display: grid; gap: var(--space-5); }
 .step {
   background: var(--card-bg); border: var(--border-width) solid var(--card-border); border-radius: var(--card-radius);
