@@ -22,6 +22,8 @@ export interface TextBlockProps {
   colorRuns?: ColorRun[];
   outlines?: { color: string; width: number }[];
   skewX?: number;
+  /** 下線 */
+  underline?: boolean;
   fit?: "none" | "shrink";
 }
 
@@ -80,7 +82,7 @@ export function TextBlock(p: TextBlockProps) {
     letterSpacing: p.letterSpacing ? `${p.letterSpacing}em` : undefined,
     // 太さを持たないフォント（Dela Gothic One は 400 だけ）に 900 などを指定されても、ブラウザに偽の太字を作らせない。
     // 偽の太字は字の中がつぶれ、縁取りと重なると読めなくなる。足りない太さは上の線（sw）で補う
-    style: { whiteSpace: "pre" as const, fontSynthesisWeight: "none" as const },
+    style: { whiteSpace: "pre" as const, fontSynthesisWeight: "none" as const, ...(p.underline ? { textDecoration: "underline" } : {}) },
   };
 
   const transform = [

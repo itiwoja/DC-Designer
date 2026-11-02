@@ -228,7 +228,7 @@ async function addPosterSlide(pptx: PptxGenJS, svg: SVGSVGElement, spec: PosterS
         : l.text;
       slide.addText(content, {
         x: inch(l.x), y: inch(l.y), w: inch(l.w), h: inch(l.h),
-        fontFace: face, fontSize: pt, bold,
+        fontFace: face, fontSize: pt, bold, ...(l.underline ? { underline: { style: "sng" as const } } : {}),
         color, transparency, align: l.align, valign: "top", margin: 0, rotate: l.rotation ?? 0,
         // エディタは改行の位置でしか折り返さないので、PowerPoint でも折り返さない（文字幅の違いで行が増えて崩れるのを防ぐ）
         wrap: false,
