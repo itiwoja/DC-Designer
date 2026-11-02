@@ -73,7 +73,9 @@ export function TextBlock(p: TextBlockProps) {
     fontWeight: p.weight ?? 700,
     textAnchor: anchor,
     letterSpacing: p.letterSpacing ? `${p.letterSpacing}em` : undefined,
-    style: { whiteSpace: "pre" as const },
+    // 太さを持たないフォント（Dela Gothic One は 400 だけ）に 900 などを指定されても、ブラウザに偽の太字を作らせない。
+    // 偽の太字は字の中がつぶれ、縁取りと重なると読めなくなる。太さを持つ代わりのフォントの字はそのまま太く出る
+    style: { whiteSpace: "pre" as const, fontSynthesisWeight: "none" as const },
   };
 
   const transform = [
