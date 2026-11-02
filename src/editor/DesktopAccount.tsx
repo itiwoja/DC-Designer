@@ -4,6 +4,7 @@ import { api, type Status } from "./api";
 import { codexJobLabel, codexSetup, describeCodexJob, useCodexAfterSignIn, useCodexSetup } from "./codexSetup";
 import { DESKTOP_ACCOUNT_CHANGED, DESKTOP_SIGN_IN_STARTED, deriveDesktopAccountView, describeDesktopAccount, isChatGPTReauthRequired, isDesktopSigningIn, runDesktopSignIn } from "./accountView";
 import { Menu } from "./ui";
+import { FeedbackButton } from "./FeedbackDialog";
 import { Ico } from "./uiIcons";
 
 /** ブラウザでのサインインを待っているあいだ true（どの画面から始めたサインインでも） */
@@ -238,6 +239,7 @@ export function DesktopAccountBar({ bridge, status, onSignOut, imageChoices = []
           </div>
         )}
       </Menu>
+      <FeedbackButton />
     </div>
   );
 }

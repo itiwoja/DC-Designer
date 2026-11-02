@@ -960,3 +960,10 @@ button.primary.danger, button.primary.danger:hover:not(:disabled) { background: 
   border: 2px dashed var(--sel-line); background: var(--panel); color: var(--sel-line);
   font: 800 18px/1.3 "M PLUS Rounded 1c", sans-serif; box-shadow: var(--shadow-pop);
 }
+
+/* 要望・不具合を送るフォーム */
+.modal.feedback-dialog { max-width: 480px; }
+.feedback-kinds { display: flex; gap: 14px; margin-bottom: 10px; font-size: 13px; }
+.feedback-field { display: block; margin-bottom: 10px; font-size: 12.5px; }
+.feedback-field input, .feedback-field textarea { display: block; width: 100%; margin-top: 4px; }
+.feedback-check { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 13px; }
