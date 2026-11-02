@@ -3,7 +3,7 @@ import { importPptx } from "../import/pptx";
 import { importPdf } from "../import/pdf";
 import { PDF_FILE_ACCEPT } from "../import/pdfDocument";
 import { findPendingAssets } from "../schema";
-import { api, AUTH_CHANNEL, deckBySlide, type Deck, type SavedPoster, type Status } from "./api";
+import { api, AUTH_CHANNEL, deckBySlide, type Deck, type SavedPoster, type Status, type Template } from "./api";
 import type { DesktopResult } from "../../desktop/bridge";
 import { DESKTOP_ACCOUNT_CHANGED, isSignInCancelled, signInOutcome } from "./accountView";
 import { useDesktopSigningIn } from "./DesktopAccount";
@@ -11,7 +11,7 @@ import { codexJobLabel, codexSetup, describeCodexJob, useCodexAfterSignIn, useCo
 import { desktopBridge, useDesktopVersion } from "./desktop";
 import { BLANK_SLIDE_SPEC, BLANK_SPEC, IMPORT_NOTICE_KEY, HOME_URL, openDeckInEditor, openInEditor } from "./nav";
 import { isShownDeck, MODE_KEYS, MODES, modeHomeUrl, modeLibraryUrl, modeOfDeck, readLastId, type AppMode } from "./mode";
-import { PosterFrame, ThemeMenu, useLoadWithRetry } from "./ui";
+import { ask, PosterFrame, SpecFrame, ThemeMenu, useLoadWithRetry } from "./ui";
 import { PPTX_ACCEPT } from "./specOps";
 import { Ico } from "./uiIcons";
 import { useSignInWatch } from "./useChatGPTAuth";
@@ -46,6 +46,9 @@ export function Home({ mode }: { mode?: AppMode }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [posters, setPosters] = useState<SavedPoster[] | null>(null);
   const [decks, setDecks] = useState<Deck[] | null>(null);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  /** 名前を変えているテンプレートの id */
+  const [renamingTpl, setRenamingTpl] = useState<string | null>(null);
   const [apiError, setApiError] = useState(false);
   const [busy, setBusy] = useState<{ label: string; progress?: [number, number] } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -59,6 +62,8 @@ export function Home({ mode }: { mode?: AppMode }) {
     setStatus(st);
     setPosters(p.posters);
     setDecks(d.decks);
+    // テンプレートが取れなくても（API が古いなど）ホームの他の部分は出す
+    setTemplates((await api.templates().catch(() => ({ templates: [] as Template[] }))).templates);
     setApiError(false);
   }, []);
   const reload = useLoadWithRetry(load, () => setApiError(true));
@@ -114,6 +119,9 @@ export function Home({ mode }: { mode?: AppMode }) {
     }
     return items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }, [posters, decks, mode, posterById, deckOfSlide]);
+
+  /** そのモードのテンプレートだけ（API は更新が新しい順で返す） */
+  const modeTemplates = useMemo(() => templates.filter((t) => t.mode === mode), [templates, mode]);
 
   /** モード選択画面に出す、モードごとの成果物数 */
   const counts = useMemo<Record<AppMode, number> | null>(() => {
@@ -188,6 +196,29 @@ export function Home({ mode }: { mode?: AppMode }) {
       <span className="drop-veil-box"><Ico name="folder" size={28} />{dropLabel}</span>
     </div>
   );
+  const startFromTemplate = (t: Template) => act("テンプレートから作成中", async () => {
+    const res = await api.useTemplate(t.id);
+    openInEditor(res.poster, t.mode);
+  });
+  const removeTemplate = async (t: Template) => {
+    if (busy) return;
+    if (!await ask({ title: "テンプレートを削除しますか？", message: `「${t.name}」を削除します。この操作は取り消せません（このテンプレートから作った${MODES[t.mode].item}は残ります）。`, ok: "削除", danger: true })) return;
+    setError(null);
+    try {
+      await api.deleteTemplate(t.id);
+      setTemplates((await api.templates()).templates);
+    } catch (e) { setError((e as Error).message); }
+  };
+  /** テンプレートの名前を変える（空・変わらないときは何もしない） */
+  const renameTemplate = async (t: Template, name: string) => {
+    setRenamingTpl(null);
+    if (!name.trim() || name.trim() === t.name) return;
+    setError(null);
+    try {
+      const u = await api.renameTemplate(t.id, name.trim());
+      setTemplates((ts) => ts.map((x) => (x.id === u.id ? u : x)));
+    } catch (e) { setError((e as Error).message); }
+  };
   const openRecent = (r: Recent) => {
     if (r.kind === "poster") openInEditor(r.poster, "poster");
     else openDeckInEditor(r.deck, posterById);
@@ -324,28 +355,66 @@ export function Home({ mode }: { mode?: AppMode }) {
 
       <main className="home-main">
         <h2 className="home-hero">{info.label}を作る</h2>
-        {mode === "poster" && (
-          <section className="home-starts" aria-label="新しく作る">
-            <button className="home-start" disabled={!!busy} onClick={startBlank}>
-              <span className="start-ico"><Ico name="file" size={22} /></span><strong>A4 でスタート</strong><small>白紙の A4 縦（1000×1414）ポスター</small>
+        {/* 白紙とテンプレートを 1 本の帯に横並びにする（Canva のホームのように、作り始めの候補をまとめて見せる） */}
+        <section className="home-create" aria-label="新しく作る">
+          <div className="home-create-head">
+            <h2>新しく作る</h2>
+            <small>白紙か、保存したテンプレートから始めます</small>
+          </div>
+          <ul className="home-carousel">
+            <li>
+              <button className="home-card home-blank-card" disabled={!!busy} onClick={mode === "poster" ? startBlank : startBlankDeck} title={mode === "poster" ? "白紙の A4 縦（1000×1414）ポスター" : "白紙の 16:9 スライド 1 枚から始める"}>
+                <span className="home-thumb-wrap">
+                  <span className="home-blank-sheet" style={{ aspectRatio: mode === "poster" ? "1000 / 1414" : "16 / 9", height: `min(100%, calc(100cqw * ${mode === "poster" ? 1414 / 1000 : 9 / 16}))` }}><Ico name="plus" size={26} /></span>
+                </span>
+                <strong className="lib-title">{mode === "poster" ? "A4 でスタート" : "0 から作る"}</strong>
+                <small>{mode === "poster" ? "白紙の A4 縦" : "白紙の 16:9"}</small>
+              </button>
+            </li>
+              {modeTemplates.map((t) => {
+                const first = t.specs[0];
+                return (
+                  <li key={t.id} className="home-template">
+                    <button className="home-card home-template-card" disabled={!!busy || !first} onClick={() => startFromTemplate(t)} title="このテンプレートから新しく作る">
+                      <span className="home-thumb-wrap">
+                        <span className="lib-thumb home-thumb" style={{ aspectRatio: `${first?.meta.width ?? 1000} / ${first?.meta.height ?? 1414}`, height: `min(100%, calc(100cqw * ${(first?.meta.height ?? 1414) / (first?.meta.width ?? 1000)}))` }}>
+                          {first && <SpecFrame spec={first} />}
+                        </span>
+                        <span className="home-template-tag"><Ico name="copy" size={11} />テンプレート{t.mode === "slides" && `・${t.specs.length} 枚`}</span>
+                      </span>
+                      <strong className="lib-title">{t.mode === "slides" && <Ico name="slides" size={13} />}{t.name}</strong>
+                      <small className="home-template-cta"><Ico name="plus" size={12} />このデザインで作る</small>
+                    </button>
+                    {renamingTpl === t.id ? (
+                      <input
+                        className="home-template-name" autoFocus defaultValue={t.name} maxLength={100} aria-label="テンプレートの名前"
+                        onBlur={(e) => renameTemplate(t, e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setRenamingTpl(null); }}
+                      />
+                    ) : (
+                      <button className="small home-template-rename" disabled={!!busy} onClick={() => setRenamingTpl(t.id)} aria-label={`テンプレート「${t.name}」の名前を変更`}>名前変更</button>
+                    )}
+                    <button className="small home-template-del" disabled={!!busy} onClick={() => removeTemplate(t)} title="テンプレートを削除" aria-label={`テンプレート「${t.name}」を削除`}>×</button>
+                  </li>
+                );
+              })}
+          </ul>
+          {modeTemplates.length === 0 && <p className="home-create-hint">成果物やエディタのメニューから「テンプレートとして保存」すると、ここに並んで同じデザインで始められます。</p>}
+        </section>
+
+        <section className="home-starts home-opens" aria-label="ファイルから始める">
+          {mode === "poster" ? (<>
+            <button className="home-start" disabled={!!busy} onClick={() => pdfInput.current?.click()}>
+              <span className="start-ico alt"><Ico name="folder" size={22} /></span><strong>PDFを開いて編集</strong><small>文字・枠・画像を部品として編集（20MB・20ページまで・ここにドロップしてもよい）</small>
             </button>
-          <button className="home-start" disabled={!!busy} onClick={() => pdfInput.current?.click()}>
-            <span className="start-ico alt"><Ico name="folder" size={22} /></span><strong>PDFを開いて編集</strong><small>文字・枠・画像を部品として編集（20MB・20ページまで・ここにドロップしてもよい）</small>
-          </button>
-          <input ref={pdfInput} type="file" accept={PDF_FILE_ACCEPT} aria-label="編集するPDF" hidden disabled={!!busy} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) openPdf(f); }} />
-          </section>
-        )}
-        {mode === "slides" && (
-          <section className="home-starts" aria-label="新しく作る">
-            <button className="home-start" disabled={!!busy} onClick={startBlankDeck}>
-              <span className="start-ico alt"><Ico name="file" size={22} /></span><strong>0 から作る</strong><small>白紙の 16:9 スライド 1 枚から始める</small>
-            </button>
+            <input ref={pdfInput} type="file" accept={PDF_FILE_ACCEPT} aria-label="編集するPDF" hidden disabled={!!busy} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) openPdf(f); }} />
+          </>) : (
             <label className={`home-start${busy ? " disabled" : ""}`}>
               <span className="start-ico alt"><Ico name="folder" size={22} /></span><strong>PowerPoint（.pptx）を開く</strong><small>既存のファイルを読み込む（ここにドロップしてもよい）</small>
               <input type="file" accept={PPTX_ACCEPT} hidden disabled={!!busy} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) openPptx(f); }} />
             </label>
-          </section>
-        )}
+          )}
+        </section>
 
         {current && (
           <section className="home-section">
