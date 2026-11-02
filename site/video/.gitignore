@@ -1,0 +1,4 @@
+node_modules/
+out/
+# フォントは scripts/fetch-fonts.sh で取る（ライセンス文の OFL-*.txt はリポジトリに入れる）
+public/fonts/*.ttf

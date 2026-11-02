@@ -2,32 +2,37 @@
   {
     "id": "hero",
     "type": "image",
-    "status": "placeholder",
-    "alt": "アプリの画面の画像は準備中です"
+    "status": "ready",
+    "alt": "「ポスターもスライドも、AIの下書きから。レイヤーで、自分の手で仕上げる。」の文字と、DC-Designer で作った作例（架空のイベント「みどり町 星空観察会」のポスターと表紙スライド）",
+    "src": "hero.png"
   },
   {
     "id": "demo",
     "type": "video",
-    "status": "placeholder",
-    "poster": "placeholder-demo.png",
-    "alt": "デモ動画は準備中です"
+    "status": "ready",
+    "poster": "demo-poster.png",
+    "alt": "DC-Designer のデモ動画（約 27 秒・ナレーション・BGM・効果音つき、日本語字幕あり）。作りたいポスターの内容を文章で入力すると、AI がレイアウトを組み立て、22 枚のレイヤーに分かれたポスターができる。ラベルをドラッグして位置を直し、同じ題材のスライドも作って、PDF・PNG・PPTX で書き出せることを紹介する",
+    "src": "demo.mp4"
   },
   {
     "id": "ogp",
     "type": "image",
-    "status": "placeholder",
-    "alt": "紹介画像は準備中です"
+    "status": "ready",
+    "alt": "「ポスターもスライドも、AIの下書きから。レイヤーで、自分の手で仕上げる。」の文字と、DC-Designer で作った作例（架空のイベント「みどり町 星空観察会」のポスターと表紙スライド）",
+    "src": "ogp.png"
   },
   {
     "id": "feature-poster",
     "type": "image",
-    "status": "placeholder",
-    "alt": "「ポスター作成」の画面の画像は準備中です"
+    "status": "ready",
+    "alt": "DC-Designer のポスター作成の画面。架空のイベント「みどり町 星空観察会」のポスターで、写真に重ねた吹き出しを選び、右のパネルに位置・大きさ・重ね順・文字などが出ている。下にレイヤーの一覧（22 枚）",
+    "src": "feature-poster.png"
   },
   {
     "id": "feature-slides",
     "type": "image",
-    "status": "placeholder",
-    "alt": "「スライド作成」の画面の画像は準備中です"
+    "status": "ready",
+    "alt": "DC-Designer のスライド作成の画面。架空のイベント「みどり町 星空観察会」の表紙スライド（星空の写真に「星空観察会へ ようこそ」）を開き、右に画面切り替え・BGM の設定とレイヤーの一覧（10 枚）、下に台本の欄",
+    "src": "feature-slides.png"
   }
 ]

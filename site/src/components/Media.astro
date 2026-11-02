@@ -1,7 +1,7 @@
 ---
 // 媒体の枠（docs/design/06_ux_design.md「媒体の枠」）。
 // placeholder は枠ごとの仮の画像（静止画）、ready は本物の画像・動画を出す。
-import { Picture } from "astro:assets";
+import { getImage, Picture } from "astro:assets";
 import { getEntry } from "astro:content";
 
 interface Props {
@@ -18,6 +18,7 @@ const m = media.data;
 
 const images = import.meta.glob<{ default: ImageMetadata }>("/src/assets/media/*.{png,jpg,jpeg,webp,avif}", { eager: true });
 const videos = import.meta.glob<string>("/src/assets/media/*.{mp4,webm}", { eager: true, query: "?url", import: "default" });
+const tracks = import.meta.glob<string>("/src/assets/media/*.vtt", { eager: true, query: "?url", import: "default" });
 const pick = (name: string) => images[`/src/assets/media/${name}`]?.default;
 
 const placeholders = {
@@ -30,8 +31,14 @@ const ready = m.status === "ready" && m.src;
 let image: ImageMetadata | undefined;
 let videoSrc: string | undefined;
 let poster: ImageMetadata | undefined;
+let webmSrc: string | undefined;
+let captionsSrc: string | undefined;
 if (ready && m.type === "video") {
   videoSrc = videos[`/src/assets/media/${m.src}`];
+  // 同じ名前の .webm があれば先に出す（対応するブラウザは軽い方を使う）
+  webmSrc = videos[`/src/assets/media/${m.src!.replace(/\.mp4$/, ".webm")}`];
+  if (webmSrc === videoSrc) webmSrc = undefined;
+  captionsSrc = tracks[`/src/assets/media/${m.src!.replace(/\.(mp4|webm)$/, ".vtt")}`];
   poster = pick(m.poster ?? placeholders[kind]);
   if (!videoSrc) throw new Error(`動画 ${m.src} が見つかりません`);
 } else if (ready) {
@@ -40,11 +47,17 @@ if (ready && m.type === "video") {
 } else {
   image = pick(m.poster ?? placeholders[kind]) ?? pick(placeholders[kind]);
 }
+// 動画のポスター画像は再生前に必ず読まれるので、原本の PNG ではなく WebP にして配る
+const posterSrc = poster ? (await getImage({ src: poster, format: "webp", quality: 82 })).src : undefined;
 ---
 {videoSrc ? (
-  // 動画は自動再生しない（prefers-reduced-motion でも勝手に動かない）。操作は利用者に任せる
-  <video muted loop playsinline preload="none" controls poster={poster?.src} width={poster?.width ?? 1280} height={poster?.height ?? 720} aria-label={m.alt}>
-    <source src={videoSrc} />
+  // 動画は自動再生しない（prefers-reduced-motion でも勝手に動かない）。操作は利用者に任せる。
+  // ナレーション・BGM・効果音が入っているので muted は付けない（利用者が再生を押したときだけ鳴る）。
+  // 同じ名前の .vtt があれば、ナレーションの字幕として付ける（音を出せない環境でも内容が分かるように）
+  <video loop playsinline preload="none" controls poster={posterSrc} width={poster?.width ?? 1280} height={poster?.height ?? 720} aria-label={m.alt}>
+    {webmSrc && <source src={webmSrc} type="video/webm" />}
+    <source src={videoSrc} type="video/mp4" />
+    {captionsSrc && <track kind="captions" src={captionsSrc} srclang="ja" label="日本語" />}
     <p>{m.alt}</p>
   </video>
 ) : image ? (
