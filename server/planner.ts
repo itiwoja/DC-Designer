@@ -283,7 +283,7 @@ export async function refineReproduction(opts: { reference: ImageRef; render: Im
 const fixSize = (spec: PosterSpec, width: number, height: number): PosterSpec => ({ ...spec, meta: { ...spec.meta, width, height } });
 
 /** 資料全体のスライド（PPTX エディターモード。現在のスライド以外も含む）。spec が無いものは文字（と台本）だけの参考 */
-type SlideRef = { number: number; title?: string; spec?: PosterSpec; texts?: string[]; notes?: string };
+type SlideRef = { number: number; title?: string; spec?: PosterSpec; texts?: string[]; notes?: string; theme?: string; colors?: string[] };
 export type DeckContext = { current: number; total: number; slides: SlideRef[]; /** スライド一覧でユーザーが選択中のスライド番号 */ selected?: number[] };
 
 /**
@@ -426,7 +426,7 @@ async function editDeckSlide(opts: EditOptions & { deck: DeckContext }): Promise
     `これは ${total} 枚のスライドからなるデッキです。各スライドは 1 つの PosterSpec です。ユーザーは今スライド ${current} を開いています。`,
     referenceSources(opts.references),
     "資料の構成や内容について相談されたら、渡された全スライドを参照して答えてください。相談や確認だけなら spec は null にし、スライドを変更しないでください。",
-    "指示を読み、書き換えが必要なスライドだけを修正してください。「3枚目と5枚目を直して」「8〜10枚目の台本の整合性を取って」のように複数のスライドを指していれば、それぞれを書き換えます（台本どうしの整合性なら、話の流れ・用語・口調・つなぎの言葉がそろうように各スライドの notes を直します）。「AをBに反映」「Aに合わせてBを直す」なら書き換えるのは B、参照元の A は変更しません。書き換え先が読み取れなければ、今開いているスライドを書き換えます。",
+    "指示を読み、書き換えが必要なスライドだけを修正してください。「3枚目と5枚目を直して」「8〜10枚目の台本の整合性を取って」のように複数のスライドを指していれば、それぞれを書き換えます（台本どうしの整合性なら、話の流れ・用語・口調・つなぎの言葉がそろうように各スライドの notes を直します）。「AをBに反映」「Aに合わせてBを直す」なら書き換えるのは B、参照元の A は変更しません。書き換え先が読み取れなければ、今開いているスライドを書き換えます。「ほかのスライドと色を合わせて」のように参考スライドの配色に合わせる指示なら、参考スライドの「配色」の行（テーマと よく使う色）を基準に、今のスライドの theme・themeOverride・各レイヤーの色を直してください。",
     "「スライドAとBを1枚にまとめて」「1〜5枚目を3枚に圧縮して」「2枚目を3枚に分けて」「2と4を入れ替えて」「3枚目を複製して最後に」のようにデッキの構成を変える指示なら、内容の書き換えは edits、並びは \"sequence\" で表してください。sequence は編集後のデッキ全体（元の ${total} 枚分）の並びで、元のスライドは番号、新しく作るスライドは {\"spec\": PosterSpec 全体} と書きます。sequence に無い番号のスライドは削除され、同じ番号を 2 回書くとそのスライド（書き換え後）の複製になります。",
     "例: 「1〜5枚目を3枚に圧縮」→ 1〜3 を書き換える（または 3 枚分を {spec} で新規作成する）内容を edits に入れ、sequence は [1, 2, 3, 6, ...]（4・5 を外す）。「2枚目を3枚に分けて」→ 2 を書き換え、{spec} を 2 つ作り、sequence は [1, 2, {spec}, {spec}, 3, ...]（2 の直後に置く）。「2と4を入れ替えて」→ edits は空で sequence だけ [1, 4, 3, 2, ...]。「3枚目を複製して最後に」→ 末尾に 3 を再掲（[1, ..., ${total}, 3]）。統合は、まとめ先（指示が無ければ番号の小さい方）だけを書き換えて内容を 1 枚に収まるよう整理し、残りを sequence から外します。構成を変えないなら sequence は null（または省略）にします。",
     "文字だけの参考スライドも、番号を並べるだけなら入れ替え・複製・移動ができます。ただし sequence から外して削除することはできません（必ず 1 回以上入れてください）。新しく作るスライドのサイズ（meta.width / meta.height）は既存のスライドと同じにし、テーマ・レイアウトもなじませてください。",
@@ -441,7 +441,7 @@ async function editDeckSlide(opts: EditOptions & { deck: DeckContext }): Promise
     opts.instruction,
     ...slides.map((s) => s.spec
       ? `# スライド ${s.number}${s.number === current ? "（今開いているスライド）" : ""}${s.title ? `「${s.title}」` : ""}\n${JSON.stringify(s.spec)}`
-      : `# スライド ${s.number}${s.title ? `「${s.title}」` : ""}（文字だけの参考。書き換え・統合の対象にはしない）\n${(s.texts ?? []).join(" / ") || "（文字なし）"}${s.notes?.trim() ? `\n台本: ${s.notes.trim()}` : ""}`),
+      : `# スライド ${s.number}${s.title ? `「${s.title}」` : ""}（文字だけの参考。書き換え・統合の対象にはしない）\n${(s.texts ?? []).join(" / ") || "（文字なし）"}${s.notes?.trim() ? `\n台本: ${s.notes.trim()}` : ""}${s.theme || s.colors?.length ? `\n配色: ${[s.theme ? `テーマ ${s.theme}` : "", s.colors?.length ? `よく使う色 ${s.colors.join(", ")}` : ""].filter(Boolean).join(" / ")}` : ""}`),
     "# 出力",
     `{"reply": 返答, "edits": [{"target": 書き換えるスライド番号（${numbers.join(" / ")} のいずれか）, "spec": 修正後のそのスライドの PosterSpec 全体}], "sequence": null | [1, 2, {"spec": PosterSpec}, 4, ...]} の JSON のみを出力してください。edits には書き換えたスライドだけを 1 枚 1 件で入れ、変更が無ければ空配列にしてください。${REPLY_RULE.replace('"spec" は null', '"edits" は空配列')}`,
   ].filter(Boolean).join("\n\n");

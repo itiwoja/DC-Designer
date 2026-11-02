@@ -7,21 +7,26 @@ import type { AcrossDeck, ChatTurn, DeckContext } from "./planner";
 export const optString = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : undefined);
 export const strings = (v: unknown, max: number) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, max) : []);
 
-/** PPTX の全スライド（{ current, total, slides: [{ number, title?, spec? | texts?, notes? }] }）。spec は書き換え・統合の対象、texts・notes は文字だけの参考 */
+/** PPTX の全スライド（{ current, total, slides: [{ number, title?, spec? | texts?, notes?, theme?, colors? }] }）。spec は書き換え・統合の対象、texts・notes・theme・colors は文字だけの参考 */
 export function parseDeckContext(v: any): DeckContext | undefined {
   if (!v || !Array.isArray(v.slides)) return undefined;
   const current = Number(v.current), total = Number(v.total);
   if (!Number.isInteger(current) || !Number.isInteger(total)) return undefined;
-  const slides = v.slides.map((s: any) => ({
-    number: Number(s?.number),
-    title: typeof s?.title === "string" ? s.title : undefined,
-    spec: s?.spec == null ? undefined : PosterSpecSchema.parse(s.spec),
-    texts: Array.isArray(s?.texts) ? s.texts.filter((t: unknown): t is string => typeof t === "string").slice(0, 30) : undefined,
-    notes: typeof s?.notes === "string" ? s.notes.slice(0, 1000) : undefined,
-  }));
+  const slides = v.slides.map((s: any) => {
+    const colors = strings(s?.colors, 12).map((c) => c.slice(0, 60));
+    return {
+      number: Number(s?.number),
+      title: typeof s?.title === "string" ? s.title : undefined,
+      spec: s?.spec == null ? undefined : PosterSpecSchema.parse(s.spec),
+      texts: Array.isArray(s?.texts) ? s.texts.filter((t: unknown): t is string => typeof t === "string").slice(0, 30) : undefined,
+      notes: typeof s?.notes === "string" ? s.notes.slice(0, 1000) : undefined,
+      theme: optString(s?.theme, 60),
+      colors: colors.length ? colors : undefined,
+    };
+  });
   // スライド一覧で選択中の番号（整数・範囲内だけ残す）
   const selected = Array.isArray(v.selected) ? [...new Set<number>(v.selected.map(Number))].filter((n: number) => Number.isInteger(n) && n >= 1 && n <= total).sort((a: number, b: number) => a - b) : [];
-  return { current, total, ...(selected.length ? { selected } : {}), slides: slides.filter((s: { number: number; spec?: unknown; texts?: unknown }) => Number.isInteger(s.number) && (s.spec || s.texts)) };
+  return { current, total, ...(selected.length ? { selected } : {}), slides: slides.filter((s: { number: number; spec?: unknown; texts?: unknown; colors?: unknown }) => Number.isInteger(s.number) && (s.spec || s.texts || s.colors)) };
 }
 
 export function parseAcross(v: any): AcrossDeck | undefined {

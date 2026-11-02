@@ -28,6 +28,20 @@ describe("request parsers", () => {
     expect(parseDeckContext(undefined)).toBeUndefined();
     expect(parseDeckContext({ current: "bad", total: 1, slides: [] })).toBeUndefined();
   });
+  it("参考スライドの theme と colors を上限まで取り出し、文字列以外は除く", () => {
+    const [slide] = parseDeckContext({ current: 1, total: 2, slides: [{ number: 2, theme: "t".repeat(61), colors: ["#fff", 3, "c".repeat(61), ...Array(12).fill("#000")] }] })!.slides;
+    expect(slide.theme).toHaveLength(60);
+    expect(slide.colors).toHaveLength(12);
+    expect(slide.colors?.[0]).toBe("#fff");
+    expect(slide.colors?.[1]).toBe("c".repeat(60));
+    expect(parseDeckContext({ current: 1, total: 2, slides: [{ number: 2, theme: 5, texts: ["x"] }] })?.slides[0].theme).toBeUndefined();
+  });
+  it("colors だけの参考スライドは残し、文字列の無い colors は残さない", () => {
+    const slides = parseDeckContext({ current: 1, total: 3, slides: [{ number: 2, colors: ["#fff"] }, { number: 3, colors: [1, 2] }] })!.slides;
+    expect(slides.map((s) => s.number)).toEqual([2]);
+    expect(slides[0].colors).toEqual(["#fff"]);
+    expect(slides[0].texts).toBeUndefined();
+  });
   it.each([undefined, { mediaType: "text/plain", data: "x" }, { mediaType: "image/png", data: "" }])("不正な画像をHTTP 400で拒否する: %j", (value) => {
     expect(() => parseImage(value, "reference")).toThrow(expect.objectContaining({ status: 400, message: "reference は { mediaType, data } の画像で指定してください" }));
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isWholeDeckRequest, slideRefs } from "../src/editor/slideRefs";
+import { isMatchOthersRequest, isWholeDeckRequest, slideRefs } from "../src/editor/slideRefs";
 
 describe("slideRefs", () => {
   it.each([
@@ -37,5 +37,23 @@ describe("isWholeDeckRequest", () => {
     ["スライド3の内容をスライド5に反映", false],
   ])("%s", (text, want) => {
     expect(isWholeDeckRequest(text)).toBe(want);
+  });
+});
+
+describe("isMatchOthersRequest", () => {
+  it.each([
+    ["色味を他のスライドと合わせて", true],
+    ["ほかのページと同じ配色にして", true],
+    ["他のスライドの色に合わせて", true],
+    ["ほかのページの配色にそろえて", true],
+    ["残りのスライドに統一して", true],
+    ["全スライドの差し色を #F08C00 にして", false],
+    ["ほかのスライドにも反映して", false],
+    ["他のスライドも合わせて", false],
+    ["全スライドの色味をそろえて", false],
+    ["全スライドの色を他のスライドと合わせて", false],
+    ["スライド3の色をスライド5に合わせて", false],
+  ])("%s", (text, want) => {
+    expect(isMatchOthersRequest(text)).toBe(want);
   });
 });
