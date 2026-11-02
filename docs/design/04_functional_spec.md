@@ -140,7 +140,7 @@ flowchart TB
 
 ### <a id="site-fr-011"></a>SITE-FR-011：共通枠・SEO・404 〔SITE-UC-001〕
 - ヘッダー：ロゴ・「機能」「ダウンロード」「更新履歴」・GitHub へのリンク。フッター：プライバシー・コード署名ポリシー・SECURITY・MIT ライセンス・GitHub Issues
-- 各ページに `title`・`description`・OGP（`og:image` は 1200×630 の `ogp` 媒体。無ければアプリのアイコン）・`canonical`・`sitemap.xml`
+- 各ページに `title`・`description`・OGP（`og:image` は 1200×630 の `ogp` 媒体（2026-11-02 から `ready`）。`placeholder` の間はアプリのアイコン）・`canonical`・`sitemap.xml`
 - 404 はトップとダウンロードへのリンクだけ
 
 ### 権限マトリクス

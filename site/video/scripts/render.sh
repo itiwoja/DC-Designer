@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# デモ動画・ポスター画像・ヒーロー画像を書き出し、site/src/assets/media/ に置く形に変換する。
+# デモ動画・ポスター画像・ヒーロー画像・機能画像・OGP 画像を書き出し、site/src/assets/media/ に置く形に変換する。
 # 使い方: site/video で `npm run render`（先に npm install）
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -15,6 +15,10 @@ if [ -d "$LIBS" ]; then export LD_LIBRARY_PATH="$LIBS${LD_LIBRARY_PATH:+:$LD_LIB
 npx remotion render src/index.ts Demo "$OUT/demo-master.mp4" --codec=h264 --crf=12 --scale=1.5 --log=error
 npx remotion still src/index.ts DemoPoster "$OUT/demo-poster.png" --scale=1.5 --log=error
 npx remotion still src/index.ts Hero "$OUT/hero.png" --log=error
+npx remotion still src/index.ts FeaturePoster "$OUT/feature-poster.png" --log=error
+npx remotion still src/index.ts FeatureSlides "$OUT/feature-slides.png" --log=error
+# OGP は原本の PNG のまま。配る PNG はサイトのビルド（Base.astro）が quality 80 で色数を減らして 300KB 以下にする
+npx remotion still src/index.ts Ogp "$OUT/ogp.png" --log=error
 
 # サイト用：H.264＋AAC（再生互換のため yuv420p と faststart）と VP9＋Opus の WebM。上限 8MB（06_ux_design「媒体の枠」）
 # 効果音だけ（ナレーションなし）。音量はデモ向けの -16 LUFS・True Peak -2 dB 以下にそろえる（AAC・Opus への変換でピークが少し上がるので、目標は -3 dB）
@@ -27,4 +31,5 @@ ffmpeg -loglevel error -y -i "$OUT/demo-master.mp4" -vf "scale=in_range=pc:out_r
 ffmpeg -loglevel error -y -i "$OUT/demo-master.mp4" -vf "scale=in_range=pc:out_range=tv,format=yuv420p" -c:v libvpx-vp9 -b:v 0 -crf 33 -row-mt 1 -deadline good -cpu-used 2 -af "$AF" -ar 48000 -c:a libopus -b:a 96k "$MEDIA/demo.webm"
 cp "$OUT/demo-poster.png" "$MEDIA/demo-poster.png"
 cp "$OUT/hero.png" "$MEDIA/hero.png"
+cp "$OUT/feature-poster.png" "$OUT/feature-slides.png" "$OUT/ogp.png" "$MEDIA/"
 ls -la "$MEDIA"

@@ -7,6 +7,8 @@
 | デモ動画 | 1920×1080・30fps・約 27 秒・ナレーション・BGM・効果音つき。MP4（H.264＋AAC）と WebM（VP9＋Opus） | `site/src/assets/media/demo.mp4` / `demo.webm` |
 | 動画のポスター画像（再生前に見える 1 枚） | 1920×1080 PNG（サイトでは WebP にして配る） | `site/src/assets/media/demo-poster.png` |
 | ヒーロー画像 | 1600×1000 PNG（ビルドで AVIF / WebP） | `site/src/assets/media/hero.png` |
+| 機能画像（ポスター作成・スライド作成のカード） | 1200×750 PNG（ビルドで AVIF / WebP）。実画面のキャンバスと右のパネルに寄せて切り出し、下の帯に注記 | `site/src/assets/media/feature-poster.png` / `feature-slides.png` |
+| OGP 画像（SNS で共有したときの 1 枚） | 1200×630 PNG。ヒーロー画像と同じ絵（`src/Still.tsx`）。配る PNG はビルドで色数を減らす（約 107KB） | `site/src/assets/media/ogp.png` |
 
 ## 作り直し方
 
@@ -14,13 +16,13 @@
 cd site/video
 npm install            # esbuild の install script は `npm install-scripts approve esbuild` で許可する
 npm run studio         # 画面で確かめながら直す
-npm run render         # 3 つを書き出して site/src/assets/media/ に置く（scripts/render.sh）
+npm run render         # 6 つを書き出して site/src/assets/media/ に置く（scripts/render.sh）
 ```
 
 - フォント（Mochiy Pop One・Noto Sans JP、計 15MB）はリポジトリに入れず、`npm run studio` / `npm run render` の前に `scripts/fetch-fonts.sh` が google/fonts から取る。
 - WSL では Playwright の Chromium（`~/.cache/ms-playwright/chromium_headless_shell-*`）を使う（`remotion.config.ts`）。`libnspr4.so` が無いと言われたら、sudo なしで展開したライブラリを `LD_LIBRARY_PATH` に入れる（`render.sh` は `~/.local/chromium-libs` があれば自動で入れる）。
 - 配置は 1280×720 の座標で組み、`--scale=1.5` で 1920×1080 に書き出す。アプリの画面は 1600×1000 を 3 倍（入力欄は 4 倍）で撮ってあり、配置は 2 倍の 3200×2000 の座標で書く（ファイルの実寸とは別）。
-- 場面の並びと長さは `src/Demo.tsx` の `SCENES`。文字は `src/Demo.tsx`・`src/Still.tsx`、色はサイトのトークンと同じ値の `src/theme.ts`。
+- 場面の並びと長さは `src/Demo.tsx` の `SCENES`。機能画像の切り出す範囲は `src/Feature.tsx` の `FEATURE_SHOTS`（カードでは 360〜520px 幅に縮むので、画面全体ではなく寄せて見せる）。文字は `src/Demo.tsx`・`src/Still.tsx`・`src/Feature.tsx`、色はサイトのトークンと同じ値の `src/theme.ts`。
 
 | 秒 | 場面 | ナレーション | 素材 | 効果音 |
 |---|---|---|---|---|
