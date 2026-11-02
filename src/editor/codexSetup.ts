@@ -3,7 +3,8 @@ import { api, type SetupProgress } from "./api";
 
 /**
  * 製品版の Codex CLI の準備（入れる・サインイン）の実行状態。設定の吹き出しを閉じても続くよう、画面の部品の外で持つ。
- * 入れ終えてまだサインインしていなければ、続けてサインインを始める（ワンクリックで使えるところまで進める）
+ * 入れ終えてまだサインインしていなければ、続けてサインインを始める（ワンクリックで使えるところまで進める）。
+ * ChatGPT へのサインインが済んだときにも ensure で自動で進める
  */
 export type CodexJob = { kind: "install" | "login"; progress?: SetupProgress };
 export type CodexSetupState = { job: CodexJob | null; error: string };
@@ -48,9 +49,23 @@ async function run(kind: CodexJob["kind"]): Promise<void> {
   }
 }
 
+/**
+ * ChatGPT へのサインインに続けて、画像生成用の Codex も使えるところまで進める。
+ * Codex CLI を自動で探し、見つかってサインインしていなければサインイン、見つからず入れられる PC なら
+ * 裏で取ってきてからサインインする。使える・入れられない・状態が読めないときは何もしない
+ */
+async function ensure(): Promise<void> {
+  if (state.job) return;
+  const codex = await api.status().then((s) => s.codex).catch(() => undefined);
+  if (!codex || state.job) return;
+  if (codex.state === "signed_out") return run("login");
+  if (codex.state === "not_found" && codex.canInstall) return run("install");
+}
+
 export const codexSetup = {
   install: () => run("install"),
   login: () => run("login"),
+  ensure,
   cancel: () => abort?.abort(),
   clearError: () => set({ error: "" }),
   /** テスト用：状態を初期に戻す */
@@ -75,7 +90,7 @@ const mb = (bytes: number) => (bytes / 1024 / 1024).toFixed(1);
 /** 進み具合の文言 */
 export function describeCodexJob(job: CodexJob): string {
   const p = job.progress;
-  if (job.kind === "login") return "ブラウザで ChatGPT にサインインしてください。終わると自動でここに戻ります。";
+  if (job.kind === "login") return "画像生成（Codex）用に、ブラウザで ChatGPT にサインインしてください。AI 機能と同じアカウントを選んでください。終わると自動でここに戻ります。";
   if (!p || p.step === "download") {
     if (p?.total) return `ダウンロード中… ${Math.floor(((p.done ?? 0) / p.total) * 100)}%（${mb(p.done ?? 0)} / ${mb(p.total)} MB）`;
     return "ダウンロードの準備をしています…";

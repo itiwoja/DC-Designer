@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DesktopBridge } from "../desktop/bridge";
 import { api, type SetupProgress, type Status } from "../src/editor/api";
 import { codexSetup } from "../src/editor/codexSetup";
-import { describeCodex, DesktopImageSettings } from "../src/editor/DesktopAccount";
+import { describeCodex, DesktopAccountBar, DesktopImageSettings } from "../src/editor/DesktopAccount";
+import { DESKTOP_ACCOUNT_CHANGED } from "../src/editor/accountView";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -156,5 +157,57 @@ describe("Codex CLI を入れる・サインイン", () => {
     await mount(bridge, st({ codex: { state: "not_found", canInstall: false, installVersion: "0.166.0" } }));
     expect(button("Codex CLI を入れる")).toBeUndefined();
     expect(container.textContent).toContain("codex.exe を指定してください");
+  });
+});
+
+describe("ChatGPT へのサインインに続けて Codex を準備する", () => {
+  beforeEach(() => codexSetup.reset());
+  const codex = (state: string, canInstall = true) => vi.spyOn(api, "status").mockResolvedValue(st({ codex: { state, canInstall, installVersion: "0.166.0" } }));
+  const never = () => new Promise<never>(() => {});
+  // 準備は終わらないまま進むので、始まるところまでだけ待つ
+  const ensure = () => act(async () => { void codexSetup.ensure(); await new Promise((r) => setTimeout(r, 0)); });
+
+  it("見つかってサインインしていなければ codex login を始める", async () => {
+    codex("signed_out");
+    const login = vi.spyOn(api, "loginCodex").mockImplementation(never);
+    const install = vi.spyOn(api, "installCodex").mockImplementation(never);
+    await ensure();
+    expect(login).toHaveBeenCalled();
+    expect(install).not.toHaveBeenCalled();
+  });
+
+  it("見つからず入れられる PC なら、裏で取ってくる", async () => {
+    codex("not_found");
+    const install = vi.spyOn(api, "installCodex").mockImplementation(never);
+    await ensure();
+    expect(install).toHaveBeenCalled();
+  });
+
+  it("使えるとき・入れられない PC・状態が読めないときは何もしない", async () => {
+    const login = vi.spyOn(api, "loginCodex").mockImplementation(never);
+    const install = vi.spyOn(api, "installCodex").mockImplementation(never);
+    codex("ready");
+    await ensure();
+    codex("not_found", false);
+    await ensure();
+    vi.spyOn(api, "status").mockRejectedValue(new Error("x"));
+    await ensure();
+    expect(login).not.toHaveBeenCalled();
+    expect(install).not.toHaveBeenCalled();
+  });
+
+  it("アカウント欄は、サインインできたときだけ続けて準備し、そのあいだ進み具合をボタンに出す", async () => {
+    codex("signed_out");
+    const login = vi.spyOn(api, "loginCodex").mockImplementation(never);
+    const { bridge } = mkBridge(false);
+    await act(async () => root.render(<DesktopAccountBar bridge={bridge} status={st({ chatgpt: { signedIn: true, planEnabled: true, email: "a@example.com" } })} onSignOut={() => {}} />));
+    const fire = (detail: unknown) => act(async () => { window.dispatchEvent(new CustomEvent(DESKTOP_ACCOUNT_CHANGED, { detail })); });
+    await fire({ ok: true, data: { result: "no-plan" } });
+    await fire({ ok: false, error: "x" });
+    await fire(undefined);
+    expect(login).not.toHaveBeenCalled();
+    await fire({ ok: true, data: { result: "signed-in" } });
+    expect(login).toHaveBeenCalled();
+    expect(container.querySelector(".account-name")?.textContent).toBe("Codex にサインイン中…");
   });
 });
