@@ -33,11 +33,9 @@ import { Presenter } from "./Presenter";
 import { openPresenterWindow } from "./PresenterView";
 import { HOME_URL, IMPORT_NOTICE_KEY, loadInitialSpec, PENDING_BRIEF_KEY } from "./nav";
 import { modeHomeUrl, modeLibraryUrl, modeOfDeck, MODES, readModeParam, writeLastId, type AppMode } from "./mode";
-import { isMissingNotesRequest, isWriteNotesRequest } from "./notes";
-import { isRenumberRequest } from "./pageNumbers";
-import { addSlidePosition } from "./addSlide";
-import { isWholeDeckRequest, slideRefs } from "./slideRefs";
-import { parseSlash, slashSuggestions, SlashMenu, type SlashCommand } from "./slashCommands";
+import { slideRefs } from "./slideRefs";
+import { routeChatRequest } from "./chatRoute";
+import { slashSuggestions, SlashMenu, type SlashCommand } from "./slashCommands";
 import {
   aspectOf, assetHolder, diffLayers, IMAGE_FILE_ACCEPT, IMAGE_FILE_TYPES, imageSlot, insertAfter,
   naturalSize, patchAsset, PPTX_ACCEPT, prepareAsset, toLayerRef, uid, type LayerRef,
@@ -453,34 +451,28 @@ export function App() {
     const cur = regen?.base ?? spec;
     const ids = selLayers.length ? selLayers.map((l) => l.id) : undefined;
     const context = chat.context(regen?.msg.id);
-    const slash = parseSlash(text, isSlides, mode === "poster");
-    if (slash && "error" in slash) { notify({ kind: "error", text: slash.error }); return; }
+    const current = deck ? deck.slides.findIndex((s) => s.id === posterIdRef.current) + 1 : 0;
+    const route = routeChatRequest(text, { deck: deck ? { current, total: deck.slides.length } : undefined, poster: mode === "poster" });
+    if (route.kind === "slash-error") { notify({ kind: "error", text: route.error }); return; }
     const restore = regen ? () => {} : () => setInstruction(text);
     if (!regen) setInstruction("");
-    if (slash) return runSlash(slash.cmd, slash.arg, restore, regen?.msg);
-    // 「右下のスライド番号の並びを直して」: AI には 1 枚ずつしか見えないので、全スライドの番号を手元で振り直す
-    if (isSlides && isRenumberRequest(text)) {
-      return chatTurn(regen?.msg ?? { text, mode: "chat" }, "ページ番号を確認中", restore, () => renumberDeckPages());
-    }
-    // 「台本が無いスライドに台本を書いて」: AI には 1 枚ずつしか見えないので、デッキ全体の文字を渡して空の台本をまとめて書く
-    if (isSlides && isMissingNotesRequest(text)) return writeNotesTurn(regen?.msg ?? { text, mode: "chat" }, restore, { request: text });
-    // 「このスライドの台本を書いて」: ふつうの修正だとほかのスライドの台本が見えないので、同じ書き方（口調・長さをお手本に合わせる）で書く
-    if (isSlides && deck && isWriteNotesRequest(text)) {
-      const current = deck.slides.findIndex((s) => s.id === posterIdRef.current) + 1;
-      // 「全スライドの台本を書き直して」は全スライドを書き直す
-      const targets = isWholeDeckRequest(text) ? deck.slides.map((_, i) => i + 1) : slideRefs(text, current, deck.slides.length);
-      if (targets.length || current) return writeNotesTurn(regen?.msg ?? { text, mode: "chat" }, restore, { targets: targets.length ? targets : [current], request: text });
+    switch (route.kind) {
+      case "slash":
+        return runSlash(route.cmd, route.arg, restore, regen?.msg);
+      case "renumber":
+        return chatTurn(regen?.msg ?? { text, mode: "chat" }, "ページ番号を確認中", restore, () => renumberDeckPages());
+      case "missing-notes":
+        return writeNotesTurn(regen?.msg ?? { text, mode: "chat" }, restore, { request: text });
+      case "write-notes":
+        return writeNotesTurn(regen?.msg ?? { text, mode: "chat" }, restore, { targets: route.targets, request: text });
     }
     // 通常編集だけでなく、全スライドへの適用・スライド追加・再送信でも同じ添付を使う。
     const requestText = regen ? text : text + referenceCaption;
     const references = regen ? regen.msg.references ?? [] : toReferenceImages(refs);
     const user = regen?.msg ?? { text: requestText, scope: chatScope ?? (slideNo ? chatFallback : undefined), mode: "chat" as const, ...(references.length ? { references, hasReferences: true } : {}) };
-    // 「最後にクロージングのスライドを追加して」: ふつうの修正は今のスライドを書き換えるだけなので、新しいスライドを作ってデッキに入れる
-    const current = deck ? deck.slides.findIndex((s) => s.id === posterIdRef.current) + 1 : 0;
-    const position = deck && current ? addSlidePosition(text, current, deck.slides.length) : null;
-    if (position) {
+    if (route.kind === "add-slide") {
       return chatTurn(user, `${aiName} がスライドを作成中`, restore, async (signal) => {
-        const r = await addSlideByAI(signal, requestText, position, context, references);
+        const r = await addSlideByAI(signal, requestText, route.position, context, references);
         if (autoImages && r.spec && findPendingAssets(r.spec).length) {
           chat.push({ role: "assistant", text: r.text, changes: r.changes });
           await generatePending(r.spec, signal);
@@ -489,8 +481,7 @@ export function App() {
         return { text: r.text, changes: r.changes };
       });
     }
-    // 「授業スライド全体の差し色を変えて」: ふつうの修正は今のスライドしか書き換えないので、同じ指示を全スライドに当てる
-    if (deck && deck.slides.length > 1 && isWholeDeckRequest(text)) {
+    if (route.kind === "edit-across") {
       return chatTurn(user, `${aiName} が全スライドを修正中`, restore, async (signal) => {
         const r = await editAcrossDeck(signal, requestText, context, references);
         if (autoImages && r.ids.some((id) => { const sp = specOf(id); return sp && findPendingAssets(sp).length; })) {
