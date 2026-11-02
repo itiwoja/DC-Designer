@@ -5,6 +5,9 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
+/* ページ右の縦スクロールバーは出さない（スクロール自体はホイール・キー・タッチでできる） */
+html { scrollbar-width: none; }
+html::-webkit-scrollbar { display: none; }
 body {
   margin: 0;
   background: var(--color-bg);
