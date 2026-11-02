@@ -1,31 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as RKeyboardEvent, type DragEvent as RDragEvent } from "react";
 import { slideContent } from "../notes";
 import { Poster } from "../render/Poster";
-import { buildExportSvg, download, renderSpecPng, svgToPngSized } from "../render/svg";
-import { pngToPdf } from "../render/pdf";
+import { renderSpecPng } from "../render/svg";
 import { A4Check } from "./A4Check";
-import { a4Fit, a4Instruction, a4Issues, a4Size, exportPixels, fitToA4, pngA4Report, PRINT_DPI, readPngInfo, SAFE_MARGIN_MM, setPngDpi } from "./a4";
+import { a4Fit, a4Instruction, a4Issues, fitToA4, SAFE_MARGIN_MM } from "./a4";
 import { cropTarget } from "../render/ImageBox";
 import { useRenderReady } from "../render/useRenderReady";
-import { playAnimations } from "../render/animatePreview";
-import { animationSequence, renumberAnimations } from "../animation";
-import { findPendingAssets, PosterSpecSchema, type AssetRequest, type Layer, type LayerAnimation, type PosterSpec, type SlideBgm, type SlideTransition } from "../schema";
+import { findPendingAssets, type AssetRequest, type Layer, type PosterSpec } from "../schema";
 import { resolveTheme } from "../themes";
 import { applyFonts, specTexts } from "../fonts";
-import { CATALOG_BY_NAME } from "../components/catalog";
 import { workSubject, watchWork, WORK_CHANGED_MESSAGE, type AiSubject } from "./aiSubject";
 import { desktopBridge, useDesktopVersion } from "./desktop";
-import { api, readDataUrl, type AIProgress, type AIProvider, type DeckEditContext, type RefImage, type Status } from "./api";
+import { api, type AIProgress, type DeckEditContext, type RefImage } from "./api";
 import { AccountBar, ModelSelect, WelcomeModal } from "./AccountBar";
 import { unionBox } from "./canvas";
 import { CanvasOverlay, MeasureLabel, type CropState } from "./CanvasOverlay";
 import { ChatLog, useChat, type ChatMsg } from "./ChatLog";
 import { DeckStrip } from "./DeckStrip";
-import { Resizer, usePanelSize } from "./usePanelSize";
+import { Resizer } from "./usePanelSize";
+import { DECK_CHROME_H, NOTES_CHROME_H, usePanelLayout } from "./usePanelLayout";
+import { useProviders } from "./useProviders";
+import { createLayerOps, layerName } from "./layerOps";
+import { useAnimationOps } from "./useAnimationOps";
+import { useA4Export } from "./useA4Export";
 import { FontDialog } from "./FontDialog";
 import { Inspector, ShortcutList, TransitionBox } from "./Inspector";
-import { TRANSITION_EASING, transitionKeyframes } from "../transition";
-import { playSound } from "../sounds";
 import { LayersPanel } from "./LayersPanel";
 import { blockPageFileDrop } from "./fileDrop";
 import { useFileDrop } from "./useFileDrop";
@@ -40,14 +39,14 @@ import { addSlidePosition } from "./addSlide";
 import { isWholeDeckRequest, slideRefs } from "./slideRefs";
 import { parseSlash, slashSuggestions, SlashMenu, type SlashCommand } from "./slashCommands";
 import {
-  alignedPosition, aspectOf, assetHolder, diffLayers, IMAGE_FILE_ACCEPT, IMAGE_FILE_TYPES, imageSlot, insertAfter, isVisibleOnCanvas,
-  naturalSize, patchAsset, PPTX_ACCEPT, prepareAsset, reorderLayer, moveLayerTo, safeFileName, toLayerRef, uid, type AlignTo, type LayerRef,
+  aspectOf, assetHolder, diffLayers, IMAGE_FILE_ACCEPT, IMAGE_FILE_TYPES, imageSlot, insertAfter,
+  naturalSize, patchAsset, PPTX_ACCEPT, prepareAsset, toLayerRef, uid, type LayerRef,
 } from "./specOps";
 import { blobToRef, loadImage, overlayOf, REF_OVERLAY_ID, referenceSize, resolveRefCrops, scaledReference, withOverlay, withoutOverlay } from "./reproduce";
-import { readPref, STORAGE_KEY, writePref } from "./storage";
+import { readPref, STORAGE_KEY } from "./storage";
 import { TextEditor } from "./TextEditor";
 import { Toasts, useNotices, type Busy, type Notice } from "./Toasts";
-import { ask, askChoice, Menu, RenderLoading, ThemeMenu, useLoadWithRetry } from "./ui";
+import { ask, askChoice, Menu, RenderLoading, ThemeMenu } from "./ui";
 import { Ico } from "./uiIcons";
 import { useAutoSave } from "./useAutoSave";
 import { topLayerAt, useCanvasPointer } from "./useCanvasPointer";
@@ -61,19 +60,6 @@ import { ImageAttach } from "./ImageAttach";
 import { failureReason } from "./imageErrors";
 import { ReferenceAttachments } from "./ReferenceAttachments";
 
-const IMAGE_PROVIDER_KEY = "dc-designer:image-provider";
-const AUTO_IMAGES_KEY = "dc-designer:auto-images";
-const LEFT_OPEN_KEY = "dc-designer:left-open";
-const RIGHT_OPEN_KEY = "dc-designer:right-open";
-const LEFT_WIDTH_KEY = "dc-designer:left-width";
-const RIGHT_WIDTH_KEY = "dc-designer:right-width";
-const DECK_HEIGHT_KEY = "dc-designer:deck-height";
-const NOTES_OPEN_KEY = "dc-designer:notes-open";
-const NOTES_HEIGHT_KEY = "dc-designer:notes-height";
-/** スライド一覧の既定の高さ（styles.css の --dh と合わせる）と、サムネイル以外の見出し・余白の分 */
-const DECK_H = 127, DECK_CHROME_H = 63;
-/** 台本欄の既定の高さ（styles.css の --nh と合わせる）と、畳んだときの高さ */
-const NOTES_H = 132, NOTES_CHROME_H = 38;
 const CHAT_EXAMPLES = ["タイトルをもっと大きく目立たせて", "全体を落ち着いた配色にして", "日時と場所を見やすく整理して"];
 const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
 /** 矢印キーでの移動量（Shift で 10px） */
@@ -96,7 +82,6 @@ const takePendingBrief = () => {
   } catch { return null; }
 };
 
-const layerName = (l: Layer) => l.name ?? l.id;
 
 /** 画像の縦横比（幅/高さ）。読み込むまでは undefined */
 function useImageRatio(src?: string) {
@@ -144,53 +129,15 @@ export function App() {
   }, []);
 
   // ---------- サーバーの状態（ChatGPT・画像生成） ----------
-  const [status, setStatus] = useState<Status | null>(null);
-  const refreshStatus = useLoadWithRetry(useCallback(() => api.status().then(setStatus), []));
-  const apiUp = !!status;
-  const gpt = status?.chatgpt;
-  // レイアウト生成・AI 修正に使う AI（ChatGPT プランか OpenRouter）。どちらも使えなければ undefined。
-  // ai を返さない古い API サーバー（再起動前）のあいだは、従来どおり ChatGPT プランが使えれば ChatGPT
-  const aiProvider = status?.ai ? status.ai.provider : gpt?.signedIn && gpt.planEnabled ? "chatgpt" : undefined;
-  const openrouter = status?.ai?.openrouter;
-  const aiReady = !status || !!aiProvider;
-  /** 進み具合の表示での AI の呼び名 */
-  const aiName = aiProvider === "openrouter" ? "AI" : "ChatGPT";
-  const [imageProvider, setImageProvider] = useState(() => readPref(IMAGE_PROVIDER_KEY) ?? "");
-  const [autoImages, setAutoImages] = useState(() => readPref(AUTO_IMAGES_KEY) !== "0");
-  // ダミー画像（placeholder）は選択肢に出さない
-  const imageChoices = status?.imageProviders.filter((p) => p !== "placeholder") ?? [];
-  // 選んだプロバイダが使えなくなっていたら（キー削除など）サーバーの既定 → 先頭の選択肢に戻す
-  const activeImageProvider = imageChoices.includes(imageProvider) ? imageProvider
-    : status && imageChoices.includes(status.imageProvider) ? status.imageProvider
-    // 選んでいないときは、ChatGPT のプラン枠で作れる Codex を、起動しているか分からない ComfyUI より先にする
-    : imageChoices.includes("codex") ? "codex" : imageChoices[0];
-  const chooseImageProvider = (p: string) => { setImageProvider(p); writePref(IMAGE_PROVIDER_KEY, p); };
-  const changeModel = (set: (model: string) => Promise<unknown>) => (model: string) =>
-    set(model).then(refreshStatus, (e) => notify({ kind: "error", text: `モデルを変更できませんでした: ${e instanceof Error ? e.message : String(e)}` }));
-  const chooseChatGPTModel = changeModel(api.setChatGPTModel);
-  const chooseOpenRouterModel = changeModel(api.setOpenRouterModel);
-  const chooseAIProvider = (provider: AIProvider | "") =>
-    api.setAIProvider(provider).then(refreshStatus, (e) => notify({ kind: "error", text: `AI を切り替えられませんでした: ${e instanceof Error ? e.message : String(e)}` }));
-  const toggleAutoImages = (on: boolean) => { setAutoImages(on); writePref(AUTO_IMAGES_KEY, on ? "1" : "0"); };
-  // 左のパネル（新規作成・チャット）は細いバーに畳める
-  const [leftOpen, setLeftOpen] = useState(() => readPref(LEFT_OPEN_KEY) !== "0");
-  const toggleLeft = (open: boolean) => { setLeftOpen(open); writePref(LEFT_OPEN_KEY, open ? "1" : "0"); };
-  const [rightOpen, setRightOpen] = useState(() => readPref(RIGHT_OPEN_KEY) !== "0");
-  const toggleRight = (open: boolean) => { setRightOpen(open); writePref(RIGHT_OPEN_KEY, open ? "1" : "0"); };
-  // 左右パネルの幅とスライド一覧の高さは縁のつまみをドラッグして変えられる（画面が狭いときは画面に対する割合で頭打ち）
-  const [leftW, setLeftW] = usePanelSize(LEFT_WIDTH_KEY);
-  const [rightW, setRightW] = usePanelSize(RIGHT_WIDTH_KEY);
-  const [deckH, setDeckH] = usePanelSize(DECK_HEIGHT_KEY);
-  const [resizing, setResizing] = useState(false);
-  const leftRef = useRef<HTMLElement>(null);
-  const rightRef = useRef<HTMLElement>(null);
-  const deckHeight = Math.max(DECK_CHROME_H + 24, Math.min(deckH ?? DECK_H, Math.round(window.innerHeight * 0.5)));
-  // 台本欄（PPTX エディターモード）も畳めて、高さを変えられる
-  const [notesOpen, setNotesOpen] = useState(() => readPref(NOTES_OPEN_KEY) !== "0");
-  const toggleNotes = (open: boolean) => { setNotesOpen(open); writePref(NOTES_OPEN_KEY, open ? "1" : "0"); };
-  const [notesH, setNotesH] = usePanelSize(NOTES_HEIGHT_KEY);
-  const notesMax = Math.round(window.innerHeight * 0.4);
-  const notesHeight = Math.max(NOTES_CHROME_H + 40, Math.min(notesH ?? NOTES_H, notesMax));
+  const {
+    status, setStatus, refreshStatus, apiUp, gpt, aiProvider, openrouter, aiReady, aiName,
+    autoImages, toggleAutoImages, imageChoices, activeImageProvider, chooseImageProvider,
+    chooseChatGPTModel, chooseOpenRouterModel, chooseAIProvider,
+  } = useProviders(notify);
+  const {
+    leftOpen, toggleLeft, rightOpen, toggleRight, leftW, setLeftW, rightW, setRightW, resizing, setResizing, leftRef, rightRef,
+    deckH, setDeckH, deckHeight, deckMax, notesOpen, toggleNotes, notesH, setNotesH, notesHeight, notesMax,
+  } = usePanelLayout();
 
   // ---------- 保存 ----------
   const save = useAutoSave(spec, setSpec, apiUp, resetSpec);
@@ -902,70 +849,7 @@ export function App() {
   // ---------- 書き出し ----------
   const exported = (name: string) => notify({ kind: "success", text: `${name} を書き出しました` });
   // ---------- A4（ポスター） ----------
-  const [a4Guide, setA4Guide] = useState(false);
-  /** A4 300dpi ちょうど（2480×3508px）に描き、解像度（pHYs）を書き込んだ PNG */
-  const buildA4Png = async () => {
-    const blob = await svgToPngSized(await buildExportSvg(svgRef.current!, spec), W, H, exportPixels(W, H));
-    return new Blob([setPngDpi(new Uint8Array(await blob.arrayBuffer()), PRINT_DPI) as Uint8Array<ArrayBuffer>], { type: "image/png" });
-  };
-  // 書き出した PNG を読み直し、画素数と解像度から実寸が A4 になっているかを知らせる
-  const exportPng = () => run("PNG を書き出し中", async () => {
-    const name = `${safeFileName(spec.meta.title)}.png`;
-    const blob = await buildA4Png();
-    download(blob, name);
-    const info = readPngInfo(new Uint8Array(await blob.arrayBuffer()));
-    const r = info && pngA4Report(info);
-    if (!info || !r) return exported(name);
-    const size = `${info.w}×${info.h}px・${r.dpi ?? "?"}dpi → ${r.wMm.toFixed(1)}×${r.hMm.toFixed(1)}mm`;
-    notify(r.ok
-      ? { kind: "success", text: `${name} を A4 で書き出しました（${size}）` }
-      : { kind: "error", text: `${name} を書き出しましたが、A4 の大きさではありません（${size}）。A4 チェックからそろえられます` });
-  });
-  /** PNG と同じ A4 300dpi の画像を、同じ実寸の 1 ページの PDF にする（印刷所・提出用） */
-  const exportPdf = () => run("PDF を書き出し中", async () => {
-    const name = `${safeFileName(spec.meta.title)}.pdf`;
-    const png = await buildA4Png();
-    download(await pngToPdf(png, PRINT_DPI, spec.meta.title || undefined), name);
-    const info = readPngInfo(new Uint8Array(await png.arrayBuffer()));
-    const r = info && pngA4Report(info);
-    if (!info || !r) return exported(name);
-    const size = `${r.wMm.toFixed(1)}×${r.hMm.toFixed(1)}mm`;
-    notify(r.ok
-      ? { kind: "success", text: `${name} を A4 で書き出しました（${size}）` }
-      : { kind: "error", text: `${name} を書き出しましたが、A4 の大きさではありません（${size}）。A4 チェックからそろえられます` });
-  });
-  /** A4 の大きさで印刷プレビューを開く（ブラウザの印刷画面で用紙 A4・余白なしで確かめられる） */
-  const printA4 = () => {
-    // ポップアップを止められないよう、クリックのうちに窓だけ開いておく
-    const w = window.open("", "_blank");
-    if (!w) return notify({ kind: "error", text: "印刷プレビューの窓を開けませんでした（ポップアップを許可してください）" });
-    const fit = a4Fit(W, H);
-    w.document.title = `${spec.meta.title || "無題のポスター"} - A4 印刷プレビュー`;
-    w.document.body.textContent = "印刷用の画像を作っています…";
-    run("印刷プレビューを準備中", async () => {
-      const url = URL.createObjectURL(await buildA4Png());
-      const { page } = fit;
-      w.document.head.innerHTML = `<style>
-        @page { size: A4 ${fit.orientation}; margin: 0; }
-        html, body { margin: 0; background: #888; }
-        img { display: block; width: ${page.w}mm; height: ${page.h}mm; margin: 0 auto; background: #fff; }
-        @media screen { img { margin: 16px auto; box-shadow: 0 2px 12px rgba(0,0,0,.4); } }
-        @media print { html, body { background: none; } }
-      </style>`;
-      w.document.body.innerHTML = "";
-      const img = w.document.createElement("img");
-      img.alt = spec.meta.title;
-      img.onload = () => { w.focus(); w.print(); };
-      img.src = url;
-      w.document.body.append(img);
-      w.addEventListener("beforeunload", () => URL.revokeObjectURL(url));
-    });
-  };
-  const fixA4 = () => {
-    const before = spec;
-    setSpec((s) => ({ ...s, meta: { ...s.meta, ...a4Size(s.meta.width, s.meta.height) } }));
-    notifyRestorable("用紙を A4 の大きさにそろえました", before, "info");
-  };
+  const { a4Guide, setA4Guide, exportPng, exportPdf, printA4, fixA4 } = useA4Export({ spec, setSpec, svgRef, run, notify, exported, notifyRestorable });
 
   // ---------- PPTX エディターモード ----------
   const {
@@ -1006,90 +890,13 @@ export function App() {
   };
 
   // ---------- レイヤー操作 ----------
-  const reorder = (id: string, to: (layers: Layer[], i: number) => number) => setSpec((s) => {
-    const layers = reorderLayer(s.layers, id, to);
-    return layers === s.layers ? s : { ...s, layers };
-  });
-  const moveTo = (id: string, targetId: string, above: boolean) => setSpec((s) => {
-    const layers = moveLayerTo(s.layers, id, targetId, above);
-    return layers === s.layers ? s : { ...s, layers };
-  });
-  const removeLayers = (ids: string[]) => {
-    if (!ids.length) return;
-    const before = spec;
-    const name = ids.length > 1 ? `${ids.length} 件のレイヤー` : `「${spec.layers.find((l) => l.id === ids[0])?.name ?? ids[0]}」`;
-    setSpec((s) => ({ ...s, layers: s.layers.filter((l) => !ids.includes(l.id)) }));
-    setSelected(null);
-    notifyRestorable(`${name}を削除しました`, before, "info");
-  };
-  /** srcs のコピーを afterId の 1 つ上（未指定なら最前面）にまとめて重ね、コピーを選択する */
-  const insertCopies = (srcs: Layer[], afterId?: string) => {
-    if (!srcs.length) return;
-    const copies = srcs.map((src) => ({ ...structuredClone(src), id: uid(src.type), name: `${layerName(src)} のコピー`, x: src.x + 20, y: src.y + 20, locked: false }) as Layer);
-    setSpec((s) => ({ ...s, layers: insertAfter(s.layers, afterId, copies) }));
-    setSelectedIds(copies.map((c) => c.id));
-  };
-  const duplicateLayers = (ls: Layer[]) => insertCopies(ls.filter((l) => l.type !== "background"), ls[ls.length - 1]?.id);
-  const copyLayers = (ls: Layer[]) => { clipboard.current = structuredClone(ls); };
-  /** group の各レイヤーを、開始位置から (dx, dy) だけずらす */
-  const moveLayers = (group: Layer[], dx: number, dy: number, coalesce?: string) => {
-    const starts = new Map(group.map((l) => [l.id, l]));
-    setSpec((s) => ({
-      ...s,
-      layers: s.layers.map((l) => { const o = starts.get(l.id); return o ? ({ ...l, x: Math.round(o.x + dx), y: Math.round(o.y + dy) } as Layer) : l; }),
-    }), coalesce);
-  };
-  /** 範囲選択・一括移動の対象にできるレイヤー（背景・ロック・非表示は除く） */
-  const selectable = (l: Layer) => isVisibleOnCanvas(l, spec.theme) && !l.locked;
-  const movable = (ls: Layer[]) => ls.filter((l) => !l.locked && l.type !== "background");
-  /** Shift / Ctrl+クリックで選択に足す・外す */
-  const toggleSelect = (id: string) => setSelectedIds((ids) => {
-    const keep = ids.filter((i) => spec.layers.some((l) => l.id === i && l.type !== "background"));
-    return keep.includes(id) ? keep.filter((i) => i !== id) : [...keep, id];
-  });
+  const {
+    reorder, moveTo, removeLayers, insertCopies, duplicateLayers, copyLayers, moveLayers, selectable, movable, toggleSelect,
+    addLayer, centered, addComponent, addText, alignLayer,
+  } = createLayerOps({ spec, setSpec, setSelected, setSelectedIds, clipboard, updateLayer, notifyRestorable });
   // ---------- アニメーション（PPTX エディターモード） ----------
-  const animOrder = useMemo(() => new Map(animationSequence(spec).map((s, i) => [s.layer.id, i + 1])), [spec]);
-  /** ids の各レイヤーの動きを update で決め直す（i は ids での位置） */
-  const setAnimations = (ids: string[], update: (prev: LayerAnimation | undefined, i: number) => LayerAnimation | undefined, coalesce?: string) => setSpec((s) => renumberAnimations({
-    ...s,
-    layers: s.layers.map((l) => {
-      const i = ids.indexOf(l.id);
-      if (i < 0) return l;
-      const anim = update(l.animation, i);
-      // 新しく付けたものは最後に動かす（同じ順なら重ね順で並ぶ）
-      return { ...l, animation: anim && { ...anim, order: anim.order ?? Number.MAX_SAFE_INTEGER } };
-    }),
-  }), coalesce);
-  const moveAnimations = (ids: string[], dir: -1 | 1) => setSpec((s) => renumberAnimations(s, { ids, dir }));
-  const previewRef = useRef<{ cancel: () => void } | null>(null);
-  const previewAnimations = (only?: string[]) => {
-    previewRef.current?.cancel();
-    if (!svgRef.current) return;
-    const p = playAnimations(svgRef.current, spec, only);
-    previewRef.current = p;
-    p.done.then(() => { if (previewRef.current === p) previewRef.current = null; });
-  };
-  /** 画面切り替えをキャンバスで再生する（前のスライドは無いので、入ってくる動きだけ） */
-  const previewTransition = () => {
-    previewRef.current?.cancel();
-    const t = spec.transition, svg = svgRef.current;
-    if (!t || !svg) return;
-    const a = svg.animate(transitionKeyframes(t).incoming, { duration: Math.max(1, t.duration), easing: TRANSITION_EASING });
-    const sound = t.sound ? playSound(t.sound) : null;
-    const p = { cancel: () => { a.cancel(); sound?.stop(); } };
-    previewRef.current = p;
-    a.finished.then(() => { if (previewRef.current === p) previewRef.current = null; }, () => undefined);
-  };
-  const setTransition = (t: SlideTransition | undefined, coalesce?: string) => setSpec((s) => {
-    const { transition: _, ...rest } = s;
-    return t ? { ...rest, transition: t } : rest;
-  }, coalesce);
-  const setBgm = (b: SlideBgm[]) => setSpec((s) => {
-    const { bgm: _, ...rest } = s;
-    return b.length ? { ...rest, bgm: b } : rest;
-  });
-  // スライドを切り替えたら再生を止める
-  useEffect(() => () => previewRef.current?.cancel(), [posterId]);
+  const { animOrder, setAnimations, moveAnimations, previewRef, previewAnimations, previewTransition, setTransition, setBgm } =
+    useAnimationOps({ spec, setSpec, svgRef, posterId });
 
   // ---------- スライドショー（PPTX エディターモード） ----------
   /** 投影中のスライド（開始時点の中身）と、始めるスライドの番号 */
@@ -1126,24 +933,12 @@ export function App() {
     return notes ? { ...rest, notes } : rest;
   }, coalesce);
 
-  const addLayer = (layer: Layer) => { setSpec((s) => ({ ...s, layers: [...s.layers, layer] })); setSelected(layer.id); };
-  /** ポスター中央に置く位置 */
-  const centered = (w: number, h: number) => ({ x: Math.round((W - w) / 2), y: Math.round((H - h) / 2), w, h });
-  const addComponent = (name: string) => {
-    const c = CATALOG_BY_NAME[name];
-    addLayer({ id: uid(name), name: c.label, type: "component", component: name, props: structuredClone(c.defaults), ...centered(...c.defaultSize) });
-  };
-  const addText = () => addLayer({ id: uid("text"), name: "テキスト", type: "text", text: "テキスト", font: "display", size: 64, weight: 900, lineHeight: 1.25, align: "left", fill: "$ink", ...centered(600, 90) });
   /** 空の画像枠を置き、チャットの画像生成欄でプロンプトを入れてもらう */
   const addImage = () => {
     addLayer({ id: uid("image"), name: "画像", type: "image", fit: "contain", asset: { prompt: "", transparent: false, aspect: "square" }, ...centered(300, 300) });
     setImgPrompt("");
     setChatMode("image");
     setAiTab("chat");
-  };
-  const alignLayer = (id: string, where: AlignTo) => {
-    const l = spec.layers.find((x) => x.id === id);
-    if (l) updateLayer(id, alignedPosition(l, where, W, H) as Partial<Layer>);
   };
 
   // ---------- キャンバス上のポインタ操作 ----------
@@ -1563,7 +1358,7 @@ export function App() {
         )}
         {deck && deckOpen && (
           <Resizer
-            className="deck" edge="top" label="スライド一覧の高さを変える" min={DECK_CHROME_H + 24} max={Math.round(window.innerHeight * 0.5)}
+            className="deck" edge="top" label="スライド一覧の高さを変える" min={DECK_CHROME_H + 24} max={deckMax}
             getSize={() => deckHeight} onResize={setDeckH} onDragging={setResizing}
           />
         )}
