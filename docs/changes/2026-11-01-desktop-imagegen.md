@@ -54,7 +54,7 @@
   - ComfyUI：起動していない（接続先の URL を出す。ループバックだけなので出してよい）・HTTP エラー・モデルが無い・ジョブ拒否・実行エラー・出力なし・時間切れ。
   - Codex：見つからない・サインインしていない・利用上限・途中で失敗・時間切れ など。stderr（パスを含みうる）は画面に出さない。
   - 画面：まとめて生成したときの「N 点の画像生成に失敗しました」に、最初の失敗の理由を足す（`src/editor/imageErrors.ts`）。
-- 自動検出：PATH → npm のグローバル配置 → Codex デスクトップアプリ同梱（`%LOCALAPPDATA%\OpenAI\Codex\bin` の下、深さ 3 まで）→ アプリが入れたもの。時間のかかる探索は結果を 30 秒覚える。設定画面に見つけた場所の種類を出す。
+- 自動検出：PATH → npm のグローバル配置 → Codex デスクトップアプリ同梱（`%LOCALAPPDATA%\OpenAI\Codex\bin` の下、深さ 3 まで。版のフォルダが複数あれば `codex.exe` の更新日時が新しいほう）→ アプリが入れたもの。時間のかかる探索は結果を 30 秒覚え、見つかっていても 30 秒たてば探し直す（起動中に Codex アプリが更新されても新しい版に切り替わる）。設定画面に見つけた場所の種類を出す。
 - 入れる（`server/codex-setup.ts`・`server/codex-pinned.ts`）：Codex CLI 0.166.0 の公式 GitHub リリースの tar.gz（x64・arm64）を、`github.com` → 転送先（`release-assets.githubusercontent.com`・`objects.githubusercontent.com`）の順に取る。外部通信ゲートに固定パスと転送先を追加し、転送先のホストは呼び出し側でも確かめる。届いた大きさと sha256 がリリースの digest と一致したときだけ、tar の中の実行ファイルを `<userRoot>\tools\codex\0.166.0\codex.exe` に置く。中止・失敗では書きかけを消す。
 - サインイン：見つかった `codex.exe` で `codex login` を shell なし・窓なしで起動し、利用者の既定の `CODEX_HOME` に `auth.json` ができたら済み。`codex login` が出す認可 URL（`auth.openai.com/oauth/authorize?` で始まるものだけ）を画面に渡し、ブラウザが開かないときのリンクにする。待つあいだは 30 秒ごとに進み具合を送り直す（main が worker の応答を読む fetch は、本文が 300 秒途切れると切れるため）。10 分で打ち切る。
 - 読み込み中の表示：設定画面の Codex 欄に、ダウンロードの進み具合（バー・%・MB）→「確かめています」→「入れています」→ サインイン待ち を出し、中止できる。入れ終えてサインインしていなければ、続けてサインインを始める。設定の吹き出しを閉じても処理は続く（`src/editor/codexSetup.ts`）。操作は `codex.install`・`codex.login`（stream。資格情報は渡さない）。

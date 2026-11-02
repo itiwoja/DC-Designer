@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -323,5 +323,25 @@ ${ok ? 'fs.writeFileSync(p.join(process.env.CODEX_HOME, "auth.json"), "{}"); con
   it("Windows 以外ではアプリから入れられない（codex_install_unsupported）", async () => {
     const last = (await postNdjson("/api/codex/install")).at(-1);
     expect(last).toMatchObject({ code: "codex_install_unsupported", status: 400 });
+  });
+});
+
+describe("findNewestFile（Codex アプリ同梱の CLI を選ぶ）", () => {
+  it("古い版のフォルダが残っていても、更新日時の新しい codex.exe を選ぶ", () => {
+    const bin = join(root, "codex-app-bin");
+    const put = (dir: string, file: string, t: number) => {
+      mkdirSync(join(bin, dir), { recursive: true });
+      writeFileSync(join(bin, dir, file), "x");
+      utimesSync(join(bin, dir, file), t, t);
+    };
+    // 名前の順（readdir で先に来やすい）と更新日時の順を逆にしておく
+    put("aaaa-old", "codex.exe", 1_700_000_000);
+    put("zzzz-new", "codex.exe", 1_800_000_000);
+    put("mmmm-rg", "rg.exe", 1_900_000_000);
+    expect(imagegen.findNewestFile(bin, "codex.exe", 3)).toBe(join(bin, "zzzz-new", "codex.exe"));
+  });
+
+  it("見つからなければ undefined", () => {
+    expect(imagegen.findNewestFile(join(root, "no-such-dir"), "codex.exe", 3)).toBeUndefined();
   });
 });
