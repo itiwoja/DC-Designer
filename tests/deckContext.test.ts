@@ -83,4 +83,34 @@ describe("デッキの文脈（言及したスライドは全体、ほかは文�
     expect(r.target).toBe(2);
     expect(r.others).toBeUndefined();
   });
+
+  it("構成を変える指示では sequence が応答に載り、新規スライドの spec も検証される", async () => {
+    ai.ask.mockResolvedValue(JSON.stringify({ reply: "2枚目を分けた", edits: [{ target: 2, spec: spec("二の前半") }], sequence: [1, 2, { spec: spec("二の後半") }, 3] }));
+    const r = await editPoster({
+      spec: current, instruction: "2枚目を2枚に分けて",
+      deck: { current: 1, total: 3, selected: [2], slides: [{ number: 2, title: "二", spec: spec("二") }, { number: 3, title: "三", texts: ["本文"] }] },
+    });
+    expect(ai.ask.mock.calls[0][1][0].text).toContain("ユーザーがスライド一覧で選択中のスライド: 2");
+    expect(r.target).toBe(2);
+    expect(r.sequence).toHaveLength(4);
+    expect((r.sequence![2] as { spec: { meta: { title: string } } }).spec.meta.title).toBe("二の後半");
+  });
+
+  it("edits が空でも sequence だけ（入れ替え）を返せる。旧 remove は sequence に変換され remove は残らない", async () => {
+    const deck = { current: 1, total: 3, slides: [{ number: 2, title: "二", spec: spec("二") }, { number: 3, title: "三", spec: spec("三") }] };
+    ai.ask.mockResolvedValue(JSON.stringify({ reply: "入れ替えた", edits: [], sequence: [3, 2, 1] }));
+    expect(await editPoster({ spec: current, instruction: "1と3を入れ替えて", deck })).toEqual({ reply: "入れ替えた", sequence: [3, 2, 1] });
+    ai.ask.mockResolvedValue(JSON.stringify({ reply: "まとめた", edits: [{ target: 2, spec: spec("統合") }], remove: [3] }));
+    const r = await editPoster({ spec: current, instruction: "2と3を1枚に", deck });
+    expect(r.sequence).toEqual([1, 2]);
+    expect(r).not.toHaveProperty("remove");
+  });
+
+  it("参考スライドを落とした sequence はエラー（AI にやり直させる）", async () => {
+    ai.ask.mockResolvedValue(JSON.stringify({ reply: "消した", edits: [], sequence: [1] }));
+    await expect(editPoster({
+      spec: current, instruction: "2枚目を消して",
+      deck: { current: 1, total: 2, slides: [{ number: 2, title: "二", texts: ["本文"] }] },
+    })).rejects.toThrow("参考スライド 2");
+  });
 });

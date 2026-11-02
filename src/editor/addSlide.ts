@@ -10,6 +10,8 @@ const COUNT = String.raw`(?:もう)?\s*(?:\d+|一|ひと)?\s*枚?`;
 export function addSlidePosition(text: string, current: number, total: number): number | null {
   const t = text.normalize("NFKC");
   if (/台本|ノート|原稿/.test(t)) return null;
+  // 「5枚を3枚にまとめて」「2枚目を分けて」のような構成の組み替えは、スライドを足す指示ではなくデッキの構成変更として扱う
+  if (/まとめて|まとめる|まとめ直|統合|分け|分割|圧縮|入れ替え|入れかえ|並べ替え|並び替え|組み直/.test(t)) return null;
   // 「20枚目を追加」は番号だけで足す指示。「20枚目に〜スライドを追加」「3枚目として〜」は位置の指定
   const nthOnly = new RegExp(String.raw`\d+\s*(?:枚目|ページ目|番目)\s*(?:の(?:スライド|ページ))?\s*(?:を|も)?\s*${ADD}`).test(t);
   const nth = t.match(/(\d+)\s*(?:枚目|ページ目|番目)\s*(?:に|として|を|も|の(?:スライド|ページ))/);
