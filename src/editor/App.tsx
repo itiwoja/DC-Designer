@@ -413,13 +413,15 @@ export function App() {
     const current = deck.slides.findIndex((s) => s.id === posterIdRef.current) + 1;
     if (!current) return undefined;
     await save.flushSave();
-    const full = new Set(slideRefs(text, current, deck.slides.length));
+    // スライド一覧で選んだスライドも、言及したものと同じく spec ごと渡す（構成変更や統合の対象になる）
+    const selected = selectedSlideIds.map((id) => deck.slides.findIndex((s) => s.id === id) + 1).filter((n) => n > 0).sort((a, b) => a - b);
+    const full = new Set([...slideRefs(text, current, deck.slides.length), ...selected]);
     const slides = await Promise.all(deck.slides.flatMap((s, i) => i + 1 === current ? [] : [{ slide: s, number: i + 1 }]).map(async ({ slide, number }) => {
       const spec = (await api.poster(slide.id)).spec;
       const notes = spec.notes?.trim().slice(0, 300);
       return full.has(number) ? { number, title: slide.title, spec } : { number, title: slide.title, texts: slideContent(spec).texts.map((t) => t.slice(0, 120)), ...(notes ? { notes } : {}) };
     }));
-    return { current, total: deck.slides.length, slides };
+    return { current, total: deck.slides.length, slides, ...(selected.length ? { selected } : {}) };
   };
 
   /** 番号の並びを「4・5」の形に */
@@ -457,6 +459,7 @@ export function App() {
     const r = await applyDeckSequence(res.sequence!, edits);
     const parts = [plan.rewrites.length && `${plan.rewrites.length} 枚書き換え`, added && `${added} 枚追加`, removedNums.length && `${removedNums.length} 枚削除`, !added && !removedNums.length && reordered && "並べ替え"].filter(Boolean);
     const reply = { text: res.reply || "スライドの構成を変えました", changes: `構成: ${before} 枚 → ${after} 枚${parts.length ? `（${parts.join("・")}）` : ""}` };
+    if (r.removed.length) setSelectedSlideIds([]);
     if (autoImages && r.order.some((id) => { const sp = specOf(id); return sp && (r.created.includes(id) || r.rewritten.includes(id)) && findPendingAssets(sp).length; })) {
       chat.push({ role: "assistant", ...reply });
       await generateAcross(r.order.filter((id) => r.created.includes(id) || r.rewritten.includes(id)), signal);
@@ -886,6 +889,25 @@ export function App() {
     fontDialog, setFontDialog, openFontDialog, applyDeckFonts, applyTransitionToAll, renumberDeckPages, writeNotes, addSlideByAI, editAcrossDeck, importPptxFile,
     deckReady, renameDeck,
   } = useDeck({ spec, theme, save, apiUp, busy, run, notify, exported, setBusyProgress, setSpec, resetSpec, stashHistory, setSelected, fitView });
+  /** スライド一覧で複数選択中のスライド id（空 = 複数選択なし）。デッキが変わったら・スライドが消えたら外す */
+  const [selectedSlideIds, setSelectedSlideIds] = useState<string[]>([]);
+  useEffect(() => {
+    setSelectedSlideIds((cur) => {
+      const have = new Set(deck?.slides.map((sl) => sl.id));
+      const next = cur.filter((id) => have.has(id));
+      return next.length === cur.length ? cur : next.length >= 2 ? next : [];
+    });
+  }, [deck]);
+  /** 削除ボタン: 複数選択中なら確認してまとめて削除、1 枚なら今のスライドを削除 */
+  const removeSlides = async () => {
+    if (selectedSlideIds.length < 2) return removeSlide();
+    if (!deck || busy) return;
+    const ids = selectedSlideIds;
+    const nums = ids.map((id) => deck.slides.findIndex((sl) => sl.id === id) + 1).filter((n) => n > 0).sort((a, b) => a - b);
+    if (!await ask({ title: `選択した ${ids.length} 枚を削除しますか？`, message: `スライド ${nums.join("・")} を削除します。この操作は取り消せません。`, ok: "削除", danger: true })) return;
+    setSelectedSlideIds([]);
+    return run(`${ids.length} 枚のスライドを削除中`, () => deleteSlides(ids));
+  };
   /** スライド（デッキ）を開いているか。投影・台本・アニメーションはこのときだけ */
   const isSlides = !!deck;
   /** 開いているモード。デッキを調べ終えたらデッキの種類で決め、それまでは URL の mode（無ければポスター）。別モードの成果物を作る・読み込む導線は出さない */
@@ -1380,8 +1402,8 @@ export function App() {
         {deck && (
           <DeckStrip
             deck={deck} slides={slides} currentSpec={spec} open={deckOpen} currentId={posterId} width={W} height={H} thumbHeight={deckHeight - DECK_CHROME_H} disabled={!!busy}
-            onOpen={goToSlide}
-            onAdd={addSlide} onDuplicate={duplicateSlide} onRemove={removeSlide} onMove={moveSlide} onReorder={reorderSlide}
+            onOpen={goToSlide} selectedIds={selectedSlideIds} onSelect={setSelectedSlideIds}
+            onAdd={addSlide} onDuplicate={duplicateSlide} onRemove={removeSlides} onMove={moveSlide} onReorder={reorderSlide}
             onExport={exportDeck} onFonts={openFontDialog} onToggle={toggleDeck} onPresent={() => startShow(false)} onPresentView={() => startShow(true, true)}
           />
         )}

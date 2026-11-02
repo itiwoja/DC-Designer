@@ -1,15 +1,16 @@
-import { useEffect, useLayoutEffect, useRef, useState, type DragEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
 import type { PosterSpec } from "../schema";
 import type { Deck } from "./api";
 import { SpecFrame } from "./ui";
 import { Ico } from "./uiIcons";
+import { nextSlideSelection } from "./slideSelection";
 
 /**
  * PPTX エディターモードのスライド一覧（キャンバス下の帯）。
  * 全スライドの中身は手元にあるので、サムネイルもサーバーを介さずその中身を描く（開いているスライドは編集中の内容）
  */
 export function DeckStrip({
-  deck, slides, currentSpec, open, currentId, width, height, thumbHeight, disabled, onOpen, onAdd, onDuplicate, onRemove, onMove, onReorder, onExport, onFonts, onToggle, onPresent, onPresentView,
+  deck, slides, currentSpec, open, currentId, width, height, thumbHeight, disabled, selectedIds, onSelect, onOpen, onAdd, onDuplicate, onRemove, onMove, onReorder, onExport, onFonts, onToggle, onPresent, onPresentView,
 }: {
   deck: Deck;
   /** スライド ID → 中身（開いているスライドの分は currentSpec を使う） */
@@ -23,6 +24,9 @@ export function DeckStrip({
   /** サムネイルの高さ（帯の高さに合わせて変わる） */
   thumbHeight: number;
   disabled: boolean;
+  /** 複数選択中のスライド id（空 = 複数選択なし。Ctrl/⌘ ＋クリックや Shift ＋クリックで変わる） */
+  selectedIds: readonly string[];
+  onSelect: (ids: string[]) => void;
   onOpen: (id: string) => void;
   onAdd: () => void;
   onDuplicate: () => void;
@@ -41,6 +45,16 @@ export function DeckStrip({
   const index = deck.slides.findIndex((s) => s.id === currentId);
   const unit = "スライド";
   const listRef = useRef<HTMLOListElement>(null);
+  const multi = selectedIds.length >= 2;
+  // Shift ＋クリックの範囲選択の起点
+  const anchorRef = useRef<string | null>(null);
+  const clickSlide = (id: string, e: MouseEvent) => {
+    if (disabled) return;
+    const r = nextSlideSelection(deck.slides.map((s) => s.id), selectedIds, currentId, anchorRef.current, id, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey });
+    anchorRef.current = r.anchor;
+    if (r.selected.length !== selectedIds.length || r.selected.some((x, i) => x !== selectedIds[i])) onSelect(r.selected);
+    if (r.open && r.open !== currentId) onOpen(r.open);
+  };
   // 開いているスライドが見える位置まで一覧を横にスクロールする。
   // scrollIntoView は overflow: hidden の親（帯やキャンバスの枠）まで縦に動かして見出しが隠れることがあるので、一覧だけを動かす
   useEffect(() => {
@@ -105,7 +119,10 @@ export function DeckStrip({
     <div className={"deck-strip" + (open ? "" : " collapsed")} role="region" aria-label={`${unit}一覧`}>
       <div className="deck-head">
         <strong title={deck.name}><Ico name="slides" size={14} /> {deck.name}</strong>
-        <span className="deck-pos">{index >= 0 ? `${index + 1} / ${deck.slides.length}` : `${deck.slides.length} 枚`}</span>
+        {/* 複数選択中は位置の代わりに選択枚数を出す（帯の幅が狭いとき右端のボタンが切れないように） */}
+        {multi
+          ? <span className="deck-sel-count" role="status">{selectedIds.length} 枚選択中</span>
+          : <span className="deck-pos">{index >= 0 ? `${index + 1} / ${deck.slides.length}` : `${deck.slides.length} 枚`}</span>}
         <span className="spacer" />
         <div className="deck-actions" inert={!open}>
         <div className="btn-group">
@@ -114,7 +131,7 @@ export function DeckStrip({
         </div>
         <button onClick={onAdd} disabled={disabled} title={`この${unit}の後ろに白紙の${unit}を追加`}><Ico name="plus" size={14} /> 追加</button>
         <button onClick={onDuplicate} disabled={disabled || index < 0} title={`この${unit}を複製`}><Ico name="copy" size={14} /> 複製</button>
-        <button onClick={onRemove} disabled={disabled || index < 0 || deck.slides.length <= 1} title={`この${unit}を削除`} aria-label={`この${unit}を削除`}><Ico name="trash" size={14} /></button>
+        <button onClick={onRemove} disabled={disabled || (multi ? selectedIds.length >= deck.slides.length : index < 0 || deck.slides.length <= 1)} title={multi ? `選択した${selectedIds.length}枚を削除` : `この${unit}を削除`} aria-label={multi ? `選択した${selectedIds.length}枚を削除` : `この${unit}を削除`}><Ico name="trash" size={14} /></button>
         <button onClick={onFonts} disabled={disabled} title={`雰囲気に合うフォントを ChatGPT に提案してもらい、全${unit}に適用する`}><Ico name="type" size={14} /> フォント</button>
         <button onClick={onPresent} title="1 枚目から画面いっぱいに投影（F5。Shift+F5 で今のスライドから）"><Ico name="monitor" size={14} /> 投影</button>
         <button onClick={onPresentView} title="今のスライドから、別ウィンドウの発表者ビュー（台本・次のスライド・経過時間）付きで投影（Alt+F5）"><Ico name="notes" size={14} /> 発表者ビュー</button>
@@ -124,17 +141,22 @@ export function DeckStrip({
       </div>
       <ol
         className={"deck-list" + (dragId ? " dragging" : "")} ref={listRef} inert={!open}
+        role="listbox" aria-label={`${unit}一覧`} aria-multiselectable="true"
+        onKeyDown={(e) => { if (e.key === "Escape" && selectedIds.length > 0 && !disabled) { e.stopPropagation(); onSelect([]); } }}
         onDragOver={onDragOver}
         onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropAt(null); }}
         onDrop={onDrop}
       >
         {deck.slides.map((s, i) => {
+          const picked = multi && selectedIds.includes(s.id);
           const sp = s.id === currentId ? currentSpec : slides.get(s.id);
           return (
           <li
             key={s.id}
             draggable={!disabled && deck.slides.length > 1}
+            role="presentation"
             className={[
+              picked ? "selected" : "",
               s.id === dragId ? "drag-source" : "",
               dropAt === i ? "drop-before" : "",
               dropAt === i + 1 && i === deck.slides.length - 1 ? "drop-after" : "",
@@ -148,15 +170,18 @@ export function DeckStrip({
           >
             <button
               className="deck-thumb"
+              role="option"
+              aria-selected={picked || (!multi && s.id === currentId)}
               aria-current={s.id === currentId}
               disabled={disabled && s.id !== currentId}
-              onClick={() => s.id !== currentId && onOpen(s.id)}
+              onClick={(e) => clickSlide(s.id, e)}
               title={sp?.meta.title ?? s.title}
               style={{ width: thumbW, height: thumbH }}
             >
               {sp && <SpecFrame spec={sp} style={{ width, height, transform: `scale(${thumbH / height})` }} />}
             </button>
             <span className="deck-num">{i + 1}</span>
+            {picked && <span className="deck-check" aria-hidden="true">✓</span>}
           </li>
           );
         })}

@@ -621,6 +621,14 @@ button.primary.danger, button.primary.danger:hover:not(:disabled) { background: 
 .deck-thumb img.snap { position: absolute; left: 0; top: 0; max-width: none; transform-origin: 0 0; pointer-events: none; user-select: none; }
 .deck-thumb[aria-current="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
 .deck-thumb:hover:not(:disabled) { border-color: var(--accent); }
+/* 複数選択中: 開いているスライドの枠とは別に、枠の色・薄い背景・右上のチェックで示す */
+.deck-sel-count { color: var(--sel-line); font-weight: 600; white-space: nowrap; flex: none; }
+.deck-list li.selected .deck-thumb { border-color: var(--sel-line); box-shadow: 0 0 0 2px var(--sel-line), 0 0 0 5px var(--sel); }
+.deck-list li.selected .deck-thumb[aria-current="true"] { outline-offset: 4px; }
+.deck-check {
+  position: absolute; right: 4px; top: 4px; width: 16px; height: 16px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; line-height: 1; font-weight: 700; background: var(--sel-line); color: #fff; pointer-events: none;
+}
 /* ドラッグ＆ドロップでの並べ替え: 掴んだスライドは薄く、落とす位置に縦線を出す */
 .deck-list li[draggable="true"] { cursor: grab; }
 .deck-list.dragging li { cursor: grabbing; }
