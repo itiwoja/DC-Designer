@@ -108,7 +108,8 @@ export function TextEditor({ layer, theme, svg, at, px, onChange, onDone }: {
               if (e.key === "Escape" || ((e.ctrlKey || e.metaKey) && e.key === "Enter")) { e.preventDefault(); onDone(); }
             }}
             style={{
-              fontFamily, fontSize: size, fontWeight, lineHeight: `${size * lh}px`,
+              // 表示（TextBlock）と同じく偽の太字を作らせない。編集中だけ太く見えて、確定すると細くなるずれを防ぐ
+              fontFamily, fontSize: size, fontWeight, fontSynthesisWeight: "none", lineHeight: `${size * lh}px`,
               letterSpacing: layer.letterSpacing ? `${layer.letterSpacing}em` : undefined,
               textAlign: layer.align ?? "left",
             }}
