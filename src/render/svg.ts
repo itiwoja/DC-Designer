@@ -1,15 +1,12 @@
 import type { PosterSpec } from "../schema";
-import { FALLBACK_FONT, FONT_BY_FAMILY, FONT_CATALOG } from "../fonts";
+import { FALLBACK_FONT, FONT_BY_FAMILY, FONT_CATALOG, matchWeight } from "../fonts";
 import { api } from "../editor/api";
 import { withOffscreenPoster } from "./offscreen";
 
 /** Google Fonts で提供されているウェイト */
 const FONT_WEIGHTS: Record<string, number[]> = Object.fromEntries(FONT_CATALOG.map((f) => [f.family, f.weights]));
 
-const snap = (family: string, w: number) => {
-  const list = FONT_WEIGHTS[family] ?? [400];
-  return list.reduce((a, b) => (Math.abs(b - w) < Math.abs(a - w) ? b : a));
-};
+const snap = (family: string, w: number) => matchWeight(FONT_WEIGHTS[family] ?? [400], w);
 
 export async function toDataUrl(src: string | Blob): Promise<string> {
   if (typeof src === "string" && src.startsWith("data:")) return src;
