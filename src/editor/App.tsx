@@ -145,6 +145,21 @@ export function App() {
     if (await save.saveNow()) notify({ kind: "success", text: "保存しました" });
     else notify({ kind: "error", text: "保存できませんでした。API サーバーが起動しているか確認してください（ブラウザには保存済みで、復帰後に自動で保存します）" });
   };
+  /** 今の内容をテンプレートとして保存する（ポスターは 1 枚、スライドはデッキ丸ごと）。サーバーの保存済みの中身から作るので、先に未保存の編集を確定する */
+  const saveAsTemplate = async () => {
+    if (save.savingNow) return;
+    const target = deck ? { deckId: deck.id } : posterIdRef.current ? { posterId: posterIdRef.current } : null;
+    if (!target || !await save.saveNow()) {
+      notify({ kind: "error", text: "テンプレートを保存できませんでした。先に成果物を保存できるか（API サーバーが起動しているか）確認してください" });
+      return;
+    }
+    try {
+      const t = await api.createTemplate(target);
+      notify({ kind: "success", text: `テンプレート『${t.name}』を保存しました。ホームの『テンプレートから作る』から使えます` });
+    } catch (e) {
+      notify({ kind: "error", text: `テンプレートを保存できませんでした${e instanceof Error && e.message ? `（${e.message}）` : ""}` });
+    }
+  };
   const leaveTo = async (url: string) => {
     // 保存できないまま移ると、別の成果物を開いたときにブラウザの控えも置き換わって編集内容を失う（裏で保存中のスライドも待つ）
     if (!await save.flushAll() && !await ask({
@@ -1106,6 +1121,7 @@ export function App() {
                   </>}
                   <div className="menu-sep" />
                   <button role="menuitem" onClick={saveNow} disabled={save.savingNow}><Ico name="save" /> 今すぐ保存<small><kbd>{MOD}+S</kbd></small></button>
+                  <button role="menuitem" onClick={saveAsTemplate} disabled={save.savingNow || !posterId}><Ico name="copy" /> テンプレートとして保存<small>{mode === "slides" ? "デッキ丸ごと" : "このポスター"}</small></button>
                   {appVersion && <><div className="menu-sep" /><p className="menu-note">DC-Designer {appVersion}</p></>}
                 </div>
               )}

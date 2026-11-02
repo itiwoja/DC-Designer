@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { findPendingAssets, PosterSpecSchema, type PosterSpec } from "../schema";
 import { THEMES } from "../themes";
 import { download } from "../render/svg";
-import { api, deckBySlide, type Deck, type GeneratedFile, type SavedPoster } from "./api";
+import { api, deckBySlide, type Deck, type GeneratedFile, type SavedPoster, type Template } from "./api";
 import { isShownDeck, modeEditorUrl, modeHomeUrl, modeOfDeck, MODES, readLastId, readModeParam } from "./mode";
 import { BLANK_SLIDE_SPEC, BLANK_SPEC, openDeckInEditor, openInEditor } from "./nav";
 import { readCurrentId, STORAGE_KEY, writeCurrentId, writeSynced } from "./storage";
@@ -60,11 +60,16 @@ export function Library() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [preview, setPreview] = useState<GeneratedFile | null>(null);
   const [busy, setBusy] = useState(false);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  /** テンプレートを保存したときの結果表示 */
+  const [notice, setNotice] = useState<string | null>(null);
   const currentId = readCurrentId();
 
   const reload = useCallback(async () => {
     try {
-      const [p, d, g] = await Promise.all([api.posters(), api.decks(), api.generated(editingSpec())]);
+      // テンプレートが取れなくても画面は壊さない（空として扱う）
+      const [p, d, g, t] = await Promise.all([api.posters(), api.decks(), api.generated(editingSpec()), api.templates().catch(() => ({ templates: [] as Template[] }))]);
+      setTemplates(t.templates);
       setPosters(p.posters);
       setDecks(d.decks);
       // 取り込んだ効果音（音声ファイル）は画像の一覧に出さない
@@ -121,14 +126,20 @@ export function Library() {
   }, [modeDecks, posterById, q, sort]);
 
   /** このモードの成果物の ID（画像の絞り込み用） */
-  const modeIds = useMemo(() => new Set(mode === "poster" ? standalone.map((p) => p.id) : modeDecks.flatMap((d) => d.slides.map((s) => s.id))), [mode, standalone, modeDecks]);
+  const modeIds = useMemo(() => {
+    const ids = mode === "poster" ? standalone.map((p) => p.id) : modeDecks.flatMap((d) => d.slides.map((s) => s.id));
+    // テンプレートだけが使っている画像も、そのモードの画像として扱う
+    const tids = templates.filter((t) => t.mode === mode).map((t) => t.id);
+    return new Set([...ids, ...tids]);
+  }, [mode, standalone, modeDecks, templates]);
+  const templateById = useMemo(() => new Map(templates.map((t) => [t.id, t])), [templates]);
   /** このモードの成果物が使っている画像と、どれにも使われていない画像 */
   const modeFiles = useMemo(() => (files ?? []).filter((f) => !f.usedBy.length || f.usedBy.some((id) => modeIds.has(id))), [files, modeIds]);
   const unused = modeFiles.filter((f) => !f.usedBy.length);
   const shownFiles = modeFiles.filter((f) => {
     if (imageFilter === "used" && !f.usedBy.length) return false;
     if (imageFilter === "unused" && f.usedBy.length) return false;
-    return !q || f.name.toLowerCase().includes(q) || f.usedBy.some((id) => titleOf.get(id)?.toLowerCase().includes(q));
+    return !q || f.name.toLowerCase().includes(q) || f.usedBy.some((id) => (titleOf.get(id) ?? templateById.get(id)?.name)?.toLowerCase().includes(q));
   });
   /** 「エディタに戻る」は、最後に開いた成果物がこのモードの一覧にあるときだけ出す */
   const lastId = readLastId(mode);
@@ -159,6 +170,14 @@ export function Library() {
       await api.deletePoster(p.id);
       // 編集中のものを消したら、エディタが同じ内容で作り直さないように控えも消す
       if (p.id === currentId) clearEditing();
+    });
+  };
+  /** 成果物をテンプレートとして保存する（名前は既定のまま。結果は画面に出す） */
+  const saveTemplate = (body: { posterId: string } | { deckId: string }) => {
+    setNotice(null);
+    act(async () => {
+      const t = await api.createTemplate(body);
+      setNotice(`テンプレート「${t.name}」を保存しました。ホームの「テンプレートから作る」から使えます。`);
     });
   };
   const removeFiles = async (names: string[]) => {
@@ -230,6 +249,8 @@ export function Library() {
       <main className="lib-main">
         {error && <p className="lib-error" role="alert">{error} <button className="small" onClick={reload}>再読み込み</button></p>}
 
+        {notice && <p className="lib-notice" role="status">{notice}</p>}
+
         {tab === "items" && mode === "poster" && posters && decks && (
           shownPosters.length ? (
             <ul className="lib-grid">
@@ -255,6 +276,7 @@ export function Library() {
                       <button className="small primary" onClick={() => openInEditor(p, "poster")}>開く</button>
                       <button className="small" disabled={busy} onClick={() => setRenaming(p.id)}>名前変更</button>
                       <button className="small" disabled={busy} onClick={() => act(() => api.duplicatePoster(p.id))}>複製</button>
+                      <button className="small" disabled={busy} onClick={() => saveTemplate({ posterId: p.id })}>テンプレートに保存</button>
                       <button className="small" onClick={() => download(new Blob([JSON.stringify(p.spec, null, 2)], { type: "application/json" }), `${safeFileName(p.spec.meta.title)}.json`)}>JSON</button>
                       <button className="small danger" disabled={busy} onClick={() => remove(p)}>削除</button>
                     </div>
@@ -303,6 +325,7 @@ export function Library() {
                         <button className="small primary" onClick={() => openDeck(d)} disabled={!cover}>開く</button>
                         <button className="small" disabled={busy} onClick={() => setRenaming(d.id)}>名前変更</button>
                         <button className="small" disabled={busy} onClick={() => act(() => api.duplicateDeck(d.id))}>複製</button>
+                        <button className="small" disabled={busy} onClick={() => saveTemplate({ deckId: d.id })}>テンプレートに保存</button>
                         <button className="small" onClick={() => exportDeckJson(d)} disabled={!cover}>JSON</button>
                         <button className="small" aria-expanded={open} onClick={() => setExpanded(open ? null : d.id)}>{open ? "スライドを閉じる" : "スライド一覧"}</button>
                         <button className="small danger" disabled={busy} onClick={() => removeDeck(d)}>削除</button>
@@ -357,6 +380,8 @@ export function Library() {
                       <small className="used-by">
                         {f.usedBy.map((id) => {
                           const p = posterById.get(id);
+                          const t = templateById.get(id);
+                          if (!p && t) return <span key={id}>テンプレート「{t.name}」</span>;
                           return p ? <button key={id} className="link" onClick={() => openInEditor(p, deckOfSlide.has(id) ? modeOfDeck(deckOfSlide.get(id)) : "poster")}>{titleOf.get(id)}</button> : <span key={id}>編集中の{itemLabel}</span>;
                         })}
                       </small>
