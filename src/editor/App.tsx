@@ -33,11 +33,9 @@ import { Presenter } from "./Presenter";
 import { openPresenterWindow } from "./PresenterView";
 import { HOME_URL, IMPORT_NOTICE_KEY, loadInitialSpec, PENDING_BRIEF_KEY } from "./nav";
 import { modeHomeUrl, modeLibraryUrl, modeOfDeck, MODES, readModeParam, writeLastId, type AppMode } from "./mode";
-import { isMissingNotesRequest, isWriteNotesRequest } from "./notes";
-import { isRenumberRequest } from "./pageNumbers";
-import { addSlidePosition } from "./addSlide";
-import { isWholeDeckRequest, slideRefs } from "./slideRefs";
-import { parseSlash, slashSuggestions, SlashMenu, type SlashCommand } from "./slashCommands";
+import { slideRefs } from "./slideRefs";
+import { routeChatRequest } from "./chatRoute";
+import { slashSuggestions, SlashMenu, type SlashCommand } from "./slashCommands";
 import {
   aspectOf, assetHolder, diffLayers, IMAGE_FILE_ACCEPT, IMAGE_FILE_TYPES, imageSlot, insertAfter,
   naturalSize, patchAsset, PPTX_ACCEPT, prepareAsset, toLayerRef, uid, type LayerRef,
@@ -184,6 +182,8 @@ export function App() {
   const clipboard = useRef<Layer[]>([]);
   /** AI の変更箇所を一瞬ハイライトする */
   const [flash, setFlash] = useState<string[]>([]);
+  /** AI が変えた・足したレイヤーを少しの間だけ光らせる */
+  const flashLayers = (ids: string[]) => { setFlash(ids); setTimeout(() => setFlash([]), 1800); };
   /** 画像生成中の "レイヤーID|パス" */
   const [generating, setGenerating] = useState<Set<string>>(new Set());
   const generatingIds = useMemo(() => new Set([...generating].map((k) => k.split("|")[0])), [generating]);
@@ -321,8 +321,7 @@ export function App() {
     const next = res.spec;
     const d = diffLayers(target, next);
     setSpec(next);
-    setFlash([...d.added, ...d.changed]);
-    setTimeout(() => setFlash([]), 1800);
+    flashLayers([...d.added, ...d.changed]);
     return res;
   };
 
@@ -445,6 +444,66 @@ export function App() {
   /** チャットで依頼する対象（未選択ならポスター全体） */
   const chatScope = selLayers.length ? (multi ? `${selLayers.length} 件のレイヤー` : layerName(selLayers[0])) : null;
   /**
+   * AI の修正（api.edit）の結果をデッキ・ポスターに当て、チャットの返答を作る。
+   * 別のスライドへの指示ならそのスライドを開いてから当て、ほかのスライドは開かずに書き換える。まとめ元のスライドは確認してから消す
+   */
+  const applyEditResult = async (res: Awaited<ReturnType<typeof api.edit>>, cur: PosterSpec, ctx: DeckEditContext | undefined, signal: AbortSignal): Promise<Omit<ChatMsg, "id" | "role">> => {
+    const next = res.spec;
+    if (!next) return { text: res.reply || "変更はありませんでした" };
+    // 別のスライドを書き換える指示なら、そのスライドを開いてから適用する（履歴に積まれるので Ctrl+Z / 元に戻す が効く）
+    const target = ctx && res.target && res.target !== ctx.current ? deck?.slides[res.target - 1] : undefined;
+    // 「3枚目と5枚目を直して」: 開いていないほかのスライドは、開かずに書き換えて裏で保存する
+    const others = (res.others ?? []).flatMap((e) => {
+      const slide = deck?.slides[e.target - 1];
+      const old = slide && slide.id !== (target?.id ?? posterIdRef.current) ? specOf(slide.id) : undefined;
+      return slide && old && diffLayers(old, e.spec).hasChanges ? [{ n: e.target, posterId: slide.id, before: old, spec: e.spec }] : [];
+    });
+    let before = cur;
+    if (target) {
+      if (signal.aborted) throw new Error("aborted");
+      before = await openSlide(target.id);
+    }
+    for (const o of others) updateSlide(o.posterId, o.spec);
+    const d = diffLayers(before, next);
+    if (!d.hasChanges && !others.length) {
+      return { text: res.reply ? `${res.reply}\n（ポスターに変更はありませんでした。もう少し具体的に指示してみてください）` : "変更はありませんでした。指示をもう少し具体的にしてみてください" };
+    }
+    if (d.hasChanges) {
+      setSpec(next);
+      flashLayers([...d.added, ...d.changed]);
+    }
+    const parts = [d.changed.length && `${d.changed.length} 件変更`, d.added.length && `${d.added.length} 件追加`, d.removed && `${d.removed} 件削除`, d.themeChanged && "テーマ変更", d.metaChanged && "ポスター設定変更", d.reordered && "重ね順変更", d.notesChanged && "台本変更", d.transitionChanged && "画面切り替え変更"].filter(Boolean);
+    if ((d.notesChanged || others.some((o) => o.before.notes !== o.spec.notes)) && isSlides) toggleNotes(true);
+    const main = d.hasChanges ? `${target || others.length ? `スライド ${res.target ?? ctx?.current}: ` : ""}${parts.join("・") || "変更"}` : "";
+    const changes = [main, others.length && `スライド ${others.map((o) => o.n).join("・")} も変更`].filter(Boolean).join("・");
+    const reply = { text: res.reply || "修正しました", changes, before, posterId: posterIdRef.current, ...(others.length ? { others: others.map(({ posterId, before }) => ({ posterId, before })) } : {}) };
+    // 「スライド18,19を1枚にまとめて」: まとめ元のスライドを、確認してから削除する
+    const merged = (res.remove ?? []).map((n) => ({ n, slide: deck?.slides[n - 1] })).filter((r) => r.slide && r.slide.id !== posterIdRef.current);
+    if (merged.length) {
+      const nums = merged.map((r) => r.n).join("・");
+      const ok = await ask({
+        title: `スライド ${nums} を削除しますか？`,
+        message: `内容をスライド ${res.target ?? ctx?.current} にまとめました。まとめ元の${merged.map((r) => `「${r.slide!.title}」`).join("")}を削除します。この操作は取り消せません（残しておく場合は「キャンセル」）。`,
+        ok: "削除", danger: true,
+      });
+      if (ok) {
+        await deleteSlides(merged.map((r) => r.slide!.id));
+        reply.changes += `・スライド ${nums} を削除`;
+      }
+    }
+    if (autoImages && others.some((o) => findPendingAssets(o.spec).length)) {
+      chat.push({ role: "assistant", ...reply });
+      await generateAcross([posterIdRef.current!, ...others.map((o) => o.posterId)], signal);
+      return { text: "画像も生成しました" };
+    }
+    if (autoImages && findPendingAssets(next).length) {
+      chat.push({ role: "assistant", ...reply });
+      await generatePending(next, signal);
+      return { text: "画像も生成しました" };
+    }
+    return reply;
+  };
+  /**
    * 入力欄の文を送る（送ったら空にし、失敗したら戻す）。
    * regen: 履歴の発言への返答の作り直し。入力欄には触らず、base（AI が変更する前の spec）から考え直させる
    */
@@ -453,34 +512,28 @@ export function App() {
     const cur = regen?.base ?? spec;
     const ids = selLayers.length ? selLayers.map((l) => l.id) : undefined;
     const context = chat.context(regen?.msg.id);
-    const slash = parseSlash(text, isSlides, mode === "poster");
-    if (slash && "error" in slash) { notify({ kind: "error", text: slash.error }); return; }
+    const current = deck ? deck.slides.findIndex((s) => s.id === posterIdRef.current) + 1 : 0;
+    const route = routeChatRequest(text, { deck: deck ? { current, total: deck.slides.length } : undefined, poster: mode === "poster" });
+    if (route.kind === "slash-error") { notify({ kind: "error", text: route.error }); return; }
     const restore = regen ? () => {} : () => setInstruction(text);
     if (!regen) setInstruction("");
-    if (slash) return runSlash(slash.cmd, slash.arg, restore, regen?.msg);
-    // 「右下のスライド番号の並びを直して」: AI には 1 枚ずつしか見えないので、全スライドの番号を手元で振り直す
-    if (isSlides && isRenumberRequest(text)) {
-      return chatTurn(regen?.msg ?? { text, mode: "chat" }, "ページ番号を確認中", restore, () => renumberDeckPages());
-    }
-    // 「台本が無いスライドに台本を書いて」: AI には 1 枚ずつしか見えないので、デッキ全体の文字を渡して空の台本をまとめて書く
-    if (isSlides && isMissingNotesRequest(text)) return writeNotesTurn(regen?.msg ?? { text, mode: "chat" }, restore, { request: text });
-    // 「このスライドの台本を書いて」: ふつうの修正だとほかのスライドの台本が見えないので、同じ書き方（口調・長さをお手本に合わせる）で書く
-    if (isSlides && deck && isWriteNotesRequest(text)) {
-      const current = deck.slides.findIndex((s) => s.id === posterIdRef.current) + 1;
-      // 「全スライドの台本を書き直して」は全スライドを書き直す
-      const targets = isWholeDeckRequest(text) ? deck.slides.map((_, i) => i + 1) : slideRefs(text, current, deck.slides.length);
-      if (targets.length || current) return writeNotesTurn(regen?.msg ?? { text, mode: "chat" }, restore, { targets: targets.length ? targets : [current], request: text });
+    switch (route.kind) {
+      case "slash":
+        return runSlash(route.cmd, route.arg, restore, regen?.msg);
+      case "renumber":
+        return chatTurn(regen?.msg ?? { text, mode: "chat" }, "ページ番号を確認中", restore, () => renumberDeckPages());
+      case "missing-notes":
+        return writeNotesTurn(regen?.msg ?? { text, mode: "chat" }, restore, { request: text });
+      case "write-notes":
+        return writeNotesTurn(regen?.msg ?? { text, mode: "chat" }, restore, { targets: route.targets, request: text });
     }
     // 通常編集だけでなく、全スライドへの適用・スライド追加・再送信でも同じ添付を使う。
     const requestText = regen ? text : text + referenceCaption;
     const references = regen ? regen.msg.references ?? [] : toReferenceImages(refs);
     const user = regen?.msg ?? { text: requestText, scope: chatScope ?? (slideNo ? chatFallback : undefined), mode: "chat" as const, ...(references.length ? { references, hasReferences: true } : {}) };
-    // 「最後にクロージングのスライドを追加して」: ふつうの修正は今のスライドを書き換えるだけなので、新しいスライドを作ってデッキに入れる
-    const current = deck ? deck.slides.findIndex((s) => s.id === posterIdRef.current) + 1 : 0;
-    const position = deck && current ? addSlidePosition(text, current, deck.slides.length) : null;
-    if (position) {
+    if (route.kind === "add-slide") {
       return chatTurn(user, `${aiName} がスライドを作成中`, restore, async (signal) => {
-        const r = await addSlideByAI(signal, requestText, position, context, references);
+        const r = await addSlideByAI(signal, requestText, route.position, context, references);
         if (autoImages && r.spec && findPendingAssets(r.spec).length) {
           chat.push({ role: "assistant", text: r.text, changes: r.changes });
           await generatePending(r.spec, signal);
@@ -489,8 +542,7 @@ export function App() {
         return { text: r.text, changes: r.changes };
       });
     }
-    // 「授業スライド全体の差し色を変えて」: ふつうの修正は今のスライドしか書き換えないので、同じ指示を全スライドに当てる
-    if (deck && deck.slides.length > 1 && isWholeDeckRequest(text)) {
+    if (route.kind === "edit-across") {
       return chatTurn(user, `${aiName} が全スライドを修正中`, restore, async (signal) => {
         const r = await editAcrossDeck(signal, requestText, context, references);
         if (autoImages && r.ids.some((id) => { const sp = specOf(id); return sp && findPendingAssets(sp).length; })) {
@@ -506,61 +558,7 @@ export function App() {
       const ctx = await deckEditContext(text);
       const res = await api.edit(cur, requestText, ids, signal, ctx, context, undefined, references, workSubject(deck, posterIdRef.current, cur.meta.title));
       if (changed()) throw new Error(WORK_CHANGED_MESSAGE);
-      const next = res.spec;
-      if (!next) return { text: res.reply || "変更はありませんでした" };
-      // 別のスライドを書き換える指示なら、そのスライドを開いてから適用する（履歴に積まれるので Ctrl+Z / 元に戻す が効く）
-      const target = ctx && res.target && res.target !== ctx.current ? deck?.slides[res.target - 1] : undefined;
-      // 「3枚目と5枚目を直して」: 開いていないほかのスライドは、開かずに書き換えて裏で保存する
-      const others = (res.others ?? []).flatMap((e) => {
-        const slide = deck?.slides[e.target - 1];
-        const old = slide && slide.id !== (target?.id ?? posterIdRef.current) ? specOf(slide.id) : undefined;
-        return slide && old && diffLayers(old, e.spec).hasChanges ? [{ n: e.target, posterId: slide.id, before: old, spec: e.spec }] : [];
-      });
-      let before = cur;
-      if (target) {
-        if (signal.aborted) throw new Error("aborted");
-        before = await openSlide(target.id);
-      }
-      for (const o of others) updateSlide(o.posterId, o.spec);
-      const d = diffLayers(before, next);
-      if (!d.hasChanges && !others.length) {
-        return { text: res.reply ? `${res.reply}\n（ポスターに変更はありませんでした。もう少し具体的に指示してみてください）` : "変更はありませんでした。指示をもう少し具体的にしてみてください" };
-      }
-      if (d.hasChanges) {
-        setSpec(next);
-        setFlash([...d.added, ...d.changed]);
-        setTimeout(() => setFlash([]), 1800);
-      }
-      const parts = [d.changed.length && `${d.changed.length} 件変更`, d.added.length && `${d.added.length} 件追加`, d.removed && `${d.removed} 件削除`, d.themeChanged && "テーマ変更", d.metaChanged && "ポスター設定変更", d.reordered && "重ね順変更", d.notesChanged && "台本変更", d.transitionChanged && "画面切り替え変更"].filter(Boolean);
-      if ((d.notesChanged || others.some((o) => o.before.notes !== o.spec.notes)) && isSlides) toggleNotes(true);
-      const main = d.hasChanges ? `${target || others.length ? `スライド ${res.target ?? ctx?.current}: ` : ""}${parts.join("・") || "変更"}` : "";
-      const changes = [main, others.length && `スライド ${others.map((o) => o.n).join("・")} も変更`].filter(Boolean).join("・");
-      const reply = { text: res.reply || "修正しました", changes, before, posterId: posterIdRef.current, ...(others.length ? { others: others.map(({ posterId, before }) => ({ posterId, before })) } : {}) };
-      // 「スライド18,19を1枚にまとめて」: まとめ元のスライドを、確認してから削除する
-      const merged = (res.remove ?? []).map((n) => ({ n, slide: deck?.slides[n - 1] })).filter((r) => r.slide && r.slide.id !== posterIdRef.current);
-      if (merged.length) {
-        const nums = merged.map((r) => r.n).join("・");
-        const ok = await ask({
-          title: `スライド ${nums} を削除しますか？`,
-          message: `内容をスライド ${res.target ?? ctx?.current} にまとめました。まとめ元の${merged.map((r) => `「${r.slide!.title}」`).join("")}を削除します。この操作は取り消せません（残しておく場合は「キャンセル」）。`,
-          ok: "削除", danger: true,
-        });
-        if (ok) {
-          await deleteSlides(merged.map((r) => r.slide!.id));
-          reply.changes += `・スライド ${nums} を削除`;
-        }
-      }
-      if (autoImages && others.some((o) => findPendingAssets(o.spec).length)) {
-        chat.push({ role: "assistant", ...reply });
-        await generateAcross([posterIdRef.current!, ...others.map((o) => o.posterId)], signal);
-        return { text: "画像も生成しました" };
-      }
-      if (autoImages && findPendingAssets(next).length) {
-        chat.push({ role: "assistant", ...reply });
-        await generatePending(next, signal);
-        return { text: "画像も生成しました" };
-      }
-      return reply;
+      return applyEditResult(res, cur, ctx, signal);
     });
   };
   /** / コマンドの実行（restore は失敗したときに入力欄へ元の文を戻す。regen は作り直す発言） */
@@ -622,8 +620,7 @@ export function App() {
     const d = diffLayers(before, next);
     if (!d.hasChanges) return { text: left.length ? `変更はありませんでした。${rest}` : "すでに A4 に整っています" };
     setSpec(next);
-    setFlash([...d.added, ...d.changed]);
-    setTimeout(() => setFlash([]), 1800);
+    flashLayers([...d.added, ...d.changed]);
     const parts = [d.metaChanged && "用紙を A4 に", d.changed.length && `${d.changed.length} 件変更`, d.added.length && `${d.added.length} 件追加`, d.removed && `${d.removed} 件削除`].filter(Boolean);
     return { text: [reply, ...done, rest].filter(Boolean).join("\n"), changes: parts.join("・") || "変更", before, posterId: posterIdRef.current };
   };
