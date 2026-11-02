@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DesktopBridge } from "../desktop/bridge";
 import { api, type SetupProgress, type Status } from "../src/editor/api";
-import { codexSetup } from "../src/editor/codexSetup";
+import { codexSetup, useCodexAfterSignIn } from "../src/editor/codexSetup";
 import { describeCodex, DesktopAccountBar, DesktopImageSettings } from "../src/editor/DesktopAccount";
 import { DESKTOP_ACCOUNT_CHANGED } from "../src/editor/accountView";
 
@@ -209,5 +209,14 @@ describe("ChatGPT へのサインインに続けて Codex を準備する", () =
     await fire({ ok: true, data: { result: "signed-in" } });
     expect(login).toHaveBeenCalled();
     expect(container.querySelector(".account-name")?.textContent).toBe("Codex にサインイン中…");
+  });
+
+  it("アカウント欄の無い画面（ホーム）でも、useCodexAfterSignIn があればサインインに続けて準備する", async () => {
+    codex("signed_out");
+    const login = vi.spyOn(api, "loginCodex").mockImplementation(never);
+    function HomeLike() { useCodexAfterSignIn(); return null; }
+    await act(async () => root.render(<HomeLike />));
+    await act(async () => { window.dispatchEvent(new CustomEvent(DESKTOP_ACCOUNT_CHANGED, { detail: { ok: true, data: { result: "signed-in" } } })); });
+    expect(login).toHaveBeenCalled();
   });
 });

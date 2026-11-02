@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import type { DesktopBridge, DesktopResult } from "../../desktop/bridge";
+import type { DesktopBridge } from "../../desktop/bridge";
 import { api, type Status } from "./api";
-import { codexSetup, describeCodexJob, useCodexSetup } from "./codexSetup";
+import { codexJobLabel, codexSetup, describeCodexJob, useCodexAfterSignIn, useCodexSetup } from "./codexSetup";
 import { DESKTOP_ACCOUNT_CHANGED, DESKTOP_SIGN_IN_STARTED, deriveDesktopAccountView, describeDesktopAccount, isChatGPTReauthRequired, isDesktopSigningIn, runDesktopSignIn } from "./accountView";
 import { Menu } from "./ui";
 import { Ico } from "./uiIcons";
@@ -193,15 +193,7 @@ export function DesktopAccountBar({ bridge, status, onSignOut, imageChoices = []
 
   // 結果はトーストで知らせる（useChatGPTAuth）。ここでは資格情報の状態だけ見直す
   const signIn = (newAccount: boolean) => { if (!busy) void runDesktopSignIn(bridge, newAccount).then(checkReauth); };
-  // どの画面から始めたサインインでも、ChatGPT にサインインできたら画像生成用の Codex も続けて準備する
-  useEffect(() => {
-    const onChanged = (e: Event) => {
-      const res = (e as CustomEvent<DesktopResult | undefined>).detail;
-      if (res?.ok && (res.data as { result?: unknown } | null)?.result === "signed-in") void codexSetup.ensure();
-    };
-    window.addEventListener(DESKTOP_ACCOUNT_CHANGED, onChanged);
-    return () => window.removeEventListener(DESKTOP_ACCOUNT_CHANGED, onChanged);
-  }, []);
+  useCodexAfterSignIn();
   const { job: codexJob } = useCodexSetup(onStatusChanged);
 
   const view = deriveDesktopAccountView(status, reauth);
@@ -211,7 +203,7 @@ export function DesktopAccountBar({ bridge, status, onSignOut, imageChoices = []
       <Menu className="up settings-menu" fixed trigger={({ open, toggle }) => (
         <button className="account" aria-haspopup="dialog" aria-expanded={open} onClick={toggle} title="ChatGPT アカウント">
           <span className="account-pic"><span className="avatar">{(("email" in view && view.email) || "C").slice(0, 1).toUpperCase()}</span></span>
-          <span className="account-name">{busy ? "サインイン中…" : codexJob ? (codexJob.kind === "install" ? "画像生成を準備中…" : "Codex にサインイン中…") : signedIn && "email" in view && view.email ? view.email : "ChatGPT アカウント"}</span>
+          <span className="account-name">{busy ? "サインイン中…" : codexJob ? codexJobLabel(codexJob) : signedIn && "email" in view && view.email ? view.email : "ChatGPT アカウント"}</span>
           {!busy && view.kind !== "signedIn" && view.kind !== "loading" && <span className="dot warn tab-badge" aria-hidden />}
         </button>
       )}>

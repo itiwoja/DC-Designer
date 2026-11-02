@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { DESKTOP_ACCOUNT_CHANGED } from "./accountView";
 import { api, type SetupProgress } from "./api";
+import type { DesktopResult } from "../../desktop/bridge";
 
 /**
  * 製品版の Codex CLI の準備（入れる・サインイン）の実行状態。設定の吹き出しを閉じても続くよう、画面の部品の外で持つ。
@@ -84,6 +86,25 @@ export function useCodexSetup(onStatusChanged?: () => void): CodexSetupState {
   useEffect(() => { onFinished = onStatusChanged; }, [onStatusChanged]);
   return s;
 }
+
+/**
+ * どの画面（エディタのアカウント欄・AI 機能の案内・ホーム）から始めたサインインでも、
+ * ChatGPT にサインインできたら画像生成用の Codex も続けて準備する。
+ * ホームとエディタは同時には出ないので、出ている画面で 1 回だけ使う
+ */
+export function useCodexAfterSignIn(): void {
+  useEffect(() => {
+    const onChanged = (e: Event) => {
+      const res = (e as CustomEvent<DesktopResult | undefined>).detail;
+      if (res?.ok && (res.data as { result?: unknown } | null)?.result === "signed-in") void ensure();
+    };
+    window.addEventListener(DESKTOP_ACCOUNT_CHANGED, onChanged);
+    return () => window.removeEventListener(DESKTOP_ACCOUNT_CHANGED, onChanged);
+  }, []);
+}
+
+/** 準備中にボタンなどへ出す短い文言 */
+export const codexJobLabel = (job: CodexJob) => (job.kind === "install" ? "画像生成を準備中…" : "Codex にサインイン中…");
 
 const mb = (bytes: number) => (bytes / 1024 / 1024).toFixed(1);
 
