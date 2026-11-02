@@ -1,5 +1,5 @@
 """VOICEVOX ENGINE（127.0.0.1:50021）でナレーションを作る。
-uv run --with requests python scripts/voice_vv.py narration/lines.json public/vo --speaker 30 [--intonation 1.2 --speed 1.1 --pitch 0]
+uv run --with requests python scripts/voice_vv.py narration/lines.json public/vo --speaker 8 [--intonation 1.2 --speed 0.9 --pitch 0]（8 は春日部つむぎ。README の作り直し方と同じ）
 lines.json は [[id, 文], ...]。3 つ目に {"pauses": [秒, ...]} を付けると、文の中の区切り（・や。）の間を前から順にその長さにする
 出力：<id>.ogg（48kHz mono、前後の無音を切り、-16 LUFS）と durations.json（秒）
 """
@@ -9,8 +9,8 @@ import requests
 
 ap = argparse.ArgumentParser()
 ap.add_argument("lines"); ap.add_argument("out")
-ap.add_argument("--speaker", type=int, default=30); ap.add_argument("--intonation", type=float, default=1.2)
-ap.add_argument("--speed", type=float, default=1.1); ap.add_argument("--pitch", type=float, default=0.0)
+ap.add_argument("--speaker", type=int, default=8); ap.add_argument("--intonation", type=float, default=1.2)
+ap.add_argument("--speed", type=float, default=0.9); ap.add_argument("--pitch", type=float, default=0.0)
 a = ap.parse_args()
 out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
 U = "http://127.0.0.1:50021"; meta = {}

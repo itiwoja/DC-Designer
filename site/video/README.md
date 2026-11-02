@@ -5,6 +5,7 @@
 | 出力 | 寸法・形式 | 置き場所 |
 |---|---|---|
 | デモ動画 | 1920×1080・30fps・約 27 秒・ナレーション・BGM・効果音つき。MP4（H.264＋AAC）と WebM（VP9＋Opus） | `site/src/assets/media/demo.mp4` / `demo.webm` |
+| デモ動画の字幕（ナレーション） | WebVTT・日本語（サイトでは `<track kind="captions">`。既定ではオフ） | `site/src/assets/media/demo.vtt`（手で書く） |
 | 動画のポスター画像（再生前に見える 1 枚） | 1920×1080 PNG（サイトでは WebP にして配る） | `site/src/assets/media/demo-poster.png` |
 | ヒーロー画像 | 1600×1000 PNG（ビルドで AVIF / WebP） | `site/src/assets/media/hero.png` |
 | 機能画像（ポスター作成・スライド作成のカード） | 1200×750 PNG（ビルドで AVIF / WebP）。実画面のキャンバスと右のパネルに寄せて切り出し、下の帯に注記 | `site/src/assets/media/feature-poster.png` / `feature-slides.png` |
@@ -20,7 +21,7 @@ npm run render         # 6 つを書き出して site/src/assets/media/ に置�
 ```
 
 - フォント（Mochiy Pop One・Noto Sans JP、計 15MB）はリポジトリに入れず、`npm run studio` / `npm run render` の前に `scripts/fetch-fonts.sh` が google/fonts から取る。
-- WSL では Playwright の Chromium（`~/.cache/ms-playwright/chromium_headless_shell-*`）を使う（`remotion.config.ts`）。`libnspr4.so` が無いと言われたら、sudo なしで展開したライブラリを `LD_LIBRARY_PATH` に入れる（`render.sh` は `~/.local/chromium-libs` があれば自動で入れる）。
+- WSL では Playwright の Chromium（`~/.cache/ms-playwright/chromium_headless_shell-*`）があればそれを使う（`remotion.config.ts`）。無ければ Remotion が自分で取ってくる Chrome Headless Shell を使う。`libnspr4.so` が無いと言われたら、sudo なしで展開したライブラリを `LD_LIBRARY_PATH` に入れる（`render.sh` は `~/.local/chromium-libs` があれば自動で入れる）。
 - 配置は 1280×720 の座標で組み、`--scale=1.5` で 1920×1080 に書き出す。アプリの画面は 1600×1000 を 3 倍（入力欄は 4 倍）で撮ってあり、配置は 2 倍の 3200×2000 の座標で書く（ファイルの実寸とは別）。
 - 場面の並びと長さは `src/Demo.tsx` の `SCENES`。機能画像の切り出す範囲は `src/Feature.tsx` の `FEATURE_SHOTS`（カードでは 360〜520px 幅に縮むので、画面全体ではなく寄せて見せる）。文字は `src/Demo.tsx`・`src/Still.tsx`・`src/Feature.tsx`、色はサイトのトークンと同じ値の `src/theme.ts`。
 
@@ -38,7 +39,7 @@ npm run render         # 6 つを書き出して site/src/assets/media/ に置�
   ```bash
   uv run --with requests python scripts/voice_vv.py narration/lines.json public/vo --speaker 8 --speed 0.9
   ```
-  話す速さは 1 秒あたり 5.6〜7.1 文字（CM 向けの 7 文字以下）。「DC-Designer」は「ディーシーデザイナー」と書くと Whisper に「PC デザイナー」と聞き取られたので、「ディー・シー・デザイナー」と書いて区切りの間を 0.12 秒に詰めた。声を作り直して長さが変わったら、`src/Demo.tsx` の `SCENES` の `len`（場面の長さ）と `voAt`（声の始まり）を、声が場面の中で終わるように直す。
+  話す速さは 1 秒あたり 5.6〜7.1 文字（CM 向けの 7 文字以下）。「DC-Designer」は「ディーシーデザイナー」と書くと Whisper に「PC デザイナー」と聞き取られたので、「ディー・シー・デザイナー」と書いて区切りの間を 0.12 秒に詰めた。声を作り直して長さが変わったら、`src/Demo.tsx` の `SCENES` の `len`（場面の長さ）と `voAt`（声の始まり）を、声が場面の中で終わるように直す。台本・`SCENES`・`public/vo/durations.json` のどれかを変えたら、字幕 `site/src/assets/media/demo.vtt` も直す（各行の始まり＝その場面の始まり＋`voAt`、終わり＝始まり＋声の長さ。30fps）。
 - BGM：`public/sfx/bgm.ogg` を全体に小さく流す（`BGM_VOLUME`、最初と最後はフェード）。
 
 ## 素材の出典とライセンス

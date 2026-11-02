@@ -21,7 +21,7 @@ npx remotion still src/index.ts FeatureSlides "$OUT/feature-slides.png" --log=er
 npx remotion still src/index.ts Ogp "$OUT/ogp.png" --log=error
 
 # サイト用：H.264＋AAC（再生互換のため yuv420p と faststart）と VP9＋Opus の WebM。上限 8MB（06_ux_design「媒体の枠」）
-# 効果音だけ（ナレーションなし）。音量はデモ向けの -16 LUFS・True Peak -2 dB 以下にそろえる（AAC・Opus への変換でピークが少し上がるので、目標は -3 dB）
+# ナレーション・BGM・効果音を合わせた音量を、デモ向けの -16 LUFS・True Peak -2 dB 以下にそろえる（AAC・Opus への変換でピークが少し上がるので、目標は -3 dB）
 # 効果音がまばらなので、1 回目で測った値を 2 回目に渡す（1 回だけだと -18 LUFS・ピーク -1.7 dB になった）
 M=$(ffmpeg -hide_banner -i "$OUT/demo-master.mp4" -af "loudnorm=I=-16:TP=-3:LRA=11:print_format=json" -f null - 2>&1 | sed -n '/^{/,/^}/p')
 val() { echo "$M" | sed -n "s/.*\"$1\" : \"\([^\"]*\)\".*/\1/p"; }
