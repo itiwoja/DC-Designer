@@ -21,7 +21,7 @@ export function Feature({ width, height, shot }: { width: number; height: number
         position: "absolute", left: 0, right: 0, bottom: 0, height: band, display: "flex", alignItems: "center", paddingLeft: 32,
         fontFamily: FONT_BODY, fontWeight: 500, fontSize: 25, color: "rgba(255,255,255,.88)", letterSpacing: "0.03em",
       }}>
-        作例（架空のイベント）・写真の AI 生成は Windows 版 v1.0.6 では未対応
+        作例（架空のイベント）・写真もアプリから AI で生成
       </div>
     </div>
   );

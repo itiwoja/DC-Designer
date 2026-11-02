@@ -38,7 +38,7 @@ export function Still({ width, height }: { width: number; height: number }) {
         box={{ x: width - 90 * u - posterW - slideW * 0.62, y: height - slideH - 70 * u, w: slideW, h: slideH }}
         rects={[{ x: 712, y: 251, w: 1776, h: 998 }]} at={[0]} radius={8 * u}
       />
-      <Note style={{ left: 80 * u, top: 36 * u, fontSize: 22 * u }}>作例（架空のイベント）・写真の AI 生成は Windows 版 v1.0.6 では未対応</Note>
+      <Note style={{ left: 80 * u, top: 36 * u, fontSize: 22 * u }}>作例（架空のイベント）・写真もアプリから AI で生成</Note>
     </Stage>
   );
 }

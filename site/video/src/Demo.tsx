@@ -36,7 +36,7 @@ function Sfx({ name, at, volume = 1 }: { name: string; at: number; volume?: numb
   );
 }
 
-const EXAMPLE = <Note style={{ right: 120, bottom: 2 }}>作例（架空のイベント）・写真の AI 生成は Windows 版 v1.0.6 では未対応</Note>;
+const EXAMPLE = <Note style={{ right: 120, bottom: 2 }}>作例（架空のイベント）・写真もアプリから AI で生成</Note>;
 
 /** 1. ● ▲ ■ が落ちて弾み、「AIに頼んで、」 */
 function Intro() {
