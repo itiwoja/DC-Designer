@@ -32,6 +32,20 @@ describe("デッキの文脈（言及したスライドは全体、ほかは文�
     })).rejects.toThrow("target は 1 のいずれかにしてください");
   });
 
+  it("参考スライドの theme と配色は「配色」の行として渡す（無ければ出さない）", async () => {
+    await editPoster({
+      spec: current, instruction: "ほかのスライドと色を合わせて",
+      deck: { current: 1, total: 2, slides: [{ number: 2, title: "二", texts: ["本文"], theme: "ocean", colors: ["#fff", "$primary"] }] },
+    });
+    expect(ai.ask.mock.calls[0][1][0].text).toContain("本文\n配色: テーマ ocean / よく使う色 #fff, $primary\n");
+    ai.ask.mockClear();
+    await editPoster({
+      spec: current, instruction: "スライド2を直して",
+      deck: { current: 1, total: 2, slides: [{ number: 2, title: "二", texts: ["本文"] }] },
+    });
+    expect(ai.ask.mock.calls[0][1][0].text).not.toContain("\n配色: ");
+  });
+
   it("文字だけのスライドの台本も参考として渡す", async () => {
     await editPoster({
       spec: current, instruction: "台本の流れを確認して",
