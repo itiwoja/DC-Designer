@@ -4,7 +4,7 @@ import { runWithAiSubject } from "../ai-consent";
 import { httpError } from "../http-error";
 import { editPoster, planPoster, planSlide, refineReproduction, reproducePoster, summarizeChat, writeNotes } from "../planner";
 import { storeReferences } from "../references";
-import { optString, parseAcross, parseDeckContext, parseImage, parseSubject, parseTurns, strings } from "../request-parsers";
+import { optString, parseAcross, parseDeckContext, parseDeckDesign, parseImage, parseSubject, parseTurns, strings } from "../request-parsers";
 import type { RouteHandlers } from "../route-handlers";
 
 /** レイアウト生成・編集・参考画像の再現・会話と台本の生成 */
@@ -48,7 +48,7 @@ export function registerAiRoutes(app: Router, { route, progressRoute }: RouteHan
     if (!instruction) throw httpError(400, "instruction は必須です");
     const deck = parseDeckContext(req.body?.deck);
     const history = parseTurns(req.body?.history).slice(-30);
-    return runWithAiSubject(subject, () => editPoster({ spec, instruction, selectedIds, deck, across: parseAcross(req.body?.across), history, memory: optString(req.body?.memory, 3000), references: storeReferences(req.body?.references), signal }));
+    return runWithAiSubject(subject, () => editPoster({ spec, instruction, selectedIds, deck, across: parseAcross(req.body?.across), design: parseDeckDesign(req.body?.design), history, memory: optString(req.body?.memory, 3000), references: storeReferences(req.body?.references), signal }));
   }));
 
   /** デッキの並び（文字）＋お手本のスライド ＋ 指示 → 新しく追加する 1 枚の PosterSpec（追加は画面側で行う） */

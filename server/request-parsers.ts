@@ -1,4 +1,5 @@
-import { PosterSpecSchema } from "../src/schema";
+import { LayerSchema, PosterSpecSchema } from "../src/schema";
+import type { CommonLayer, DeckDesign } from "../src/deckDesign";
 import { isAiSubject, type AiSubject } from "../desktop/aiPayload";
 import { httpError } from "./http-error";
 import type { AcrossDeck, ChatTurn, DeckContext } from "./planner";
@@ -49,4 +50,34 @@ export function parseSubject(v: unknown): AiSubject | undefined {
   if (v === undefined || v === null) return undefined;
   if (!isAiSubject(v)) throw httpError(400, "subject の形式が正しくありません");
   return { kind: v.kind, id: v.id, title: v.title };
+}
+
+const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const str = (v: unknown): v is string => typeof v === "string";
+
+/** 画面が作ったデッキのデザインの要約（/api/edit の design）。形が違えば undefined（デザインを保つ処理なしで続ける） */
+export function parseDeckDesign(v: unknown): DeckDesign | undefined {
+  const o = v as any;
+  if (!o || typeof o !== "object" || Array.isArray(o) || !str(o.theme)) return undefined;
+  const themeOverride = o.themeOverride && typeof o.themeOverride === "object" ? PosterSpecSchema.shape.themeOverride.safeParse(o.themeOverride) : undefined;
+  const list = (x: unknown, max: number): any[] => (Array.isArray(x) ? x.filter((e) => e && typeof e === "object").slice(0, max) : []);
+  const colors = list(o.colors, 8).filter((c) => str(c.color) && (c.use === "background" || c.use === "text" || c.use === "shape") && finite(c.count))
+    .map((c) => ({ color: c.color as string, use: c.use as "background" | "text" | "shape", count: c.count as number }));
+  const fonts = list(o.fonts, 5).filter((f) => str(f.font) && finite(f.weight) && finite(f.count)).map((f) => ({ font: f.font as string, weight: f.weight as number, count: f.count as number }));
+  const common = list(o.common, 6).flatMap((c): CommonLayer[] => {
+    const layer = LayerSchema.safeParse(c.layer);
+    return str(c.role) && finite(c.count) && layer.success ? [{ role: c.role, layer: layer.data, count: c.count }] : [];
+  });
+  const h = o.heading, m = o.margin;
+  const heading = h && finite(h.x) && finite(h.y) && finite(h.size) && str(h.font) && finite(h.weight) && str(h.fill)
+    ? { x: h.x, y: h.y, size: h.size, font: h.font, weight: h.weight, fill: h.fill } : undefined;
+  const margin = m && finite(m.left) && finite(m.right) ? { left: m.left, right: m.right } : undefined;
+  const design: DeckDesign = {
+    slides: Number.isInteger(o.slides) ? o.slides : 0, theme: o.theme,
+    ...(themeOverride?.success && themeOverride.data ? { themeOverride: themeOverride.data } : {}),
+    colors, fonts, common, ...(heading ? { heading } : {}), ...(margin ? { margin } : {}),
+  };
+  // 大きすぎるときは共通要素（レイヤーの実物）から減らす
+  while (design.common.length && JSON.stringify(design).length > 20000) design.common = design.common.slice(0, -1);
+  return design;
 }
