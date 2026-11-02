@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PosterSpecSchema, type PosterSpec } from "../src/schema";
+import { deckDesignPrompt, designNote, keepDeckDesign, type DeckDesign } from "../src/deckDesign";
 import { CATALOG, ICON_NAMES } from "../src/components/catalog";
 import { THEMES } from "../src/themes";
 import { notesLength } from "../src/notes";
@@ -295,13 +296,13 @@ export type ChatTurn = { role: "user" | "assistant" | "note"; text: string };
 /** デッキで書き換えた 1 枚 */
 export type SlideEdit = { target: number; spec: PosterSpec };
 /** spec / target は主に書き換えたスライド（今のスライドを書き換えたならそれ）。others はそれ以外に書き換えたスライド */
-type EditResult = { reply: string; spec?: PosterSpec; target?: number; others?: SlideEdit[]; sequence?: DeckSlot[] };
+type EditResult = { reply: string; spec?: PosterSpec; target?: number; others?: SlideEdit[]; sequence?: DeckSlot[]; /** デッキのデザインを保つため元に戻したもの */ restored?: string[] };
 /**
  * デッキの全スライドへの指示（「授業スライド全体の差し色を変えて」）を 1 枚ずつ当てるときの、今直しているスライドの位置。
  * guide は先に直したスライドで AI が返した方針（ほかのスライドでも同じ直し方にそろえるため）
  */
 export type AcrossDeck = { number: number; total: number; guide?: string };
-type EditOptions = { spec: PosterSpec; instruction: string; selectedIds?: string[]; deck?: DeckContext; across?: AcrossDeck; history?: ChatTurn[]; memory?: string; references?: PosterReference[]; signal?: AbortSignal };
+type EditOptions = { spec: PosterSpec; instruction: string; selectedIds?: string[]; deck?: DeckContext; across?: AcrossDeck; design?: DeckDesign; history?: ChatTurn[]; memory?: string; references?: PosterReference[]; signal?: AbortSignal };
 
 const turnLine = (t: ChatTurn) => (t.role === "note" ? `（${t.text}）` : `${t.role === "user" ? "ユーザー" : "あなた"}: ${t.text}`);
 
@@ -363,10 +364,26 @@ export async function editPoster(opts: EditOptions): Promise<EditResult> {
     return bgm?.length ? { ...spec, bgm } : spec;
   };
   if (!r.spec) return r;
+  // デッキのデザイン（テーマ・フォント・共通要素）は、デザインを変える指示でなければ元に戻す（sequence の新規スライドは元が無いので対象外）
+  const restored = new Set<string>();
+  const keepDesign = (spec: PosterSpec, target: number | undefined): PosterSpec => {
+    const design = opts.design;
+    if (!design) return spec;
+    const original = target === undefined || target === opts.deck?.current ? opts.spec : opts.deck?.slides.find((s) => s.number === target)?.spec;
+    if (!original) return spec;
+    // 添付資料の一覧（画面が指示の末尾に足すファイル名）は、デザインを変える指示かの判定に入れない
+    const kept = keepDeckDesign(original, spec, design, opts.instruction.split("\n\n添付資料（画像の順番）:")[0], opts.selectedIds);
+    kept.restored.forEach((x) => restored.add(x));
+    return kept.spec;
+  };
+  const spec = keepBgm(keepDesign(r.spec, r.target ?? opts.deck?.current), r.target ?? opts.deck?.current);
+  const others = r.others?.map((e) => ({ ...e, spec: keepBgm(keepDesign(e.spec, e.target), e.target) }));
   return {
     ...r,
-    spec: keepBgm(r.spec, r.target ?? opts.deck?.current),
-    ...(r.others ? { others: r.others.map((e) => ({ ...e, spec: keepBgm(e.spec, e.target) })) } : {}),
+    // 全スライドへの適用では、返答は次のスライドへの方針（guide）にもなるので、注記は付けずに restored だけ返す（画面が最後に 1 回まとめて書く）
+    ...(restored.size ? { restored: [...restored], ...(opts.across ? {} : { reply: `${r.reply ? `${r.reply}\n` : ""}${designNote([...restored])}` }) } : {}),
+    spec,
+    ...(others ? { others } : {}),
   };
 }
 
@@ -378,6 +395,7 @@ async function editSpec(opts: EditOptions): Promise<EditResult> {
     "src が設定済みの画像は、内容を変える指示がない限り src と asset をそのまま残してください（再生成させたい場合は src を削除し asset.prompt を更新）。",
     referenceSources(opts.references),
     opts.selectedIds?.length ? `ユーザーが選択中のレイヤー: ${opts.selectedIds.join(", ")}` : "",
+    opts.design ? deckDesignPrompt(opts.design) : "",
     historyText(opts.history, opts.memory),
     "# ユーザーのメッセージ",
     opts.instruction,
@@ -417,6 +435,7 @@ async function editDeckSlide(opts: EditOptions & { deck: DeckContext }): Promise
     "src が設定済みの画像は、内容を変える指示がない限り src と asset をそのまま残してください（参照元の画像を使う場合も src ごと持ち込んでよい）。",
     opts.deck.selected?.length ? `ユーザーがスライド一覧で選択中のスライド: ${opts.deck.selected.join(", ")}（「これら」「選んだスライド」はこれを指す）` : "",
     opts.selectedIds?.length ? `ユーザーがスライド ${current} で選択中のレイヤー: ${opts.selectedIds.join(", ")}` : "",
+    opts.design ? deckDesignPrompt(opts.design) : "",
     historyText(opts.history, opts.memory),
     "# ユーザーのメッセージ",
     opts.instruction,

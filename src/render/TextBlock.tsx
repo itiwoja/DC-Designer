@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { Paint } from "../schema";
 import { resolveColor, resolveFont, type Theme } from "../themes";
+import { synthStrokeWidth, syntheticWeight } from "../fonts";
 import { paintToSvg } from "./paint";
 import { lineSegments, type ColorRun } from "../textRuns";
 
@@ -37,7 +38,11 @@ export function TextBlock(p: TextBlockProps) {
   // 揃えの基準になる x（縮小もここを中心に行う）
   const ax = align === "center" ? p.w / 2 : align === "right" ? p.w : 0;
   const { fill, def } = paintToSvg(p.fill ?? "$ink", p.theme, `${p.id}-fill`);
-  const fontFamily = resolveFont(p.font, p.theme, p.weight ?? 700);
+  // フォントに無い太さは、指定以下で最も太い face に文字と同じ塗りの線を足して太く見せる（extra が 0 なら足さない）
+  const family = p.theme.fonts[p.font ?? "body"] ?? p.font ?? p.theme.fonts.body;
+  const { face, extra } = syntheticWeight(family, p.weight ?? 700);
+  const fontFamily = resolveFont(p.font, p.theme, face);
+  const sw = synthStrokeWidth(extra, size);
 
   const ref = useRef<SVGGElement>(null);
   const [scale, setScale] = useState(1);
@@ -62,7 +67,7 @@ export function TextBlock(p: TextBlockProps) {
     lines.map((line, i) => (
       <tspan key={key + i} x={ax} dy={i === 0 ? size * 0.88 : size * lh}>
         {segments
-          ? segments[i].map((s, j) => (s.color ? <tspan key={j} fill={resolveColor(s.color, p.theme)}>{s.text}</tspan> : s.text))
+          ? segments[i].map((s, j) => (s.color ? <tspan key={j} fill={resolveColor(s.color, p.theme)} {...(sw > 0 ? { stroke: resolveColor(s.color, p.theme) } : {})}>{s.text}</tspan> : s.text))
           : line}
       </tspan>
     ));
@@ -70,11 +75,11 @@ export function TextBlock(p: TextBlockProps) {
   const common = {
     fontFamily,
     fontSize: size,
-    fontWeight: p.weight ?? 700,
+    fontWeight: face,
     textAnchor: anchor,
     letterSpacing: p.letterSpacing ? `${p.letterSpacing}em` : undefined,
     // 太さを持たないフォント（Dela Gothic One は 400 だけ）に 900 などを指定されても、ブラウザに偽の太字を作らせない。
-    // 偽の太字は字の中がつぶれ、縁取りと重なると読めなくなる。太さを持つ代わりのフォントの字はそのまま太く出る
+    // 偽の太字は字の中がつぶれ、縁取りと重なると読めなくなる。足りない太さは上の線（sw）で補う
     style: { whiteSpace: "pre" as const, fontSynthesisWeight: "none" as const },
   };
 
@@ -93,14 +98,18 @@ export function TextBlock(p: TextBlockProps) {
             {...common}
             fill={resolveColor(o.color, p.theme)}
             stroke={resolveColor(o.color, p.theme)}
-            strokeWidth={o.width * 2}
+            strokeWidth={o.width * 2 + sw}
             strokeLinejoin="round"
             strokeLinecap="round"
           >
             {tspans("o" + i)}
           </text>
         ))}
-        <text {...common} fill={fill}>
+        <text
+          {...common}
+          fill={fill}
+          {...(sw > 0 ? { stroke: fill, strokeWidth: sw, strokeLinejoin: "round" as const, paintOrder: "stroke" as const } : {})}
+        >
           {tspans("t", p.colorRuns?.length ? lineSegments(p.text, p.colorRuns) : undefined)}
         </text>
       </g>

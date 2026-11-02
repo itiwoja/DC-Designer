@@ -8,6 +8,7 @@ import { slideContent } from "../notes";
 import { PosterSpecSchema, type PosterSpec } from "../schema";
 import type { resolveTheme } from "../themes";
 import { deckSubject, watchWork, WORK_CHANGED_MESSAGE } from "./aiSubject";
+import { designNote, summarizeDeckDesign, type DeckDesign } from "../deckDesign";
 import { desktopBridge } from "./desktop";
 import { api, type ChatContext, type Deck, type DeckKind, type DeckSlot, type RefImage } from "./api";
 import { nearestKept, planDeckSequence } from "./deckSequence";
@@ -514,8 +515,16 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
     const total = d.slides.length;
     const cur = Math.max(d.slides.findIndex((s) => s.id === posterIdRef.current), 0);
     const order = [cur, ...d.slides.keys()].filter((i, k, a) => a.indexOf(i) === k);
+    // デッキのデザインの要約は、どのスライドも直す前に 1 回だけ作る（直している途中のスライドからは作り直さない）
+    let design: DeckDesign | undefined;
+    try {
+      const specs = d.slides.map((s) => specOf(s.id)).filter((x): x is PosterSpec => !!x);
+      design = specs.length >= 2 ? summarizeDeckDesign(specs) : undefined;
+    } catch { design = undefined; }
     const done: { id: string; old: PosterSpec; n: number }[] = [];
     const replies: string[] = [];
+    // デッキのデザインを保つためサーバーが元に戻したもの（注記は最後に 1 回だけ書く）
+    const restored = new Set<string>();
     let guide: string | undefined;
     let failed = 0, finished = 0;
     let stopped = "";
@@ -525,12 +534,13 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
       const old = specOf(slide.id);
       if (!old) return;
       try {
-        const res = await api.edit(old, instruction, undefined, signal, undefined, chat, { number: i + 1, total, guide }, references, deckSubject(d));
+        const res = await api.edit(old, instruction, undefined, signal, undefined, chat, { number: i + 1, total, guide }, references, deckSubject(d), design);
         if (signal.aborted) return;
         if (i === cur && res.reply) guide = res.reply;
         if (!res.spec || !diffLayers(old, res.spec).hasChanges || specOf(slide.id) !== old) return;
         updateSlide(slide.id, res.spec);
         done.push({ id: slide.id, old, n: i + 1 });
+        res.restored?.forEach((x) => restored.add(x));
         if (res.reply) replies.push(res.reply);
       } catch (e) {
         if (signal.aborted) { stopped = "キャンセルしたため"; return; }
@@ -558,7 +568,7 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
     const note = signal.aborted || failed
       ? `\n${unit} ${untouched.join("・")} は${stopped || "途中で止まったため"}そのままです（もう一度送ると続きを直します）`
       : untouched.length ? `\n${unit} ${untouched.join("・")} は当てはまる箇所が無かったのでそのままです` : "";
-    return { text: `${guide ?? replies[0] ?? "修正しました"}\n${unit} ${nums.join("・")} に反映しました。${note}`, changes: `${nums.length} 枚の${unit}を変更`, ids: done.map((w) => w.id) };
+    return { text: `${guide ?? replies[0] ?? "修正しました"}\n${unit} ${nums.join("・")} に反映しました。${note}${restored.size ? `\n${designNote([...restored])}` : ""}`, changes: `${nums.length} 枚の${unit}を変更`, ids: done.map((w) => w.id) };
   };
 
   /**

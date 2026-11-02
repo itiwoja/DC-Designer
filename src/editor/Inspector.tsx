@@ -4,7 +4,7 @@ import { BGM_FILE_MAX_BYTES, createBgmPlayer } from "../bgm";
 import { LayerSchema } from "../schema";
 import { CATALOG_BY_NAME } from "../components/catalog";
 import { THEMES, resolveTheme } from "../themes";
-import { FONT_BY_FAMILY, FONT_CATALOG, FONT_ROLE_LABELS, FONT_SCRIPT_LABELS, type FontScript } from "../fonts";
+import { FONT_BY_FAMILY, FONT_CATALOG, FONT_ROLE_LABELS, FONT_SCRIPT_LABELS, syntheticWeight, type FontScript } from "../fonts";
 import { TYPE_LABEL } from "./LayersPanel";
 import { CROP_MAX_SCALE, clampCrop, cropLimits, cropTarget, roundPhotoRadius, withCrop } from "../render/ImageBox";
 import { Ico } from "./uiIcons";
@@ -62,33 +62,23 @@ function Num({ label, value, onChange, step = 1 }: { label: string; value: numbe
   );
 }
 
-/** 候補の中で最も近い値（render/svg.ts の snap と同じ考え方） */
-function nearestWeight(want: number, have: number[]): number {
-  return have.reduce((best, w) => (Math.abs(w - want) < Math.abs(best - want) ? w : best), have[0]);
+/** レイヤーの font（トークン or フォント名）をフォント名にする */
+function familyOf(spec: PosterSpec, font: string): string {
+  return resolveTheme(spec.theme, spec.themeOverride).fonts[font] ?? font;
 }
 
-/** レイヤーの font（トークン or フォント名）から、このフォントで使える太さの一覧を返す。1 種類だけなら疑似太字を含む 2 択 */
-function weightChoices(spec: PosterSpec, font: string): { options: number[]; single: boolean } {
-  const family = resolveTheme(spec.theme, spec.themeOverride).fonts[font] ?? font;
-  const have = FONT_BY_FAMILY.get(family)?.weights;
-  if (!have) return { options: [100, 200, 300, 400, 500, 600, 700, 800, 900], single: false };
-  if (have.length <= 1) return { options: [400, 700], single: true };
-  return { options: have, single: false };
-}
-
-/** フォントを替えたとき、今の太さが無ければ近い太さに寄せる（変えなくてよければ undefined） */
-function weightForFont(spec: PosterSpec, font: string, weight: number): number | undefined {
-  const { options, single } = weightChoices(spec, font);
-  if (single) return weight >= 600 ? 700 : 400;
-  return options.includes(weight) ? undefined : nearestWeight(weight, options);
+/** 選べる太さ: 100〜900 の 100 刻みに、フォントが持つ太さ（250 など半端な値も含む）を足したもの。足りない太さは描画側で線を足す */
+function weightChoices(spec: PosterSpec, font: string): number[] {
+  const have = FONT_BY_FAMILY.get(familyOf(spec, font))?.weights ?? [];
+  return [...new Set([100, 200, 300, 400, 500, 600, 700, 800, 900, ...have])].sort((a, b) => a - b);
 }
 
 /**
  * 太さの数値入力。打った値は Enter かフォーカスを外したときに確定する（打ちかけの「7」「70」を反映しない）。
- * ▲▼・矢印キーはフォントが持つ次の太さへ進む（持っていない太さは見た目が変わらないため）
+ * ▲▼・矢印キーは 100 刻み（フォントが持つ太さを含む）の次の値へ進む
  */
 function WeightInput({ spec, layer, onChange }: { spec: PosterSpec; layer: Extract<Layer, { type: "text" }>; onChange: (v: number) => void }) {
-  const { options } = weightChoices(spec, layer.font);
+  const options = weightChoices(spec, layer.font);
   const [text, setText] = useState(String(layer.weight));
   useEffect(() => setText(String(layer.weight)), [layer.weight]);
   const commit = () => {
@@ -559,16 +549,16 @@ export function Inspector({ layer, multiCount, spec, onChange, onReplace, onRege
             <Num label="字間em" step={0.01} value={layer.letterSpacing ?? 0} onChange={(v) => onChange({ letterSpacing: v } as any, `ls-${layer.id}`)} />
           </div>
           {(() => {
-            const { options, single } = weightChoices(spec, layer.font);
-            if (single) return <p className="hint small">このフォントは太さが 1 種類だけです（600 以上は疑似太字）。もっと細く/太くするにはフォントを変えてください</p>;
-            if (!options.includes(layer.weight)) return <p className="hint small">このフォントに {layer.weight} は無いため {nearestWeight(layer.weight, options)} で表示されます（使える太さ: {options.join(" / ")}）</p>;
+            const family = familyOf(spec, layer.font);
+            const have = FONT_BY_FAMILY.get(family)?.weights;
+            if (!have) return null;
+            const { face, extra } = syntheticWeight(family, layer.weight);
+            if (extra > 0) return <p className="hint small">このフォントの太さは {have.join(" / ")} です。{face} より太いぶんは文字に線を足して太くしています</p>;
+            if (face !== layer.weight) return <p className="hint small">このフォントは {face} より細くできないため {face} で表示されます</p>;
             return null;
           })()}
           <div className="row">
-            <select value={layer.font} onChange={(e) => {
-              const weight = weightForFont(spec, e.target.value, layer.weight);
-              onChange((weight === undefined ? { font: e.target.value } : { font: e.target.value, weight }) as any);
-            }}>
+            <select value={layer.font} onChange={(e) => onChange({ font: e.target.value } as any)}>
               <option value="display">display（見出し）</option>
               <option value="body">body（本文）</option>
               <option value="hand">hand（手書き）</option>

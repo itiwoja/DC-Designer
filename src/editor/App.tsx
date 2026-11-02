@@ -7,6 +7,7 @@ import { a4Fit, a4Instruction, a4Issues, fitToA4, SAFE_MARGIN_MM } from "./a4";
 import { cropTarget } from "../render/ImageBox";
 import { useRenderReady } from "../render/useRenderReady";
 import { findPendingAssets, type AssetRequest, type Layer, type PosterSpec } from "../schema";
+import { summarizeDeckDesign, type DeckDesign } from "../deckDesign";
 import { resolveTheme } from "../themes";
 import { applyFonts, specTexts } from "../fonts";
 import { workSubject, watchWork, WORK_CHANGED_MESSAGE, type AiSubject } from "./aiSubject";
@@ -424,7 +425,7 @@ export function App() {
    * 資料全体を把握できるよう、PPTX の全スライドを渡す。現在のスライドは api.edit の spec に含まれる。
    * 言及したスライドは spec 全体（書き換えや統合の対象になる）、それ以外は文字・台本・配色だけ（参考）にして、枚数が多くても AI の入力を抑える
    */
-  const deckEditContext = async (text: string): Promise<DeckEditContext | undefined> => {
+  const deckEditContext = async (text: string): Promise<{ ctx: DeckEditContext; design?: DeckDesign } | undefined> => {
     if (!deck) return undefined;
     const current = deck.slides.findIndex((s) => s.id === posterIdRef.current) + 1;
     if (!current) return undefined;
@@ -432,12 +433,19 @@ export function App() {
     // スライド一覧で選んだスライドも、言及したものと同じく spec ごと渡す（構成変更や統合の対象になる）
     const selected = selectedSlideIds.map((id) => deck.slides.findIndex((s) => s.id === id) + 1).filter((n) => n > 0).sort((a, b) => a - b);
     const full = new Set([...slideRefs(text, current, deck.slides.length), ...selected]);
-    const slides = await Promise.all(deck.slides.flatMap((s, i) => i + 1 === current ? [] : [{ slide: s, number: i + 1 }]).map(async ({ slide, number }) => {
+    const fetched = await Promise.all(deck.slides.flatMap((s, i) => i + 1 === current ? [] : [{ slide: s, number: i + 1 }]).map(async ({ slide, number }) => {
       const spec = (await api.poster(slide.id)).spec;
       const notes = spec.notes?.trim().slice(0, 300);
-      return full.has(number) ? { number, title: slide.title, spec } : { number, title: slide.title, theme: spec.theme, colors: slidePalette(spec), texts: slideContent(spec).texts.map((t) => t.slice(0, 120)), ...(notes ? { notes } : {}) };
+      return { number, spec, entry: full.has(number) ? { number, title: slide.title, spec } : { number, title: slide.title, theme: spec.theme, colors: slidePalette(spec), texts: slideContent(spec).texts.map((t) => t.slice(0, 120)), ...(notes ? { notes } : {}) } };
     }));
-    return { current, total: deck.slides.length, slides, ...(selected.length ? { selected } : {}) };
+    const slides = fetched.map((f) => f.entry);
+    // デザインの要約: 全スライドの spec を番号順に（今のスライドは編集中のもの）。作れなくても編集は止めない
+    let design: DeckDesign | undefined;
+    try {
+      const curSpec = specOf(posterIdRef.current ?? "");
+      design = summarizeDeckDesign([...fetched.map((f) => ({ number: f.number, spec: f.spec })), ...(curSpec ? [{ number: current, spec: curSpec }] : [])].sort((x, y) => x.number - y.number).map((x) => x.spec));
+    } catch { design = undefined; }
+    return { ctx: { current, total: deck.slides.length, slides, ...(selected.length ? { selected } : {}) }, design };
   };
 
   /** 番号の並びを「4・5」の形に */
@@ -606,8 +614,9 @@ export function App() {
     }
     return chatTurn(user, `${aiName} が考え中`, restore, async (signal) => {
       const changed = watchWork(!!desktopBridge(), workRefs);
-      const ctx = await deckEditContext(text);
-      const res = await api.edit(cur, requestText, ids, signal, ctx, context, undefined, references, workSubject(deck, posterIdRef.current, cur.meta.title));
+      const dc = await deckEditContext(text);
+      const ctx = dc?.ctx;
+      const res = await api.edit(cur, requestText, ids, signal, ctx, context, undefined, references, workSubject(deck, posterIdRef.current, cur.meta.title), dc?.design);
       if (changed()) throw new Error(WORK_CHANGED_MESSAGE);
       return applyEditResult(res, cur, ctx, signal);
     });

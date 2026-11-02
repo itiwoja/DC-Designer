@@ -218,6 +218,48 @@ export function nearestWeight(family: string, weight = 400): number {
   return ws.reduce((a, b) => (Math.abs(b - weight) < Math.abs(a - weight) ? b : a));
 }
 
+/**
+ * ブラウザが font-weight から選ぶ face（CSS Fonts の照合規則）。
+ * 400〜500 は 500 までの重い側 → 軽い側 → 500 超、500 超は重い側 → 軽い側、400 未満は軽い側 → 重い側の順に探す
+ */
+export function matchWeight(have: number[], want: number): number {
+  const ws = [...new Set(have)].sort((a, b) => a - b);
+  if (!ws.length) return 400;
+  if (ws.includes(want)) return want;
+  const lighter = ws.filter((w) => w < want).reverse();
+  const heavier = ws.filter((w) => w > want);
+  if (want >= 400 && want <= 500) {
+    const upTo500 = heavier.filter((w) => w <= 500);
+    return upTo500[0] ?? lighter[0] ?? heavier[0];
+  }
+  return want > 500 ? heavier[0] ?? lighter[0] : lighter[0] ?? heavier[0];
+}
+
+/** フォントに無い太さを線で足すとき、太さ 100 あたりに足す線の太さ（文字サイズに対する比。線は両側に広がるのでこれが全幅） */
+export const SYNTH_STROKE_PER_100 = 0.012;
+
+/**
+ * 指定の太さを、フォントの face と「線で足す太さ」に分ける。
+ * face は描画に使う face（指定以下で最も太いもの。無ければ最も細いもの）、extra はそれより太くしたいぶん（0 なら線を足さない）。
+ * 描画では font-weight に face を指定する（ブラウザの照合に任せず、書き出しの埋め込みとも同じ face にする）。
+ * カタログに無いフォントは太さを持つものとみなし、線を足さない
+ */
+export function syntheticWeight(family: string, weight: number): { face: number; extra: number } {
+  // SVG と同じく範囲外は通常の太さ（AI が 5000 などを書いても線が暴れない）
+  if (!(weight >= 1 && weight <= 1000)) weight = 400;
+  const have = FONT_BY_FAMILY.get(family)?.weights;
+  if (!have) return { face: weight, extra: 0 };
+  // 指定以下で最も太い face に線を足す（照合規則に任せると 600 で 700 が選ばれ、段階的に太くならない）
+  const below = have.filter((w) => w <= weight);
+  const face = below.length ? Math.max(...below) : Math.min(...have);
+  return { face, extra: Math.max(0, weight - face) };
+}
+
+/** syntheticWeight の extra を、文字サイズ size のときの線の全幅（px）にする */
+export function synthStrokeWidth(extra: number, size: number): number {
+  return extra > 0 ? (extra / 100) * SYNTH_STROKE_PER_100 * size : 0;
+}
+
 /** 製品版（Electron）か。画面からは外部の CSS を読めないので、API のフォントキャッシュから読み込む */
 const isDesktop = () => typeof window !== "undefined" && !!window.dcDesktop;
 
@@ -256,7 +298,8 @@ const loaded = new Set<string>();
 export function ensureWebFont(family: string | undefined, weight?: number) {
   if (!family || typeof document === "undefined" || !FONT_BY_FAMILY.has(family)) return;
   if (isDesktop()) {
-    const w = nearestWeight(family, weight);
+    // ブラウザが選ぶ face と同じものを読む（最寄りだと 550 で 400 を読み、画面は 700 を待つ）
+    const w = matchWeight(FONT_BY_FAMILY.get(family)!.weights, weight ?? 400);
     const key = `${family}|${w}`;
     if (loaded.has(key) || Date.now() - (failedAt.get(key) ?? -RETRY_MS) < RETRY_MS) return;
     loaded.add(key);
