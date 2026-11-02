@@ -1,6 +1,6 @@
 {
   "name": "dc-designer",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "ポスターとスライドを「レイヤーを重ねた設計図（JSON）」として AI に組み立てさせ、エディタで調整してポスターは PDF / PNG、スライドは PPTX に書き出すツール",
   "license": "MIT",
   "repository": {
