@@ -3,7 +3,7 @@ id: poster
 title: ポスター作成
 order: 1
 exeAvailable: true
-exeNote: AI の下書きと写真・イラストの生成には、ChatGPT Plus / Pro のサインインが必要です
+exeNote: AI の下書きには ChatGPT Plus / Pro のサインインが必要です。画像生成は動作要件を見てください
 mediaId: feature-poster
 ---
 AI の下書き・白紙・PDF から A4 のポスターを作り、文字・図形・画像をレイヤーで仕上げます。
