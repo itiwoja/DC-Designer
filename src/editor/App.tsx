@@ -12,6 +12,7 @@ import { applyFonts, specTexts } from "../fonts";
 import { workSubject, watchWork, WORK_CHANGED_MESSAGE, type AiSubject } from "./aiSubject";
 import { desktopBridge, useDesktopVersion } from "./desktop";
 import { api, type AIProgress, type DeckEditContext, type RefImage } from "./api";
+import { planDeckSequence } from "./deckSequence";
 import { AccountBar, ModelSelect, WelcomeModal } from "./AccountBar";
 import { unionBox } from "./canvas";
 import { CanvasOverlay, MeasureLabel, type CropState } from "./CanvasOverlay";
@@ -421,6 +422,49 @@ export function App() {
     return { current, total: deck.slides.length, slides };
   };
 
+  /** 番号の並びを「4・5」の形に */
+  const nums = (ns: number[]) => ns.join("・");
+  /**
+   * AI の構成変更（res.sequence）をデッキに当てる。消すスライドがあれば、当てる前に確認する（キャンセルなら何も当てない）。
+   * 書き換え・新規に画像の生成待ちがあれば、そのまま生成する
+   */
+  const applySequenceResult = async (res: Awaited<ReturnType<typeof api.edit>>, ctx: DeckEditContext | undefined, signal: AbortSignal): Promise<Omit<ChatMsg, "id" | "role">> => {
+    const d = deck!;
+    const oldIds = d.slides.map((s) => s.id);
+    // 元のスライド番号ごとの書き換え後の spec（変化のあるものだけ）
+    const edits = new Map<number, PosterSpec>();
+    for (const e of [...(res.spec ? [{ target: res.target ?? ctx?.current ?? 0, spec: res.spec }] : []), ...(res.others ?? [])]) {
+      const id = oldIds[e.target - 1];
+      const old = id && specOf(id);
+      if (old && diffLayers(old, e.spec).hasChanges) edits.set(e.target, e.spec);
+    }
+    const plan = planDeckSequence(oldIds, res.sequence!, edits);
+    const before = oldIds.length, after = plan.slots.length;
+    const removedNums = plan.removed.map((id) => oldIds.indexOf(id) + 1);
+    const added = plan.slots.filter((s) => s.type !== "keep").length;
+    const reordered = plan.slots.some((s, i) => s.type !== "keep" || s.id !== oldIds[i]) || before !== after;
+    if (!reordered && !plan.rewrites.length) return { text: res.reply || "変更はありませんでした" };
+    if (removedNums.length) {
+      const titles = plan.removed.map((id) => `「${d.slides[oldIds.indexOf(id)].title}」`).join("");
+      const ok = await ask({
+        title: `スライドを ${before} 枚 → ${after} 枚に組み直しますか？`,
+        message: `デッキを ${before} 枚から ${after} 枚に組み直します。${added ? `${added} 枚を追加し、` : ""}スライド ${nums(removedNums)}（${titles}）を削除します。削除は取り消せません。`,
+        ok: "組み直す", danger: true,
+      });
+      if (!ok) return { text: "変更は当てませんでした" };
+    }
+    if (signal.aborted) throw new Error("aborted");
+    const r = await applyDeckSequence(res.sequence!, edits);
+    const parts = [plan.rewrites.length && `${plan.rewrites.length} 枚書き換え`, added && `${added} 枚追加`, removedNums.length && `${removedNums.length} 枚削除`, !added && !removedNums.length && reordered && "並べ替え"].filter(Boolean);
+    const reply = { text: res.reply || "スライドの構成を変えました", changes: `構成: ${before} 枚 → ${after} 枚${parts.length ? `（${parts.join("・")}）` : ""}` };
+    if (autoImages && r.order.some((id) => { const sp = specOf(id); return sp && (r.created.includes(id) || r.rewritten.includes(id)) && findPendingAssets(sp).length; })) {
+      chat.push({ role: "assistant", ...reply });
+      await generateAcross(r.order.filter((id) => r.created.includes(id) || r.rewritten.includes(id)), signal);
+      return { text: "画像も生成しました" };
+    }
+    return reply;
+  };
+
   /**
    * チャットの 1 往復: ユーザーの発言を載せ、fn の結果（返答）を AI の発言として載せる。
    * 失敗・キャンセルもチャットに出し、入力欄に文面を戻す（利用上限・サインイン切れは通知でも導線を出す）。
@@ -448,6 +492,8 @@ export function App() {
    * 別のスライドへの指示ならそのスライドを開いてから当て、ほかのスライドは開かずに書き換える。まとめ元のスライドは確認してから消す
    */
   const applyEditResult = async (res: Awaited<ReturnType<typeof api.edit>>, cur: PosterSpec, ctx: DeckEditContext | undefined, signal: AbortSignal): Promise<Omit<ChatMsg, "id" | "role">> => {
+    // 構成の変更（並べ替え・分割・統合・複製）は、並びごとまとめて当てる
+    if (res.sequence && deck) return applySequenceResult(res, ctx, signal);
     const next = res.spec;
     if (!next) return { text: res.reply || "変更はありませんでした" };
     // 別のスライドを書き換える指示なら、そのスライドを開いてから適用する（履歴に積まれるので Ctrl+Z / 元に戻す が効く）
@@ -477,20 +523,6 @@ export function App() {
     const main = d.hasChanges ? `${target || others.length ? `スライド ${res.target ?? ctx?.current}: ` : ""}${parts.join("・") || "変更"}` : "";
     const changes = [main, others.length && `スライド ${others.map((o) => o.n).join("・")} も変更`].filter(Boolean).join("・");
     const reply = { text: res.reply || "修正しました", changes, before, posterId: posterIdRef.current, ...(others.length ? { others: others.map(({ posterId, before }) => ({ posterId, before })) } : {}) };
-    // 「スライド18,19を1枚にまとめて」: まとめ元のスライドを、確認してから削除する
-    const merged = (res.remove ?? []).map((n) => ({ n, slide: deck?.slides[n - 1] })).filter((r) => r.slide && r.slide.id !== posterIdRef.current);
-    if (merged.length) {
-      const nums = merged.map((r) => r.n).join("・");
-      const ok = await ask({
-        title: `スライド ${nums} を削除しますか？`,
-        message: `内容をスライド ${res.target ?? ctx?.current} にまとめました。まとめ元の${merged.map((r) => `「${r.slide!.title}」`).join("")}を削除します。この操作は取り消せません（残しておく場合は「キャンセル」）。`,
-        ok: "削除", danger: true,
-      });
-      if (ok) {
-        await deleteSlides(merged.map((r) => r.slide!.id));
-        reply.changes += `・スライド ${nums} を削除`;
-      }
-    }
     if (autoImages && others.some((o) => findPendingAssets(o.spec).length)) {
       chat.push({ role: "assistant", ...reply });
       await generateAcross([posterIdRef.current!, ...others.map((o) => o.posterId)], signal);
@@ -850,7 +882,7 @@ export function App() {
 
   // ---------- PPTX エディターモード ----------
   const {
-    deck, slides, specOf, deckOpen, toggleDeck, openSlide, updateSlide, addSlide, duplicateSlide, removeSlide, deleteSlides, moveSlide, reorderSlide, exportDeck,
+    deck, slides, specOf, deckOpen, toggleDeck, openSlide, updateSlide, addSlide, duplicateSlide, removeSlide, deleteSlides, applyDeckSequence, moveSlide, reorderSlide, exportDeck,
     fontDialog, setFontDialog, openFontDialog, applyDeckFonts, applyTransitionToAll, renumberDeckPages, writeNotes, addSlideByAI, editAcrossDeck, importPptxFile,
     deckReady, renameDeck,
   } = useDeck({ spec, theme, save, apiUp, busy, run, notify, exported, setBusyProgress, setSpec, resetSpec, stashHistory, setSelected, fitView });

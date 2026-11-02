@@ -9,7 +9,8 @@ import { PosterSpecSchema, type PosterSpec } from "../schema";
 import type { resolveTheme } from "../themes";
 import { deckSubject, watchWork, WORK_CHANGED_MESSAGE } from "./aiSubject";
 import { desktopBridge } from "./desktop";
-import { api, type ChatContext, type Deck, type DeckKind, type RefImage } from "./api";
+import { api, type ChatContext, type Deck, type DeckKind, type DeckSlot, type RefImage } from "./api";
+import { nearestKept, planDeckSequence } from "./deckSequence";
 import { addPageNumber, renumberPages } from "./pageNumbers";
 import { diffLayers, safeFileName } from "./specOps";
 import { readPref, writePref } from "./storage";
@@ -208,16 +209,102 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
       setDeck(await api.removeDeckSlide(d.id, id));
     });
   };
-  /** 開いていないスライドをまとめて削除する（チャットでスライドを統合したあと。確認は呼び出し側で行う） */
+  /**
+   * スライドをまとめて削除する（確認は呼び出し側で行う）。開いているスライドが含まれるときは、先に残るスライドのうち一番近いものを開く。
+   * 途中で失敗したらサーバーの状態に合わせ直してからエラーを投げる
+   */
   const deleteSlides = async (ids: string[]) => {
-    if (!deck) return;
-    let d = deck;
-    for (const id of ids) {
-      if (id === posterIdRef.current) continue;
-      dropLocal(id);
-      d = await api.removeDeckSlide(d.id, id);
+    const d0 = deckRef.current;
+    if (!d0) return;
+    const gone = new Set(ids);
+    const order = d0.slides.map((s) => s.id);
+    try {
+      const open = posterIdRef.current;
+      if (open && gone.has(open)) {
+        const next = nearestKept(order, order.filter((id) => !gone.has(id)), open);
+        if (next) await openSlide(next);
+      }
+      let d = d0;
+      for (const id of ids) {
+        dropLocal(id);
+        d = await api.removeDeckSlide(d.id, id);
+      }
+      setDeck(d);
+    } catch (e) {
+      await resyncDeck(d0.id);
+      throw e;
     }
-    setDeck(d);
+  };
+  /** 手元のデッキをサーバーの状態に合わせ直す（途中で失敗したあと、中途半端な状態を残さない） */
+  const resyncDeck = async (deckId: string) => {
+    try {
+      const d = await api.deck(deckId);
+      const have = new Set(d.slides.map((s) => s.id));
+      const cur = posterIdRef.current;
+      // 開いているスライドが消えていたら、残っているスライドへ移る
+      if (cur && !have.has(cur) && d.slides[0]) {
+        const first = d.slides[0].id;
+        const spec = (await api.poster(first)).spec;
+        save.markSaved(first, spec);
+        save.switchTo(first, spec);
+        resetSpec(spec);
+        setSelected(null);
+      }
+      const m = new Map<string, PosterSpec>();
+      for (const s of d.slides) {
+        const sp = s.id === posterIdRef.current ? specRef.current : slidesRef.current.get(s.id) ?? (await api.poster(s.id)).spec;
+        m.set(s.id, sp);
+        if (!slidesRef.current.has(s.id)) save.markSaved(s.id, sp);
+      }
+      slidesRef.current = m;
+      setSlidesState(m);
+      setDeck({ ...d, slides: d.slides.map(({ spec: _, ...s }) => s) });
+    } catch { /* サーバーに届かないときは、手元の状態のまま */ }
+  };
+  /**
+   * AI の構成変更（sequence）をデッキに当てる。edits は元のスライド番号ごとの書き換え後の spec。
+   * 順序: 書き換え → 新規・複製を作る → 開いているスライドが消えるなら先に別のスライドを開く → 消す → 最終の並びにする。
+   * 途中で失敗したらサーバーの状態に合わせ直してエラーを投げる。作ったスライドの id（最終の並び順）と書き換えたスライドの id を返す
+   */
+  const applyDeckSequence = async (sequence: DeckSlot[], edits: ReadonlyMap<number, PosterSpec>): Promise<{ order: string[]; created: string[]; rewritten: string[]; removed: string[] }> => {
+    const d0 = deckRef.current;
+    if (!d0) throw new Error("スライドのデッキを開いていません");
+    const oldIds = d0.slides.map((s) => s.id);
+    const plan = planDeckSequence(oldIds, sequence, edits);
+    // 書き換え後の spec（複製は書き換え後の内容をコピーする）
+    const latest = (id: string, n: number) => edits.get(n) ?? specOf(id);
+    const created: string[] = [];
+    try {
+      for (const r of plan.rewrites) updateSlide(r.id, r.spec);
+      let d = d0;
+      const order: string[] = [];
+      for (const slot of plan.slots) {
+        if (slot.type === "keep") { order.push(slot.id); continue; }
+        const base = slot.type === "new" ? slot.spec : latest(slot.from, slot.n);
+        if (!base) throw new Error("複製元のスライドが見つかりません");
+        const spec = slot.type === "new" ? base : { ...base, meta: { ...base.meta, title: `${base.meta.title} のコピー` } };
+        const r = await api.addDeckSlide(d.id, { spec, after: order[order.length - 1] });
+        addLocal(r.poster.id, r.poster.spec);
+        d = r.deck;
+        order.push(r.poster.id);
+        created.push(r.poster.id);
+      }
+      const open = posterIdRef.current;
+      if (open && plan.removed.includes(open)) {
+        const next = nearestKept(oldIds, order.filter((id) => oldIds.includes(id)), open) ?? created[0];
+        if (next) await openSlide(next);
+      }
+      for (const id of plan.removed) {
+        dropLocal(id);
+        d = await api.removeDeckSlide(d.id, id);
+      }
+      d = await api.updateDeck(d.id, { slides: order });
+      setDeck(d);
+      return { order, created, rewritten: plan.rewrites.map((r) => r.id), removed: plan.removed };
+    } catch (e) {
+      await resyncDeck(d0.id);
+      throw e;
+    }
   };
   /** デッキ名を変える（見た目はすぐ変え、保存は打ち終わるのを待ってまとめて送る。空のあいだは保存しない） */
   const renameTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -560,7 +647,7 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
   }, { cancelable: true });
 
   return {
-    deck, slides, specOf, deckOpen, toggleDeck, openSlide, updateSlide, addSlide, duplicateSlide, removeSlide, deleteSlides, moveSlide, reorderSlide, exportDeck,
+    deck, slides, specOf, deckOpen, toggleDeck, openSlide, updateSlide, addSlide, duplicateSlide, removeSlide, deleteSlides, applyDeckSequence, moveSlide, reorderSlide, exportDeck,
     fontDialog, setFontDialog, openFontDialog, applyDeckFonts, applyTransitionToAll, renumberDeckPages, writeNotes, addSlideByAI, editAcrossDeck, importPptxFile,
     deckReady, renameDeck,
   };
