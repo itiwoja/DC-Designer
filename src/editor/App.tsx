@@ -6,7 +6,8 @@ import { A4Check } from "./A4Check";
 import { a4Fit, a4Instruction, a4Issues, fitToA4, SAFE_MARGIN_MM } from "./a4";
 import { cropTarget } from "../render/ImageBox";
 import { useRenderReady } from "../render/useRenderReady";
-import { findPendingAssets, type AssetRequest, type Layer, type PosterSpec } from "../schema";
+import { findPendingAssets, type AssetRequest, type Layer, type PosterSpec, type TextLayerT } from "../schema";
+import { textStyleKey, toggleTextStyle } from "./textStyle";
 import { summarizeDeckDesign, type DeckDesign } from "../deckDesign";
 import { resolveTheme } from "../themes";
 import { applyFonts, specTexts } from "../fonts";
@@ -1070,6 +1071,17 @@ export function App() {
       if (mod && key === "c") { copyLayers(selLayers); notify({ kind: "info", text: multi ? `${selLayers.length} 件コピーしました` : "コピーしました" }); return; }
       if (mod && key === "x") { copyLayers(selLayers); removeLayers(ids); return; }
       if (mod && key === "d") return shortcut(() => duplicateLayers(selLayers));
+      // Ctrl+B / Ctrl+U: 選んだテキストの太字・下線を切り替える（Ctrl+U でブラウザの「ソースを表示」を出さない）
+      const style = textStyleKey(e);
+      if (style) {
+        e.preventDefault();
+        const texts = selLayers.filter((l): l is TextLayerT => l.type === "text" && !l.locked);
+        if (texts.length) {
+          const patches = new Map(toggleTextStyle(texts, style).map((p) => [p.id, p.patch]));
+          setSpec((s) => ({ ...s, layers: s.layers.map((l) => (patches.has(l.id) ? ({ ...l, ...patches.get(l.id) } as Layer) : l)) }));
+        }
+        return;
+      }
       if (e.key === "Delete" || e.key === "Backspace") return shortcut(() => removeLayers(ids));
       const d = arrowDelta(e);
       const targets = movable(selLayers);
@@ -1402,6 +1414,7 @@ export function App() {
                   at={textEdit.at}
                   px={px}
                   onChange={(patch) => updateLayer(editLayer.id, patch as Partial<Layer>, textEdit.key)}
+                  onStyle={(patch) => updateLayer(editLayer.id, patch as Partial<Layer>)}
                   onDone={() => setTextEdit(null)}
                 />
               )}
