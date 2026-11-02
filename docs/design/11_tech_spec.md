@@ -11,7 +11,7 @@
 |---|---|---|---|---|
 | SITE-R-01 | リスク（解消済み） | `docs/code-signing-policy.md` のプライバシー節が古かった（確認窓は撤去済み、OpenRouter・Gemini も載っていた） | PR #44 で解消（`docs/privacy.md` を新設、SITE-D-30） | [12](#12-リスクと対策) |
 | SITE-R-02 | リスク | 未署名で SmartScreen の警告が出て離脱する | 手順と SHA-256 をボタン直下に出す | [04](04_functional_spec.md) |
-| SITE-R-03 | リスク | 機能紹介が exe 版と食い違う（exe では Codex・ComfyUI、画像生成、OpenRouter が無効など） | `exeAvailable` で出し分け、制限は `exeNote` でカードに出す。README の変更時に見直す | [08](08_database.md) |
+| SITE-R-03 | リスク | 機能紹介が exe 版と食い違う（exe では OpenRouter・OpenAI の API キーでの画像生成が無効など） | `exeAvailable` で出し分け、制限は `exeNote` でカードに出す。README の変更時に見直す | [08](08_database.md) |
 | SITE-R-04 | リスク | 配信 CI の名前を変えると自動連動が切れる | 名前を変えるときは `site.yml` も直す | [12](#12-リスクと対策) |
 | SITE-R-05 | リスク | 署名を始めるときに `signedSince` を書き忘れると、署名済みの版が「未署名」と出る | 署名つきの最初の版を出す手順に入れる | [12](#12-リスクと対策) |
 

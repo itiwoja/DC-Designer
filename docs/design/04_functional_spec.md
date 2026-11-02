@@ -65,14 +65,14 @@ flowchart TB
 - 入力：機能（SITE-TBL-003）を `order` 順に、各機能の媒体（SITE-TBL-004）、デモ動画（SITE-TBL-004 の `demo`。機能カードの下に 1 本）
 - 処理：`exeAvailable: false` の機能は出さない。`exeNote` があればカードに注記として出す（SITE-D-33）。媒体の `status` が `ready` なら画像/動画、`placeholder` なら枠の寸法に合わせた共通の仮の画像（「画面は準備中」と入った、実際の画面と誤解されない画像。[06 媒体の枠](06_ux_design.md#媒体の枠)）を出す（ビルドは止めない）。素材が揃う前でも公開してよい（SITE-D-26）。動画は `loop` `playsinline`（ナレーション・BGM・効果音が入っているので `muted` は付けない。2026-11-01、ユーザーの依頼。ナレーションの字幕を `track` で付ける）、`prefers-reduced-motion` のときは自動再生せずポスター画像を出す
 - 機能（`exeAvailable: true`）：2026-11-01 から 2 つに絞った。ポスター作成（AI の下書き・白紙・PDF から作り、PDF・PNG で書き出し）／スライド作成（PowerPoint の読み込み・編集、アニメーション・台本・発表者ビュー、PPTX で書き出し）。Instagram 投稿はアプリから外した
-- 注記（`exeNote`）：「ポスター作成」に「AI の下書きには ChatGPT Plus / Pro のサインインが必要です。写真・イラストは仮の画像になります」
+- 注記（`exeNote`）：「ポスター作成」に「AI の下書きと写真・イラストの生成には、ChatGPT Plus / Pro のサインインが必要です」（2026-11-02、画像生成を Windows 版で使えるようにしたのに合わせて直した）
 
 ### <a id="site-fr-003"></a>SITE-FR-003：動作要件 〔SITE-UC-001, SITE-UC-002〕
 | 項目 | 表示する内容 |
 |---|---|
 | OS | Windows 10 / 11（x64）。確認した版だけを書く（EXE-Q-03） |
 | AI でレイアウト生成・修正 | ChatGPT Plus / Pro などでサインイン。**ChatGPT 無料プランは非対応**。Windows 版では OpenRouter は使えない（`server/ai.ts`） |
-| 画像生成 | Windows 版では使えない（OpenAI・Gemini・ComfyUI・Codex を止めている。`server/imagegen.ts`）。画像の枠はダミー画像になる |
+| 画像生成 | ChatGPT でサインインすると Codex CLI を自動で準備し、ChatGPT プランの枠で生成する（ブラウザでのサインインがもう一度ある。EXE-D-15）。Gemini の API キー・この PC の ComfyUI でも生成できる。OpenAI の API キーは使わない。どれも使わないときはダミー画像になる（`docs/changes/2026-11-01-desktop-imagegen.md`・`2026-11-02-signin-codex.md`） |
 | サインイン不要で使えるもの | 白紙からの手動編集・保存・書き出し |
 
 正本は SITE-TBL-007 の `requirements`。README と食い違ったら README（アプリ側）に合わせる。ただし README は開発版（`npm run dev`）の説明も含むので、Windows 版で使えるものだけを書く（製品版は `DC_DESIGNER_DESKTOP=1` で AI を ChatGPT プランに固定している。外への通信は、worker が `server/egress.ts` の許可表、画面が `desktop/appProtocol.ts` での遮断、更新確認が main プロセスの electron-updater〔GitHub Releases〕に分かれる）。
@@ -104,7 +104,7 @@ flowchart TB
 ### <a id="site-fr-007"></a>SITE-FR-007：ポリシー 〔SITE-UC-004〕
 - 入力：`docs/privacy.md`・`docs/code-signing-policy.md`（SITE-TBL-005）
 - 処理：Markdown を HTML にする。相対リンク（`./release-policy.md`、`../SECURITY.md` など）は `https://github.com/itiwoja/DC-Designer/blob/main/<path>` に書き換える。ただしサイトのページになっている文書（2 件）へのリンクはサイト内のページへ
-- `docs/privacy.md` に書くこと：Windows 版のアプリが送る先（AI 利用時の ChatGPT プラン〔OpenAI の `auth.openai.com`・`api.openai.com`〕、フォント取得の Google Fonts、更新確認の GitHub Releases。worker の許可表 `server/egress.ts`〔AI・フォント〕と、main プロセスの electron-updater〔更新確認。起動のたびに自動で行う〕の両方に合わせる。OpenRouter・Gemini・画像生成は Windows 版では使わないので書かない）と、**AI の操作は追加の確認なしで送信する**こと（今の動き、SITE-D-12）。サイト自体は Cookie を使わず、所有者は解析もしない（閲覧数を数えない）こと（SITE-D-27）。ただし、サイトの配信（GitHub Pages）と exe のダウンロード（GitHub Releases）では、GitHub が閲覧者の IP アドレスなどを GitHub のプライバシー方針に従って記録すること（「何も記録されない」とは書かない）
+- `docs/privacy.md` に書くこと：Windows 版のアプリが送る先（AI 利用時の ChatGPT プラン〔OpenAI の `auth.openai.com`・`api.openai.com`〕、フォント取得の Google Fonts、更新確認の GitHub Releases。worker の許可表 `server/egress.ts`〔AI・フォント〕と、main プロセスの electron-updater〔更新確認。起動のたびに自動で行う〕の両方に合わせる。画像生成〔Gemini・Codex CLI・ComfyUI〕と Codex CLI の取得〔GitHub〕も書く。OpenRouter は Windows 版では使わないので書かない）と、**AI の操作は追加の確認なしで送信する**こと（今の動き、SITE-D-12）。サイト自体は Cookie を使わず、所有者は解析もしない（閲覧数を数えない）こと（SITE-D-27）。ただし、サイトの配信（GitHub Pages）と exe のダウンロード（GitHub Releases）では、GitHub が閲覧者の IP アドレスなどを GitHub のプライバシー方針に従って記録すること（「何も記録されない」とは書かない）
 - 署名ポリシーの古い文面（SITE-R-01）は PR #44 で解消した。`docs/code-signing-policy.md` のプライバシー節は、SignPath 向けの英文の要約と `docs/privacy.md` へのリンクだけにし、プライバシーの正本を 1 つにする（SITE-D-30）
 
 ### <a id="site-fr-008"></a>SITE-FR-008：リリース情報取得 〔SITE-UC-005, SITE-UC-006〕
