@@ -804,7 +804,8 @@ export function ShortcutList({ mod }: { mod: string }) {
     [`${mod}+] / [`, "前面へ / 背面へ"],
     ["Delete", "削除"],
     [`${mod}+Z`, "元に戻す"],
-    [`${mod}+ホイール`, "ズーム（" + mod + "+0 で全体）"],
+    [`${mod}+ホイール`, "スライドのズーム（" + mod + "+1 で 100%）"],
+    [`${mod}+＋ / － / 0`, "アプリ全体の表示を拡大 / 縮小 / 元に戻す"],
   ];
   return (
     <dl className="shortcuts">
