@@ -3,6 +3,7 @@ import type { TextLayerT } from "../schema";
 import { resolveColor, resolveFont, type Theme } from "../themes";
 import { paintRange, rangeColor, withText } from "../textRuns";
 import { syntheticWeight } from "../fonts";
+import { textStyleKey, toggleTextStyle } from "./textStyle";
 
 /** SVG の font-weight 属性と同じく、範囲外の値は通常の太さとして扱う */
 const cssWeight = (w: number | undefined) => {
@@ -15,7 +16,7 @@ const cssWeight = (w: number | undefined) => {
  * 描画はあくまで SVG 側に任せ、その上に文字色を透明にした textarea を重ねて
  * キャレットと選択範囲だけを見せる。overlay の <svg> 内（ポスター座標系）に置く。
  */
-export function TextEditor({ layer, theme, svg, at, px, onChange, onDone }: {
+export function TextEditor({ layer, theme, svg, at, px, onChange, onStyle, onDone }: {
   layer: TextLayerT;
   theme: Theme;
   svg: SVGSVGElement | null;
@@ -24,6 +25,8 @@ export function TextEditor({ layer, theme, svg, at, px, onChange, onDone }: {
   /** 画面 1px をポスター座標に換算した値（カラーパレットを画面上で一定の大きさにする） */
   px: number;
   onChange: (patch: Partial<TextLayerT>) => void;
+  /** 太字・下線の切り替え（文字の入力とは別の取り消し単位にする） */
+  onStyle: (patch: Partial<TextLayerT>) => void;
   onDone: () => void;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -108,10 +111,13 @@ export function TextEditor({ layer, theme, svg, at, px, onChange, onDone }: {
               e.stopPropagation();
               if (e.nativeEvent.isComposing) return;
               if (e.key === "Escape" || ((e.ctrlKey || e.metaKey) && e.key === "Enter")) { e.preventDefault(); onDone(); }
+              // Ctrl+B / Ctrl+U: 太字・下線を切り替える（太さ・下線はレイヤー単位なので、文字全体に掛かる）
+              const style = textStyleKey(e);
+              if (style) { e.preventDefault(); onStyle(toggleTextStyle([layer], style)[0].patch); }
             }}
             style={{
               // 表示（TextBlock）と同じく偽の太字を作らせない。編集中だけ太く見えて、確定すると細くなるずれを防ぐ
-              fontFamily, fontSize: size, fontWeight, fontSynthesisWeight: "none", lineHeight: `${size * lh}px`,
+              fontFamily, fontSize: size, fontWeight, fontSynthesisWeight: "none", textDecoration: layer.underline ? "underline" : undefined, lineHeight: `${size * lh}px`,
               letterSpacing: layer.letterSpacing ? `${layer.letterSpacing}em` : undefined,
               textAlign: layer.align ?? "left",
             }}

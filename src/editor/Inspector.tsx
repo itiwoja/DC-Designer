@@ -1,3 +1,4 @@
+import { isBold, toggleTextStyle } from "./textStyle";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Layer, LayerAnimation, PosterSpec, SlideBgm, SlideTransition, SoundRef } from "../schema";
 import { BGM_FILE_MAX_BYTES, createBgmPlayer } from "../bgm";
@@ -557,6 +558,12 @@ export function Inspector({ layer, multiCount, spec, onChange, onReplace, onRege
             if (face !== layer.weight) return <p className="hint small">このフォントは {face} より細くできないため {face} で表示されます</p>;
             return null;
           })()}
+          <div className="seg">
+            <button className={isBold(layer) ? "on" : ""} aria-pressed={isBold(layer)} title={`太字（${mod}+B）`} style={{ fontWeight: 800 }}
+              onClick={() => onChange(toggleTextStyle([layer], "bold")[0].patch as any)}>B</button>
+            <button className={layer.underline ? "on" : ""} aria-pressed={!!layer.underline} title={`下線（${mod}+U）`} style={{ textDecoration: "underline" }}
+              onClick={() => onChange(toggleTextStyle([layer], "underline")[0].patch as any)}>U</button>
+          </div>
           <div className="row">
             <select value={layer.font} onChange={(e) => onChange({ font: e.target.value } as any)}>
               <option value="display">display（見出し）</option>

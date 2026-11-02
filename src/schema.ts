@@ -157,6 +157,8 @@ const TextLayer = LayerBase.extend({
   colorRuns: z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), color: z.string() })).optional(),
   outlines: z.array(Outline).optional(), // 外側から順に
   skewX: z.number().optional(),
+  /** 下線（Ctrl+U） */
+  underline: z.boolean().optional(),
   /** "shrink": はみ出したら枠に収まるよう縮小 */
   fit: z.enum(["none", "shrink"]).optional(),
 });

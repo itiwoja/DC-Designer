@@ -65,7 +65,7 @@ function renderLayerBody(layer: Layer, theme: Theme, spec: PosterSpec, props: Po
         <TextBlock
           id={id} text={layer.text} w={w} h={h} theme={theme} font={layer.font} size={layer.size} weight={layer.weight}
           lineHeight={layer.lineHeight} letterSpacing={layer.letterSpacing} align={layer.align} fill={layer.fill}
-          colorRuns={layer.colorRuns} outlines={layer.outlines} skewX={layer.skewX} fit={layer.fit}
+          colorRuns={layer.colorRuns} outlines={layer.outlines} skewX={layer.skewX} underline={layer.underline} fit={layer.fit}
         />
       );
     case "image":
