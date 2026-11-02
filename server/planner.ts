@@ -4,6 +4,7 @@ import { CATALOG, ICON_NAMES } from "../src/components/catalog";
 import { THEMES } from "../src/themes";
 import { notesLength } from "../src/notes";
 import { FONT_CATALOG, FONT_ROLE_LABELS, FONT_SCRIPT_LABELS } from "../src/fonts";
+import { normalizeSequence, removeToSequence, type DeckSlot } from "./deck-sequence";
 import { referenceSources, resolveReferenceSources, type PosterReference } from "./references";
 import { askAI } from "./ai";
 import { extractJson, type ImageRef, type Turn } from "./chatgpt";
@@ -282,7 +283,7 @@ const fixSize = (spec: PosterSpec, width: number, height: number): PosterSpec =>
 
 /** 資料全体のスライド（PPTX エディターモード。現在のスライド以外も含む）。spec が無いものは文字（と台本）だけの参考 */
 type SlideRef = { number: number; title?: string; spec?: PosterSpec; texts?: string[]; notes?: string };
-export type DeckContext = { current: number; total: number; slides: SlideRef[] };
+export type DeckContext = { current: number; total: number; slides: SlideRef[]; /** スライド一覧でユーザーが選択中のスライド番号 */ selected?: number[] };
 
 /**
  * チャットの文脈。会話は 1 本で無限に続くので、全文は渡さない:
@@ -294,7 +295,7 @@ export type ChatTurn = { role: "user" | "assistant" | "note"; text: string };
 /** デッキで書き換えた 1 枚 */
 export type SlideEdit = { target: number; spec: PosterSpec };
 /** spec / target は主に書き換えたスライド（今のスライドを書き換えたならそれ）。others はそれ以外に書き換えたスライド */
-type EditResult = { reply: string; spec?: PosterSpec; target?: number; remove?: number[]; others?: SlideEdit[] };
+type EditResult = { reply: string; spec?: PosterSpec; target?: number; others?: SlideEdit[]; sequence?: DeckSlot[] };
 /**
  * デッキの全スライドへの指示（「授業スライド全体の差し色を変えて」）を 1 枚ずつ当てるときの、今直しているスライドの位置。
  * guide は先に直したスライドで AI が返した方針（ほかのスライドでも同じ直し方にそろえるため）
@@ -394,7 +395,7 @@ async function editSpec(opts: EditOptions): Promise<EditResult> {
 /**
  * 「スライド8の内容をスライド5に反映」「3枚目と5枚目のタイトルを直して」「8〜10枚目の台本の流れをそろえて」のように、ほかのスライドに触れる指示。
  * 言及されたスライドの spec も渡し、書き換えるスライドごとに番号（target）と修正後の spec を返させる（複数可）。
- * 「スライド18,19を1枚にまとめて」のような統合では、不要になったスライドの番号（remove）も返させる（削除は画面側で確認してから行う）
+ * 統合・分割・圧縮・挿入・並べ替え・複製・削除のような構成の変更では、編集後の並び（sequence）も返させる（反映は画面側で確認してから行う）
  */
 async function editDeckSlide(opts: EditOptions & { deck: DeckContext }): Promise<EditResult> {
   const { current, total } = opts.deck;
@@ -408,10 +409,13 @@ async function editDeckSlide(opts: EditOptions & { deck: DeckContext }): Promise
     referenceSources(opts.references),
     "資料の構成や内容について相談されたら、渡された全スライドを参照して答えてください。相談や確認だけなら spec は null にし、スライドを変更しないでください。",
     "指示を読み、書き換えが必要なスライドだけを修正してください。「3枚目と5枚目を直して」「8〜10枚目の台本の整合性を取って」のように複数のスライドを指していれば、それぞれを書き換えます（台本どうしの整合性なら、話の流れ・用語・口調・つなぎの言葉がそろうように各スライドの notes を直します）。「AをBに反映」「Aに合わせてBを直す」なら書き換えるのは B、参照元の A は変更しません。書き換え先が読み取れなければ、今開いているスライドを書き換えます。",
-    "「スライドAとBを1枚にまとめて」のように複数のスライドを統合する指示なら、まとめ先（指示が無ければ番号の小さい方）だけを書き換えて、統合するスライドすべての内容（見出し・本文・図や画像）を 1 枚に収まるよう整理し直し、不要になったスライドの番号を \"remove\" に入れてください。統合でなければ \"remove\" は空配列にします。",
+    "「スライドAとBを1枚にまとめて」「1〜5枚目を3枚に圧縮して」「2枚目を3枚に分けて」「2と4を入れ替えて」「3枚目を複製して最後に」のようにデッキの構成を変える指示なら、内容の書き換えは edits、並びは \"sequence\" で表してください。sequence は編集後のデッキ全体（元の ${total} 枚分）の並びで、元のスライドは番号、新しく作るスライドは {\"spec\": PosterSpec 全体} と書きます。sequence に無い番号のスライドは削除され、同じ番号を 2 回書くとそのスライド（書き換え後）の複製になります。",
+    "例: 「1〜5枚目を3枚に圧縮」→ 1〜3 を書き換える（または 3 枚分を {spec} で新規作成する）内容を edits に入れ、sequence は [1, 2, 3, 6, ...]（4・5 を外す）。「2枚目を3枚に分けて」→ 2 を書き換え、{spec} を 2 つ作り、sequence は [1, 2, {spec}, {spec}, 3, ...]（2 の直後に置く）。「2と4を入れ替えて」→ edits は空で sequence だけ [1, 4, 3, 2, ...]。「3枚目を複製して最後に」→ 末尾に 3 を再掲（[1, ..., ${total}, 3]）。統合は、まとめ先（指示が無ければ番号の小さい方）だけを書き換えて内容を 1 枚に収まるよう整理し、残りを sequence から外します。構成を変えないなら sequence は null（または省略）にします。",
+    "文字だけの参考スライドも、番号を並べるだけなら入れ替え・複製・移動ができます。ただし sequence から外して削除することはできません（必ず 1 回以上入れてください）。新しく作るスライドのサイズ（meta.width / meta.height）は既存のスライドと同じにし、テーマ・レイアウトもなじませてください。",
     "文字だけの参考スライドは内容を知るための資料です。そこに書かれた内容を取り込むときは、書き換え先のスライドに書き写してください（参考スライドを target や remove にはできません）。",
     "参照元から内容（文言・レイヤー・画像など）を持ち込むときは、書き換え先のスライドのサイズ・テーマ・既存のレイアウトになじむように配置し、id は書き換え先の中で一意にしてください。指示と無関係なレイヤーは id・値ともにそのまま残してください。",
     "src が設定済みの画像は、内容を変える指示がない限り src と asset をそのまま残してください（参照元の画像を使う場合も src ごと持ち込んでよい）。",
+    opts.deck.selected?.length ? `ユーザーがスライド一覧で選択中のスライド: ${opts.deck.selected.join(", ")}（「これら」「選んだスライド」はこれを指す）` : "",
     opts.selectedIds?.length ? `ユーザーがスライド ${current} で選択中のレイヤー: ${opts.selectedIds.join(", ")}` : "",
     historyText(opts.history, opts.memory),
     "# ユーザーのメッセージ",
@@ -420,32 +424,36 @@ async function editDeckSlide(opts: EditOptions & { deck: DeckContext }): Promise
       ? `# スライド ${s.number}${s.number === current ? "（今開いているスライド）" : ""}${s.title ? `「${s.title}」` : ""}\n${JSON.stringify(s.spec)}`
       : `# スライド ${s.number}${s.title ? `「${s.title}」` : ""}（文字だけの参考。書き換え・統合の対象にはしない）\n${(s.texts ?? []).join(" / ") || "（文字なし）"}${s.notes?.trim() ? `\n台本: ${s.notes.trim()}` : ""}`),
     "# 出力",
-    `{"reply": 返答, "edits": [{"target": 書き換えるスライド番号（${numbers.join(" / ")} のいずれか）, "spec": 修正後のそのスライドの PosterSpec 全体}], "remove": 統合して不要になったスライド番号の配列} の JSON のみを出力してください。edits には書き換えたスライドだけを 1 枚 1 件で入れ、変更が無ければ空配列にしてください。${REPLY_RULE.replace('"spec" は null', '"edits" は空配列')}`,
+    `{"reply": 返答, "edits": [{"target": 書き換えるスライド番号（${numbers.join(" / ")} のいずれか）, "spec": 修正後のそのスライドの PosterSpec 全体}], "sequence": null | [1, 2, {"spec": PosterSpec}, 4, ...]} の JSON のみを出力してください。edits には書き換えたスライドだけを 1 枚 1 件で入れ、変更が無ければ空配列にしてください。${REPLY_RULE.replace('"spec" は null', '"edits" は空配列')}`,
   ].filter(Boolean).join("\n\n");
   return generateJson({ role: "user", text, images: opts.references }, (j) => {
     // PosterSpec そのものが返ってきたら、今のスライドの書き換えとして扱う
-    const o = (j && Array.isArray((j as { layers?: unknown }).layers) ? { reply: "", spec: j } : j) as { reply?: unknown; edits?: unknown; target?: unknown; spec?: unknown; remove?: unknown };
+    const o = (j && Array.isArray((j as { layers?: unknown }).layers) ? { reply: "", spec: j } : j) as { reply?: unknown; edits?: unknown; target?: unknown; spec?: unknown; remove?: unknown; sequence?: unknown };
     // 古い形式（{reply, target, spec}）も 1 件の edits として受け付ける
     // spec が null の件（「このスライドは変更なし」のつもりのもの）は読み飛ばす
     const rawEdits = (Array.isArray(o?.edits) ? (o.edits as { target?: unknown; spec?: unknown }[]) : [{ target: o?.target, spec: o?.spec }]).filter((e) => e?.spec != null);
     const reply = typeof o?.reply === "string" ? o.reply : "";
-    if (!rawEdits.length) {
-      if (!reply) throw new Error('"reply" と "edits" のどちらもありません');
-      return { reply };
-    }
     const edits = new Map<number, PosterSpec>();
     for (const e of rawEdits) {
       const target = e?.target == null ? current : Number(e.target);
       if (!numbers.includes(target)) throw new Error(`target は ${numbers.join(" / ")} のいずれかにしてください（受け取った値: ${String(e?.target)}）`);
       edits.set(target, resolveReferenceSources(PosterSpecSchema.parse(e.spec), opts.references, slides.find((s) => s.number === target)?.spec));
     }
+    // 新規スライドの spec にも参照元の解決と検証をかける
+    const parseSpec = (raw: unknown) => resolveReferenceSources(PosterSpecSchema.parse(raw), opts.references, opts.spec);
+    // 旧形式の remove（書き換えていない編集可能なスライドだけ）は sequence に直す
+    const remove = [...new Set(Array.isArray(o?.remove) ? o.remove.map(Number) : [])].filter((n) => !edits.has(n) && numbers.includes(n));
+    const sequence = normalizeSequence(o?.sequence ?? removeToSequence(remove, total), { total, editable: numbers, parseSpec });
+    const seq = sequence ? { sequence } : {};
+    if (!edits.size) {
+      if (!reply && !sequence) throw new Error('"reply" と "edits" のどちらもありません');
+      return { reply, ...seq };
+    }
     // 画面は今のスライドの変更をその場で見せるので、今のスライドを書き換えたならそれを主にする
     const [target, spec] = edits.has(current) ? [current, edits.get(current)!] : [...edits][0];
     const others = [...edits].filter(([n]) => n !== target).map(([n, sp]) => ({ target: n, spec: sp }));
-    const remove = [...new Set(Array.isArray(o?.remove) ? o.remove.map(Number) : [])]
-      .filter((n) => !edits.has(n) && numbers.includes(n));
-    return { reply, spec, target, ...(others.length ? { others } : {}), ...(remove.length ? { remove } : {}) };
-  }, '{"reply", "edits", "remove"} の JSON ', undefined, opts.signal);
+    return { reply, spec, target, ...(others.length ? { others } : {}), ...seq };
+  }, '{"reply", "edits", "sequence"} の JSON ', undefined, opts.signal);
 }
 
 // ---------- スライドの追加 ----------

@@ -18,7 +18,9 @@ export function parseDeckContext(v: any): DeckContext | undefined {
     texts: Array.isArray(s?.texts) ? s.texts.filter((t: unknown): t is string => typeof t === "string").slice(0, 30) : undefined,
     notes: typeof s?.notes === "string" ? s.notes.slice(0, 1000) : undefined,
   }));
-  return { current, total, slides: slides.filter((s: { number: number; spec?: unknown; texts?: unknown }) => Number.isInteger(s.number) && (s.spec || s.texts)) };
+  // スライド一覧で選択中の番号（整数・範囲内だけ残す）
+  const selected = Array.isArray(v.selected) ? [...new Set<number>(v.selected.map(Number))].filter((n: number) => Number.isInteger(n) && n >= 1 && n <= total).sort((a: number, b: number) => a - b) : [];
+  return { current, total, ...(selected.length ? { selected } : {}), slides: slides.filter((s: { number: number; spec?: unknown; texts?: unknown }) => Number.isInteger(s.number) && (s.spec || s.texts)) };
 }
 
 export function parseAcross(v: any): AcrossDeck | undefined {
