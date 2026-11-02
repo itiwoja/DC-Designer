@@ -975,9 +975,7 @@ export function App() {
       const shortcut = (fn: () => void) => { e.preventDefault(); fn(); };
       if (mod && key === "z") return shortcut(e.shiftKey ? redo : undo);
       if (mod && key === "y") return shortcut(redo);
-      if (mod && (key === "=" || key === "+")) return shortcut(() => zoomBy(1));
-      if (mod && key === "-") return shortcut(() => zoomBy(-1));
-      if (mod && key === "0") return shortcut(fitView);
+      // Ctrl+±/0 はアプリ全体の縮尺に使うので横取りしない（Issue #61）。スライドの拡大縮小は Ctrl+ホイールとズームバー
       if (mod && key === "1") return shortcut(() => setZoom(1));
       if (mod && key === "v" && clipboard.current.length) return shortcut(() => insertCopies(clipboard.current, selLayers[selLayers.length - 1]?.id));
       if (mod && key === "a") return shortcut(() => setSelectedIds(spec.layers.filter(selectable).map((l) => l.id)));
@@ -1384,12 +1382,12 @@ export function App() {
           </div>
         )}
         <div className="zoombar float-bar" role="group" aria-label="ズーム">
-          <button onClick={() => zoomBy(-1)} title={`縮小（${MOD}+-）`} aria-label="縮小"><Ico name="minus" /></button>
-          <button className="zoom-val" onClick={() => (zoom === "fit" ? setZoom(1) : fitView())} title={`クリックで 100% / 全体表示を切替（${MOD}+0 で全体）`}>
+          <button onClick={() => zoomBy(-1)} title={`縮小（${MOD}+ホイールでも可）`} aria-label="縮小"><Ico name="minus" /></button>
+          <button className="zoom-val" onClick={() => (zoom === "fit" ? setZoom(1) : fitView())} title="クリックで 100% / 全体表示を切替">
             {Math.round(scale * 100)}%
           </button>
-          <button onClick={() => zoomBy(1)} title={`拡大（${MOD}++）`} aria-label="拡大"><Ico name="plus" /></button>
-          <button onClick={fitView} disabled={zoom === "fit" && !pan.x && !pan.y} title={`全体を表示（${MOD}+0）`} aria-label="全体を表示"><Ico name="fit" /></button>
+          <button onClick={() => zoomBy(1)} title={`拡大（${MOD}+ホイールでも可）`} aria-label="拡大"><Ico name="plus" /></button>
+          <button onClick={fitView} disabled={zoom === "fit" && !pan.x && !pan.y} title="全体を表示" aria-label="全体を表示"><Ico name="fit" /></button>
         </div>
 
         <Toasts busy={busy} notices={notices} onDismiss={dismiss} />
