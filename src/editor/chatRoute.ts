@@ -1,7 +1,7 @@
 import { addSlidePosition } from "./addSlide";
 import { isMissingNotesRequest, isWriteNotesRequest } from "./notes";
 import { isRenumberRequest } from "./pageNumbers";
-import { isWholeDeckRequest, slideRefs } from "./slideRefs";
+import { isMatchOthersRequest, isWholeDeckRequest, slideRefs } from "./slideRefs";
 import { parseSlash, type SlashCommand } from "./slashCommands";
 
 /** チャットに送った文を、どの処理で受けるか */
@@ -46,7 +46,8 @@ export function routeChatRequest(text: string, opts: { deck?: { current: number;
     const position = deck.current ? addSlidePosition(text, deck.current, deck.total) : null;
     if (position) return { kind: "add-slide", position };
     // 「授業スライド全体の差し色を変えて」: ふつうの修正は今のスライドしか書き換えないので、同じ指示を全スライドに当てる
-    if (deck.total > 1 && isWholeDeckRequest(text)) return { kind: "edit-across" };
+    // 「色味を他のスライドと合わせて」はほかのスライドをお手本にする指示なので、今のスライドだけの修正にする
+    if (deck.total > 1 && isWholeDeckRequest(text) && !isMatchOthersRequest(text)) return { kind: "edit-across" };
   }
   return { kind: "edit" };
 }

@@ -42,3 +42,13 @@ export function isWholeDeckRequest(text: string): boolean {
   const t = text.normalize("NFKC").replace(/この(?:スライド|ページ|画像)(?:全体|全部|すべて|全て)/g, "");
   return new RegExp(String.raw`(?:全|全部の|すべての|全ての|各|ほかの|他の|残りの|どの)${UNIT}|${UNIT}(?:全体|全部|すべて|全て|一式|ぜんぶ)|all\s+${UNIT}`, "i").test(t);
 }
+
+/**
+ * 「色味を他のスライドと合わせて」「ほかのページと同じ配色にして」「他のスライドの色に合わせて」のように、ほかのスライドをお手本にして今のスライドを直す指示か。
+ * 全スライドを直す指示（「全スライドの色味をそろえて」など）は除く
+ */
+export function isMatchOthersRequest(text: string): boolean {
+  const t = text.normalize("NFKC");
+  if (new RegExp(String.raw`^(?:全|すべて|全部|ぜんぶ|${UNIT}全体)`, "i").test(t)) return false;
+  return new RegExp(String.raw`(?:他の|ほかの|残りの|前後の|周りの)${UNIT}[^。．.！!？?\n]{0,15}?(?:と|に)(?:合わせ|あわせ|揃え|そろえ|統一|同じ|なじませ|馴染ませ)`, "i").test(t);
+}

@@ -42,8 +42,16 @@ describe("routeChatRequest", () => {
     expect(routeChatRequest("新しいスライドを作って", { deck: { current: 0, total: 3 }, poster: false }).kind).not.toBe("add-slide");
   });
 
+  it("ほかのスライドをお手本にする修正は、今のスライドだけを直す", () => {
+    expect(slides("色味を他のスライドと合わせて")).toEqual({ kind: "edit" });
+    expect(slides("ほかのページと同じ配色にして")).toEqual({ kind: "edit" });
+    expect(slides("他のスライドの色に合わせて")).toEqual({ kind: "edit" });
+  });
+
   it("全スライドへの修正は、2 枚以上のときだけ", () => {
     expect(slides("全スライドの差し色を #F08C00 にして")).toEqual({ kind: "edit-across" });
+    expect(slides("ほかのスライドにも反映して")).toEqual({ kind: "edit-across" });
+    expect(slides("全スライドの色味をそろえて")).toEqual({ kind: "edit-across" });
     expect(routeChatRequest("全スライドの差し色を #F08C00 にして", { deck: { current: 1, total: 1 }, poster: false })).toEqual({ kind: "edit" });
   });
 
