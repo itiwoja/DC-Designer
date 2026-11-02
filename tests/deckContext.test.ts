@@ -4,6 +4,8 @@ import { PosterSpecSchema } from "../src/schema";
 const ai = vi.hoisted(() => ({ ask: vi.fn() }));
 vi.mock("../server/chatgpt", async (original) => ({ ...await original<typeof import("../server/chatgpt")>(), askChatGPT: ai.ask }));
 import { editPoster } from "../server/planner";
+import { parseDeckDesign } from "../server/request-parsers";
+import type { DeckDesign } from "../src/deckDesign";
 
 const spec = (title: string) => PosterSpecSchema.parse({ meta: { title, width: 1000, height: 1414 }, theme: "ocean", layers: [] });
 const current = spec("今のスライド");
@@ -112,5 +114,73 @@ describe("デッキの文脈（言及したスライドは全体、ほかは文�
       spec: current, instruction: "2枚目を消して",
       deck: { current: 1, total: 2, slides: [{ number: 2, title: "二", texts: ["本文"] }] },
     })).rejects.toThrow("参考スライド 2");
+  });
+});
+
+describe("デッキのデザインを保つ（design）", () => {
+  const design: DeckDesign = { slides: 3, theme: "ocean", colors: [{ color: "$primary", use: "background", count: 3 }], fonts: [{ font: "display", weight: 700, count: 3 }], common: [] };
+  const deck = { current: 1, total: 2, slides: [{ number: 2, title: "二", spec: spec("二枚目") }] };
+
+  it("deck と design を渡すと、デッキ用のプロンプトにデッキのデザインが入る", async () => {
+    await editPoster({ spec: current, instruction: "直して", deck, design });
+    expect(ai.ask.mock.calls[0][1][0].text).toContain("# デッキのデザイン");
+  });
+
+  it("across と design を渡すと、ポスター側のプロンプトにも入る", async () => {
+    await editPoster({ spec: current, instruction: "見出しを大きく", across: { number: 1, total: 3 }, design });
+    expect(ai.ask.mock.calls[0][1][0].text).toContain("# デッキのデザイン");
+  });
+
+  it("design なしのポスターのプロンプトには入らない", async () => {
+    await editPoster({ spec: current, instruction: "見出しを大きく" });
+    expect(ai.ask.mock.calls[0][1][0].text).not.toContain("デッキのデザイン");
+  });
+
+  it("デザインを変えない指示で AI が theme を変えたら元に戻し、返答に知らせる", async () => {
+    ai.ask.mockResolvedValue(JSON.stringify({ reply: "直した", spec: { ...spec("今のスライド"), theme: "sunset" } }));
+    const r = await editPoster({ spec: current, instruction: "このスライドをリデザインして", design });
+    expect(r.spec?.theme).toBe("ocean");
+    expect(r.reply).toContain("元のままにしました");
+  });
+
+  it("添付資料のファイル名（指示の末尾）に色の語があっても、デザインを変える指示とは見なさない", async () => {
+    ai.ask.mockResolvedValue(JSON.stringify({ reply: "直した", spec: { ...spec("今のスライド"), theme: "sunset" } }));
+    const r = await editPoster({ spec: current, instruction: "このスライドをリデザインして\n\n添付資料（画像の順番）:\n1. カラー見本.png", design });
+    expect(r.spec?.theme).toBe("ocean");
+  });
+
+  it("全スライドへの適用では、返答（次のスライドへの方針）に注記を足さず restored で返す", async () => {
+    ai.ask.mockResolvedValue(JSON.stringify({ reply: "直した", spec: { ...spec("今のスライド"), theme: "sunset" } }));
+    const r = await editPoster({ spec: current, instruction: "全スライドをリデザインして", across: { number: 1, total: 3 }, design });
+    expect(r.spec?.theme).toBe("ocean");
+    expect(r.reply).toBe("直した");
+    expect(r.restored).toEqual(["テーマと配色"]);
+  });
+
+  it("デザインを変える指示なら変えたままにする", async () => {
+    ai.ask.mockResolvedValue(JSON.stringify({ reply: "直した", spec: { ...spec("今のスライド"), theme: "sunset" } }));
+    const r = await editPoster({ spec: current, instruction: "ポップな配色でリデザインして", design });
+    expect(r.spec?.theme).toBe("sunset");
+    expect(r.reply).not.toContain("元のままにしました");
+  });
+});
+
+describe("parseDeckDesign", () => {
+  const ok = { slides: 3, theme: "ocean", colors: [], fonts: [], common: [] };
+  it("オブジェクトでない・theme が文字列でないときは undefined", () => {
+    for (const v of [undefined, null, "x", 1, [], {}, { ...ok, theme: 1 }]) expect(parseDeckDesign(v)).toBeUndefined();
+  });
+  it("colors / fonts / common を上限（8 / 5 / 6）で切り、不正な要素は捨てる", () => {
+    const layer = { id: "n", type: "text", x: 0, y: 0, w: 100, h: 40, text: "1", fontSize: 20, fill: "#000" };
+    const d = parseDeckDesign({
+      ...ok,
+      colors: [...Array.from({ length: 12 }, (_, i) => ({ color: `#00000${i}`, use: "text", count: 1 })), { color: 1 }],
+      fonts: Array.from({ length: 9 }, () => ({ font: "body", weight: 400, count: 1 })),
+      common: [...Array.from({ length: 4 }, () => ({ role: "ページ番号", layer, count: 3 })), { role: "壊れた", layer: { type: "nope" }, count: 2 }, ...Array.from({ length: 5 }, () => ({ role: "ロゴ", layer, count: 2 }))],
+    });
+    expect(d?.colors).toHaveLength(8);
+    expect(d?.fonts).toHaveLength(5);
+    expect(d?.common.length).toBeLessThanOrEqual(6);
+    expect(d?.common.every((c) => c.role !== "壊れた")).toBe(true);
   });
 });
