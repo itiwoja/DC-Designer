@@ -52,6 +52,12 @@ export const DESKTOP_OPERATIONS = {
   "decks.addSlide": { method: "POST", route: "/api/decks/:id/slides", maxBody: 40 * MB },
   "decks.removeSlide": { method: "DELETE", route: "/api/decks/:id/slides/:posterId" },
 
+  "templates.list": { method: "GET", route: "/api/templates" },
+  "templates.create": { method: "POST", route: "/api/templates", maxBody: 4096 },
+  "templates.update": { method: "PUT", route: "/api/templates/:id", maxBody: 4096 },
+  "templates.delete": { method: "DELETE", route: "/api/templates/:id" },
+  "templates.use": { method: "POST", route: "/api/templates/:id/use", maxBody: 1024 },
+
   "upload.create": { method: "POST", route: "/api/upload", maxBody: 28 * MB },
   "generated.list": { method: "POST", route: "/api/generated/list", maxBody: 40 * MB },
   "generated.delete": { method: "POST", route: "/api/generated/delete", maxBody: 40 * MB },

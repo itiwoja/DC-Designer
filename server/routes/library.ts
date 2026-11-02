@@ -1,5 +1,5 @@
 import type { Request, Router } from "express";
-import { addDeckSlide, createDeck, createPoster, deckOfPoster, deleteDeck, deleteGenerated, deletePoster, duplicateDeck, duplicatePoster, getDeck, getPoster, listDecks, listGenerated, listPosters, removeDeckSlide, updateDeck, updatePoster } from "../library";
+import { addDeckSlide, createDeck, createPoster, createTemplate, deckOfPoster, deleteDeck, deleteGenerated, deletePoster, deleteTemplate, duplicateDeck, duplicatePoster, getDeck, getPoster, listDecks, listGenerated, listPosters, listTemplates, removeDeckSlide, renameTemplate, updateDeck, updatePoster, useTemplate } from "../library";
 import type { RouteHandlers } from "../route-handlers";
 
 /** 成果物（保存したポスター・デッキ・画像）の管理 */
@@ -23,6 +23,12 @@ export function registerLibraryRoutes(app: Router, { route }: RouteHandlers) {
   app.delete("/api/decks/:id/slides/:posterId", route((req) => removeDeckSlide(param(req), String(req.params.posterId))));
   // ?specs=1 で全スライドの spec も返す（エディタはプロジェクトを開いたとき全スライドをまとめて読み込む）
   app.get("/api/posters/:id/deck", route((req) => ({ deck: deckOfPoster(param(req), req.query.specs === "1") })));
+  // テンプレート（ポスター 1 枚／デッキ丸ごとのひな形）。成果物の一覧には混ぜない
+  app.get("/api/templates", route(() => ({ templates: listTemplates() })));
+  app.post("/api/templates", route((req) => createTemplate(req.body ?? {})));
+  app.put("/api/templates/:id", route((req) => renameTemplate(param(req), req.body?.name)));
+  app.delete("/api/templates/:id", route((req) => { deleteTemplate(param(req)); return { ok: true }; }));
+  app.post("/api/templates/:id/use", route((req) => useTemplate(param(req))));
   /** 画像一覧。body.specs に編集中の spec を渡すと、それが使う画像も「使用中」として扱う */
   app.post("/api/generated/list", route((req) => ({ files: listGenerated(req.body?.specs ?? []) })));
   /** 未使用の画像だけを削除する（使用中のものは無視） */

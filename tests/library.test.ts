@@ -16,6 +16,7 @@ afterAll(() => rmSync(root, { recursive: true, force: true }));
 beforeEach(() => {
   for (const d of lib.listDecks()) lib.deleteDeck(d.id);
   for (const p of lib.listPosters()) lib.deletePoster(p.id);
+  for (const t of lib.listTemplates()) lib.deleteTemplate(t.id);
 });
 
 describe("ポスター", () => {
@@ -150,5 +151,68 @@ describe("デッキ", () => {
     const [a, b] = d.slides.map((s) => s.id);
     expect(() => lib.updateDeck(d.id, { slides: [a, a] })).toThrow(expect.objectContaining({ status: 400 }));
     expect(lib.getDeck(d.id).slides.map((s) => s.id)).toEqual([a, b]);
+  });
+});
+
+describe("テンプレート", () => {
+  const slide = (title: string) => ({ ...sample, meta: { ...sample.meta, title } });
+
+  it("ポスターから作成・一覧・名前変更・削除できる", () => {
+    const p = lib.createPoster(sample);
+    const t = lib.createTemplate({ posterId: p.id });
+    expect(t).toMatchObject({ name: sample.meta.title, mode: "poster" });
+    expect(t.specs).toHaveLength(1);
+    expect(lib.createTemplate({ posterId: p.id, name: "  好きな名前  " }).name).toBe("好きな名前");
+    expect(lib.listTemplates()).toHaveLength(2);
+    expect(lib.listPosters()).toHaveLength(1);
+    expect(lib.renameTemplate(t.id, " 改名 ").name).toBe("改名");
+    expect(() => lib.renameTemplate(t.id, "   ")).toThrow(expect.objectContaining({ status: 400 }));
+    lib.deleteTemplate(t.id);
+    expect(() => lib.deleteTemplate(t.id)).toThrow(expect.objectContaining({ status: 404 }));
+    expect(lib.listTemplates()).toHaveLength(1);
+  });
+
+  it("デッキから作ると specs が並び順で mode は slides", () => {
+    const d = lib.createDeck("発表", [slide("A"), slide("B"), slide("C")]);
+    const t = lib.createTemplate({ deckId: d.id });
+    expect(t).toMatchObject({ name: "発表", mode: "slides" });
+    expect(t.specs.map((s) => s.meta.title)).toEqual(["A", "B", "C"]);
+  });
+
+  it("use で poster・deck が新しく作られ、テンプレートは残る", () => {
+    const d = lib.createDeck("発表", [slide("A"), slide("B")]);
+    const ts = lib.createTemplate({ deckId: d.id });
+    const r = lib.useTemplate(ts.id);
+    expect(r.deck?.name).toBe("発表");
+    expect(r.deck?.id).not.toBe(d.id);
+    expect(r.deck?.slides.map((s) => s.title)).toEqual(["A", "B"]);
+    expect(r.poster.id).toBe(r.deck?.slides[0].id);
+    const tp = lib.createTemplate({ posterId: lib.listPosters()[0].id });
+    const r2 = lib.useTemplate(tp.id);
+    expect(r2.deck).toBeUndefined();
+    expect(lib.getPoster(r2.poster.id).spec.meta.title).toBe(tp.specs[0].meta.title);
+    expect(lib.listTemplates()).toHaveLength(2);
+  });
+
+  it("不正 ID は 404、posterId も deckId も無ければ 400", () => {
+    expect(() => lib.renameTemplate("../../x", "a")).toThrow(expect.objectContaining({ status: 404 }));
+    expect(() => lib.useTemplate("abcdefabcdef")).toThrow(expect.objectContaining({ status: 404 }));
+    expect(() => lib.createTemplate({ posterId: "abcdefabcdef" })).toThrow(expect.objectContaining({ status: 404 }));
+    expect(() => lib.createTemplate({})).toThrow(expect.objectContaining({ status: 400 }));
+    expect(() => lib.createTemplate({ name: "x" })).toThrow(expect.objectContaining({ status: 400 }));
+  });
+
+  it("テンプレートだけが使う画像は usedBy にテンプレート id が入り、deleteGenerated で消えない", () => {
+    const name = "tpl-only.png";
+    const file = join(root, "generated", name);
+    writeFileSync(file, "x");
+    const p = lib.createPoster(withImage(`/generated/${name}`));
+    const t = lib.createTemplate({ posterId: p.id });
+    lib.deletePoster(p.id);
+    expect(lib.listGenerated().find((f) => f.name === name)?.usedBy).toEqual([t.id]);
+    expect(lib.deleteGenerated([name])).toEqual([]);
+    expect(existsSync(file)).toBe(true);
+    lib.deleteTemplate(t.id);
+    expect(lib.deleteGenerated([name])).toEqual([name]);
   });
 });
