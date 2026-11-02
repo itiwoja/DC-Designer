@@ -52,6 +52,7 @@ flowchart LR
 | [SITE-ADR-006](adr/SITE-ADR-006-same-repo.md) | 同じリポジトリの `site/` | 承認 |
 
 ## 最近の変更
+- 2026-11-02 v0.4.1 実物に合わせる：Windows 版でも画像生成（Codex CLI・Gemini・ComfyUI）を使えるようになったので、FR-002 の注記・FR-003 の動作要件・FR-007 の送信先を直す
 - 2026-11-01 v0.4 PR レビューの指摘を反映：Windows 版の AI は ChatGPT プランだけ（REQ-009・US-002）／通信の経路を worker・画面・更新確認に分けて書く／機能カードに exe 版の制限を出す（`exeNote`、SITE-D-33）／ダウンロード URL と SHA-256 をビルドで照合（SITE-D-32）／SHA256SUMS の取得に認証ヘッダーを付けない／照合コマンドをダウンロードフォルダー前提に／CSP に `form-action 'none'`／島の書き方・100 件の上限・ID の範囲の矛盾を直す／SITE-R-01 は PR #44 で解消
 - 2026-11-01 v0.3.1 実物に合わせる：Windows 版の AI は ChatGPT プランだけで、OpenRouter・画像生成は使えない。FR-003 の動作要件と FR-007 の送信先を直す
 - 2026-11-01 v0.3 見直し：SHA256SUMS.txt の行の形を実物（`<64桁> *<ファイル名>`）に直す／署名の判定に `signedSince` を足して安全側に倒す（SITE-D-29）／プライバシーの正本を 1 つにする（SITE-D-30）／CSP とインラインの CSS・JS・フォント（SITE-D-31）／ポリシーの最終更新日に `fetch-depth: 0`／再試行の条件・デモ動画の担当 FR・更新履歴の上限・KPI の測り方をそろえる。SITE-R-05 を追加
