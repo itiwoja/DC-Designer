@@ -7,6 +7,7 @@ import { api, AUTH_CHANNEL, deckBySlide, type Deck, type SavedPoster, type Statu
 import type { DesktopResult } from "../../desktop/bridge";
 import { DESKTOP_ACCOUNT_CHANGED, isSignInCancelled, signInOutcome } from "./accountView";
 import { useDesktopSigningIn } from "./DesktopAccount";
+import { codexJobLabel, codexSetup, describeCodexJob, useCodexAfterSignIn, useCodexSetup } from "./codexSetup";
 import { desktopBridge, useDesktopVersion } from "./desktop";
 import { BLANK_SLIDE_SPEC, BLANK_SPEC, IMPORT_NOTICE_KEY, HOME_URL, openDeckInEditor, openInEditor } from "./nav";
 import { isShownDeck, MODE_KEYS, MODES, modeHomeUrl, modeLibraryUrl, modeOfDeck, readLastId, type AppMode } from "./mode";
@@ -81,6 +82,13 @@ export function Home({ mode }: { mode?: AppMode }) {
     window.addEventListener(DESKTOP_ACCOUNT_CHANGED, onChanged);
     return () => window.removeEventListener(DESKTOP_ACCOUNT_CHANGED, onChanged);
   }, [reload]);
+
+  // ホームからサインインしたときも、画像生成用の Codex を続けて準備する（エディタのアカウント欄はここには出ない）
+  useCodexAfterSignIn();
+  const { job: codexJob, error: codexError } = useCodexSetup(reload);
+  useEffect(() => {
+    if (codexError) setError(`画像生成（Codex）の準備ができませんでした: ${codexError}`);
+  }, [codexError]);
 
   const gpt = status?.chatgpt;
 
@@ -246,6 +254,8 @@ export function Home({ mode }: { mode?: AppMode }) {
           {gpt.picture && !desktopBridge() && <img src={gpt.picture} alt="" />}
           <span>{gpt.name || gpt.email || "ChatGPT"}</span>
           {!gpt.planEnabled && <small className="warn">プラン利用不可</small>}
+          {codexJob && <small role="status" title={describeCodexJob(codexJob)}>{codexJobLabel(codexJob)}
+            {" "}<button className="small" onClick={codexSetup.cancel}>中止</button></small>}
         </span>
       ) : desktopBridge() && signingIn ? (
         <span className="home-signin-wait" role="status">

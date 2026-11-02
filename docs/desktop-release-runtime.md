@@ -269,7 +269,7 @@ sequenceDiagram
 満たした条件（実装済み。実機で確かめた範囲は上記）：
 
 - 任意機能。`codex.exe`を`shell:false`・`windowsHide:true`で直接起動する（利用者がパスを指定でき、既定は自動検出：PATH → npmのグローバル配置 → Codexデスクトップアプリ同梱（`%LOCALAPPDATA%\OpenAI\Codex\bin`）→ アプリが入れたもの）。未導入・未ログインは`not_found`／`signed_out`として画面に出し、選択肢に出さない。
-- （2026-11-01追加）設定画面の「Codex CLI を入れる」：固定版（`server/codex-pinned.ts`、0.166.0）の公式GitHubリリースのtar.gzをworkerが取得し（外部通信ゲートに`github.com`の固定パスと転送先`release-assets.githubusercontent.com`・`objects.githubusercontent.com`を追加。転送先のホストは呼び出し側でも検証）、大きさとsha256が一致したときだけ`<userRoot>\tools\codex\<版>\codex.exe`に置く。npm・winget・PowerShellは使わない。続けて「Codex にサインイン」で`codex login`を同じく直接起動し、利用者の既定の`CODEX_HOME`に`auth.json`を作る（認可URLは`auth.openai.com`のものだけ画面へ渡す）。
+- （2026-11-01追加）設定画面の「Codex CLI を入れる」：固定版（`server/codex-pinned.ts`、0.166.0）の公式GitHubリリースのtar.gzをworkerが取得し（外部通信ゲートに`github.com`の固定パスと転送先`release-assets.githubusercontent.com`・`objects.githubusercontent.com`を追加。転送先のホストは呼び出し側でも検証）、大きさとsha256が一致したときだけ`<userRoot>\tools\codex\<版>\codex.exe`に置く。npm・winget・PowerShellは使わない。続けて「Codex にサインイン」で`codex login`を同じく直接起動し、利用者の既定の`CODEX_HOME`に`auth.json`を作る（認可URLは`auth.openai.com`のものだけ画面へ渡す）。（2026-11-02追加）ChatGPT へのサインインが `signed-in` で終わったら、画面（`codexSetup.ensure`）が状態を読み直し、未サインインなら `codex login`、見つからず入れられるなら入れる→`codex login` を自動で続ける（EXE-D-15）。
 - アプリ私有領域の専用`CODEX_HOME`（`%LOCALAPPDATA%\DC-Designer\cache\codex-home`）を使い、実行の間だけ利用者の`auth.json`を写して終了後に削除する。トークンが更新されたら利用者の`auth.json`へ書き戻す。
 - 結果は当該実行のスレッドのフォルダの画像だけを採用し、`~/.codex/generated_images`は読まない。参考画像は渡さず、文字のプロンプトだけを送る。
 - ComfyUIの送り先は`127.0.0.1`・`localhost`・`[::1]`に限る。Geminiは利用者のAPIキーを`safeStorage`に保存して使う。

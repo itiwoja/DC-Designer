@@ -161,7 +161,9 @@ export function App() {
   const imageChoices = status?.imageProviders.filter((p) => p !== "placeholder") ?? [];
   // 選んだプロバイダが使えなくなっていたら（キー削除など）サーバーの既定 → 先頭の選択肢に戻す
   const activeImageProvider = imageChoices.includes(imageProvider) ? imageProvider
-    : status && imageChoices.includes(status.imageProvider) ? status.imageProvider : imageChoices[0];
+    : status && imageChoices.includes(status.imageProvider) ? status.imageProvider
+    // 選んでいないときは、ChatGPT のプラン枠で作れる Codex を、起動しているか分からない ComfyUI より先にする
+    : imageChoices.includes("codex") ? "codex" : imageChoices[0];
   const chooseImageProvider = (p: string) => { setImageProvider(p); writePref(IMAGE_PROVIDER_KEY, p); };
   const changeModel = (set: (model: string) => Promise<unknown>) => (model: string) =>
     set(model).then(refreshStatus, (e) => notify({ kind: "error", text: `モデルを変更できませんでした: ${e instanceof Error ? e.message : String(e)}` }));
