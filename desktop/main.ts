@@ -312,7 +312,22 @@ function buildMenu(): void {
       click: () => { fontGate.revokeConsent(); buildMenu(); },
     }],
   };
-  const menu: MenuItemConstructorOptions[] = [edit, fonts];
+  // 独自メニューに置き換えると Ctrl+± の縮尺が効かなくなるので「表示」を足す（Issue #61）。
+  // zoomIn の既定は CommandOrControl+Plus だけで、US 配列の Ctrl+=、日本語配列の Ctrl+;（＋の位置）、
+  // テンキーの＋/－が効かない。非表示の項目で同じ操作の別キーを補う。
+  const view: MenuItemConstructorOptions = {
+    label: "表示",
+    submenu: [
+      { role: "zoomIn", label: "拡大" },
+      { role: "zoomIn", visible: false, accelerator: "CommandOrControl+=" },
+      { role: "zoomIn", visible: false, accelerator: "CommandOrControl+;" },
+      { role: "zoomIn", visible: false, accelerator: "CommandOrControl+numadd" },
+      { role: "zoomOut", label: "縮小" },
+      { role: "zoomOut", visible: false, accelerator: "CommandOrControl+numsub" },
+      { role: "resetZoom", label: "実際のサイズ" },
+    ],
+  };
+  const menu: MenuItemConstructorOptions[] = [edit, view, fonts];
   // 更新はインストール版だけ（開発中の electron . では確認しない）
   if (updates) {
     const u = updates;
