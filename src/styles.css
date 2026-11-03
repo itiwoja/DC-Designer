@@ -590,8 +590,9 @@ button.primary.danger, button.primary.danger:hover:not(:disabled) { background: 
 .notes-time { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; flex: none; }
 .notes-head button { padding: 4px 9px; font-size: 12px; border-color: transparent; background: transparent; }
 .notes-head button:hover { background: var(--hover); }
+/* 全体の textarea { width: 100% } に左右の margin が足されると枠からはみ出し、入力中に台本欄ごと横にずれる（#78）。幅は flex の stretch に任せる */
 .notes-text {
-  flex: 1; min-height: 0; margin: 0 10px 10px; padding: 8px 10px; resize: none; border: 1px solid var(--line); border-radius: 8px;
+  flex: 1; min-height: 0; width: auto; margin: 0 10px 10px; padding: 8px 10px; resize: none; border: 1px solid var(--line); border-radius: 8px;
   background: var(--bg); color: var(--ink); font: inherit; font-size: 14px; line-height: 1.7; transition: opacity .16s ease;
 }
 .notes-text:focus { outline: none; border-color: var(--accent); }
