@@ -991,9 +991,11 @@ export function App() {
     window.addEventListener("focus", count);
     return () => window.removeEventListener("focus", count);
   }, []);
-  /** 画面が 2 つ以上つながっているか（PowerPoint と同じく、そのときは発表者ビュー付きで投影する） */
-  const hasExtraScreen = () =>
-    desktopBridge()?.presenter ? displayCount.current >= 2 : !!(screen as Screen & { isExtended?: boolean }).isExtended;
+  /**
+   * 製品版で画面が 2 つ以上つながっているか（PowerPoint と同じく、そのときは発表者ビュー付きで投影する）。
+   * Web 版はポップアップが止められることがあるので、発表者ビューは Alt+F5 などで明示したときだけにする
+   */
+  const hasExtraScreen = () => (desktopBridge()?.presenter ? displayCount.current >= 2 : false);
   /**
    * fromCurrent なら開いているスライドから、そうでなければ 1 枚目から投影する。
    * withView なら発表者ビューを別ウィンドウで開く（ポップアップを止められないよう、クリック・キーの処理の中で同期的に開く）。
@@ -1063,7 +1065,7 @@ export function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || show) return; // メニューを閉じた Esc など・投影中
       const mod = e.ctrlKey || e.metaKey;
-      // PowerPoint と同じく F5 で最初から、Shift+F5 で今のスライドから投影する（画面が 2 つ以上なら発表者ビュー付き）。Alt+F5 は画面が 1 つでも発表者ビュー付きで
+      // PowerPoint と同じく F5 で最初から、Shift+F5 で今のスライドから投影する（製品版で画面が 2 つ以上なら発表者ビュー付き）。Alt+F5 は画面が 1 つでも発表者ビュー付きで
       if (e.key === "F5" && isSlides && !mod) { e.preventDefault(); startShow(e.shiftKey || e.altKey, e.altKey || undefined); return; }
       const key = e.key.toLowerCase();
       // 保存は入力欄にフォーカスがあっても効かせる（ブラウザの「ページを保存」を出さない）
