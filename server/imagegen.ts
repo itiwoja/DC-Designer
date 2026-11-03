@@ -55,7 +55,6 @@ type ImageProvider = "openai" | "gemini" | "comfyui" | "codex" | "placeholder";
 /** 透過背景を出せないプロバイダ。透過アセットは OpenAI が使えればそちらに回し、無ければ白背景で生成する */
 const NO_TRANSPARENCY: ImageProvider[] = ["gemini", "comfyui"];
 
-
 /** キーが揃っていて今すぐ使えるプロバイダ（placeholder は常に使える）。
  *  ComfyUI はキー不要なので常に選択肢に出す（起動していなければ生成時に接続エラーを返す） */
 export function availableProviders(): ImageProvider[] {

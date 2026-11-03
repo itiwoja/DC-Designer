@@ -152,7 +152,6 @@ export function safeMarginUnits(width: number, height: number) {
   return Math.ceil(SAFE_MARGIN_MM / a4Fit(width, height).mmPerUnit);
 }
 
-
 /** レイヤーを中心を保ったまま k 倍にする（文字は文字の大きさも） */
 function scaleLayer(l: Layer, k: number): Layer {
   const w = l.w * k, h = l.h * k;

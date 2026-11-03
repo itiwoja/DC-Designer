@@ -73,7 +73,6 @@ let backend: ConsentBackend | null = null;
 /** 製品版の worker が起動時に差し替える（テストは null で既定＝ゲートなしに戻す） */
 export function setConsentBackend(b: ConsentBackend | null): void { backend = b; }
 
-
 const subjectStore = new AsyncLocalStorage<AiSubject | undefined>();
 /** 画面が要求に付けた対象作品を、この呼び出しの間だけ requireConsent が payload に入れられるようにする */
 export const runWithAiSubject = <T>(subject: AiSubject | undefined, fn: () => T): T => subjectStore.run(subject, fn);

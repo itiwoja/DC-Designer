@@ -9,9 +9,8 @@ export type ImageSettings = { comfyuiUrl: string; codexPath: string };
 
 export const DEFAULT_COMFYUI_URL = "http://127.0.0.1:8188";
 
-/** データの置き場所（server/chatgpt.ts の MODEL_FILE と同じ決め方。呼び出しごとに読む） */
+/** image-settings.json の場所（呼び出しごとに dataDir() を読む） */
 const settingsFile = () => join(dataDir(), "image-settings.json");
-
 
 /** 保存済みの設定。ファイルが無い・壊れている・型が違う項目は空文字（既定）として扱う */
 export function readImageSettings(): ImageSettings {
