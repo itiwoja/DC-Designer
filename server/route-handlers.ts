@@ -16,10 +16,16 @@ function requestSignal(res: Response): AbortSignal {
   return abort.signal;
 }
 
+/** 利用者に見せるために書いた message を持つエラー。製品版でも status が 5xx のまま message と code を応答に出す */
+export class UserFacingError extends Error {
+  constructor(readonly status: number, message: string, readonly code?: string) { super(message); }
+}
+
 /** JSON / NDJSON 共通のエラー方針。製品版かどうかはアプリごとに固定する */
 export function createRouteHandlers({ desktop }: { desktop: boolean }) {
   /** 例外を応答用の (status, message, code) にする。製品版は利用者向けでない例外の中身を出さない */
   function describeError(e: unknown): { status: number; message: string; code?: string } {
+    if (e instanceof UserFacingError) return { status: e.status, message: e.message, code: e.code };
     if (e instanceof ChatGPTAuthError) return { status: 401, message: e.message, code: "chatgpt_auth" };
     if (e instanceof ChatGPTError) return { status: e.status >= 400 ? e.status : 502, message: e.message, code: e.code };
     // 画像生成の失敗は、利用者が原因を直せるよう製品版でも決まった文言（パスや外部の応答本文を含まない）を返す
