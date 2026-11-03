@@ -41,7 +41,8 @@ mkdirSync(path.join(userRoot, "assets", "generated"), { recursive: true });
 app.setAppUserModelId("io.github.itiwoja.dcdesigner");
 app.setPath("userData", path.join(userRoot, "browser"));
 protocol.registerSchemesAsPrivileged([
-  { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  // stream が無いと <audio> が app:// の音声を読めず、BGM が鳴らない
+  { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
 ]);
 
 let editorWindow: BrowserWindow | null = null;
