@@ -5,18 +5,17 @@
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { authStatus } from "./chatgpt-auth";
 import { askChatGPT, type Turn } from "./chatgpt";
 import { askOpenRouter, openRouterAvailable, openRouterSettings } from "./openrouter";
 import { httpError } from "./http-error";
-import { isDesktopMode } from "./ai-consent";
+import { dataDir, isDesktopMode } from "./env";
 
 export type AIProvider = "chatgpt" | "openrouter";
 const isProvider = (v: unknown): v is AIProvider => v === "chatgpt" || v === "openrouter";
 
 /** 画面で選んだ AI の保存先（テストでは DATA_DIR で差し替える） */
-const CHOICE_FILE = join(process.env.DATA_DIR || fileURLToPath(new URL("../data/", import.meta.url)), "ai-provider.json");
+const CHOICE_FILE = join(dataDir(), "ai-provider.json");
 
 /** 画面で選んだ AI（未選択なら undefined = .env か自動） */
 function savedChoice(): AIProvider | undefined {

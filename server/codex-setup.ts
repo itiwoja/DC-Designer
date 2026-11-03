@@ -18,13 +18,12 @@ import { CODEX_ASSET_HOSTS, CODEX_RELEASE_HOST, codexReleasePath, PINNED_CODEX, 
 import { appCodexDir, appCodexExe, readImageSettings, updateImageSettings } from "./image-settings";
 import { ImageGenError } from "./imagegen-error";
 import { CODEX_ENV_KEYS, isFile, killTree, resolveCodexExe, userAuthFile } from "./imagegen";
+import { isDesktopMode as isDesktop } from "./env";
 
 /** 準備の段階：download（取得。done/total はバイト）→ verify（照合）→ install（配置）／ login（ブラウザでのサインイン待ち） */
 export type SetupStep = "download" | "verify" | "install" | "login";
 export type SetupProgress = { phase: "setup"; step: SetupStep; done?: number; total?: number; url?: string };
 export type OnSetupProgress = (p: SetupProgress) => void;
-
-const isDesktop = () => process.env.DC_DESIGNER_DESKTOP === "1";
 
 /** tar の中の実行ファイルの上限（Codex は 300MB 前後） */
 const MAX_ENTRY_BYTES = 1024 * 1024 * 1024;

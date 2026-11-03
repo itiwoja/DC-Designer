@@ -5,7 +5,7 @@ import { api } from "../src/editor/api";
 import { findPendingAssets, PosterSpecSchema } from "../src/schema";
 
 const ai = vi.hoisted(() => ({ ask: vi.fn() }));
-const storage = vi.hoisted(() => ({ save: vi.fn((mediaType: string, data: string) => ({ src: `/generated/saved-${data}.png` })) }));
+const storage = vi.hoisted(() => ({ save: vi.fn((_mediaType: string, data: string) => ({ src: `/generated/saved-${data}.png` })) }));
 vi.mock("../server/chatgpt", async (original) => ({ ...await original<typeof import("../server/chatgpt")>(), askChatGPT: ai.ask }));
 vi.mock("../server/imagegen", () => ({ saveUpload: storage.save }));
 import { editPoster, planPoster, planSlide } from "../server/planner";

@@ -20,6 +20,7 @@ import { FONT_BY_FAMILY, FONT_CATALOG, FONT_ROLE_LABELS, fontCovers, installWeig
 import { askAI } from "./ai";
 import { extractJson } from "./chatgpt";
 import { httpError } from "./http-error";
+import { isDesktopMode } from "./env";
 
 const run = promisify(execFile);
 const isWSL = process.platform === "linux" && /microsoft/i.test(release());
@@ -212,7 +213,7 @@ export async function installFonts(families: string[], expect?: InstallExpect): 
     if (!e) throw httpError(400, `カタログにないフォントはインストールできません: ${f}`);
     return e;
   });
-  if (!expect && process.env.DC_DESIGNER_DESKTOP === "1") throw httpError(400, "expect は必須です");
+  if (!expect && isDesktopMode()) throw httpError(400, "expect は必須です");
   const want = expect && verifyExpect(entries, expect);
   const list = await cachedInstalledNames(true);
   const todo = entries.filter((e) => !hasFamily(list, e.family));

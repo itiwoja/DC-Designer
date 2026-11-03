@@ -23,8 +23,6 @@ export const SOUNDS: { value: SoundId; label: string }[] = [
   { value: "drum", label: "ドン" },
   { value: "fanfare", label: "ジャジャーン" },
 ];
-export const SOUND_LABEL = Object.fromEntries(SOUNDS.map((s) => [s.value, s.label])) as Record<SoundId, string>;
-export const soundLabel = (s: SoundRef) => (typeof s === "string" ? SOUND_LABEL[s] : s.name);
 
 /** 取り込める音声ファイル。長い音は効果音にならないので秒数で止める */
 export const SOUND_FILE_TYPES = /^audio\/(mpeg|mp3|wav|x-wav|wave|ogg|mp4|x-m4a|aac|webm)$/;

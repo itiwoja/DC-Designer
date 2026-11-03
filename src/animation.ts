@@ -17,7 +17,6 @@ export const ANIM_EFFECTS: { value: AnimEffect; label: string; directional?: boo
   { value: "wipe", label: "ワイプ", directional: true },
   { value: "zoom", label: "ズーム" },
 ];
-export const ANIM_EFFECT_LABEL = Object.fromEntries(ANIM_EFFECTS.map((e) => [e.value, e.label])) as Record<AnimEffect, string>;
 export const isDirectional = (e: AnimEffect) => !!ANIM_EFFECTS.find((x) => x.value === e)?.directional;
 
 export const ANIM_DIRECTIONS: { value: AnimDirection; label: string }[] = [

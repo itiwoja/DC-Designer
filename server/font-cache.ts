@@ -6,9 +6,9 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { fontInfo } from "./eot";
 import { FONT_BY_FAMILY, googleCssUrl } from "../src/fonts";
+import { dataDir } from "./env";
 
 export const CSS_HOST = "fonts.googleapis.com";
 export const FILE_HOST = "fonts.gstatic.com";
@@ -33,7 +33,7 @@ const sha256Of = (b: Buffer) => createHash("sha256").update(b).digest("hex");
 
 /** 製品版は FONT_CACHE_DIR、開発版は <DATA_DIR>/font-cache（無ければ data/font-cache） */
 export function fontCacheDir() {
-  return process.env.FONT_CACHE_DIR || join(process.env.DATA_DIR || fileURLToPath(new URL("../data/", import.meta.url)), "font-cache");
+  return process.env.FONT_CACHE_DIR || join(dataDir(), "font-cache");
 }
 
 // ---------- 取得 ----------

@@ -3,9 +3,9 @@
  * 製品版は main に問い合わせる実装（desktop-worker が登録）、開発版は process.env と chatgpt.json を使う既定実装
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import type { MainToWorker, SecretState, WorkerToMain } from "../desktop/protocol";
+import { configDir } from "./env";
 
 export interface SecretBackend {
   get(providerId: string, kind: string): Promise<string | undefined>;
@@ -28,7 +28,6 @@ const ENV_KEYS: Record<string, string> = {
   "gemini/apiKey": "GEMINI_API_KEY",
 };
 const OAUTH = "chatgpt/oauth";
-const configDir = () => process.env.DC_DESIGNER_CONFIG_DIR || join(homedir(), ".config", "dc-designer");
 const oauthFile = () => join(configDir(), "chatgpt.json");
 
 export const devBackend: SecretBackend = {

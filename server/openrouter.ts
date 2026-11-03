@@ -3,11 +3,11 @@
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { ChatCompletionContentPart, ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import type { Turn } from "./chatgpt";
 import { httpError } from "./http-error";
 import { getSecret, hasSecret } from "./secrets";
+import { dataDir } from "./env";
 
 const BASE_URL = "https://openrouter.ai/api/v1";
 /** OPENROUTER_MODEL が無いときのモデル（画像を読めるモデルにする。参考画像の再現・見比べで画像を渡す） */
@@ -36,7 +36,7 @@ export async function listOpenRouterModels(): Promise<OpenRouterModel[]> {
 }
 
 /** 画面で選んだモデルの保存先（data/openrouter-model.json。テストでは DATA_DIR で差し替える） */
-const MODEL_FILE = join(process.env.DATA_DIR || fileURLToPath(new URL("../data/", import.meta.url)), "openrouter-model.json");
+const MODEL_FILE = join(dataDir(), "openrouter-model.json");
 
 /** 画面で選んだモデル（未選択なら undefined = 自動） */
 function savedModel(): string | undefined {

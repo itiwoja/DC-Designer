@@ -71,10 +71,3 @@ export const WORKER_ENV_ALLOWLIST = ["SystemRoot", "WINDIR", "TEMP", "TMP", "LOC
 
 /** userRoot（%LOCALAPPDATA%/DC-Designer/）の下の領域 */
 export const USER_ROOT_DIRS = ["workspace", "assets", "browser", "fonts", "secrets", "runtime", "cache", "logs"] as const;
-
-/**
- * worker の環境変数で渡す保存先（userRoot の下）。
- * DATA_DIR=<userRoot>/workspace、GENERATED_DIR=<userRoot>/assets/generated、DC_DESIGNER_CONFIG_DIR=<userRoot>/secrets
- * と、製品版であることを示す DC_DESIGNER_DESKTOP=1、lease 名のもとになる DC_DESIGNER_USER_ROOT
- */
-export const DESKTOP_ENV_FLAG = "DC_DESIGNER_DESKTOP";

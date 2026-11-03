@@ -10,8 +10,6 @@ export interface PosterProps {
   spec: PosterSpec;
   /** レイヤー上で pointerdown されたとき（エディタ用） */
   onLayerPointerDown?: (e: RPointerEvent, layer: Layer) => void;
-  /** 書き出し時などに特定レイヤーだけ描画したい場合 */
-  only?: string;
   /**
    * SVG の定義（グラデーション・影・切り抜きなど）の id の前に付ける文字列。
    * 同じページに別の Poster（エディタのキャンバスなど）があると url(#id) がそちらを指してしまうので、2 つ目以降の描画では付ける
@@ -118,10 +116,9 @@ function LayerView({ layer, theme, spec, props }: { layer: Layer; theme: Theme; 
 }
 
 export const Poster = forwardRef<SVGSVGElement, PosterProps>(function Poster(props, ref) {
-  const { spec, only } = props;
+  const { spec } = props;
   const theme = resolveTheme(spec.theme, spec.themeOverride);
   const { width, height } = spec.meta;
-  const layers = only ? spec.layers.filter((l) => l.id === only) : spec.layers;
   const clipId = `${props.idPrefix ?? ""}poster-clip`;
   return (
     <svg
@@ -137,7 +134,7 @@ export const Poster = forwardRef<SVGSVGElement, PosterProps>(function Poster(pro
         <rect width={width} height={height} />
       </clipPath>
       <g data-poster-layers="" clipPath={`url(#${clipId})`}>
-        {layers.map((l) => (
+        {spec.layers.map((l) => (
           <LayerView key={l.id} layer={l} theme={theme} spec={spec} props={props} />
         ))}
       </g>

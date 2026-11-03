@@ -7,6 +7,7 @@ import { readImageSettings } from "../image-settings";
 import { openRouterModel, setOpenRouterModel } from "../openrouter";
 import { optString } from "../request-parsers";
 import type { RouteHandlers } from "../route-handlers";
+import { isDesktopMode } from "../env";
 
 /** サーバーの状態と AI プロバイダー・モデルの設定 */
 export function registerSettingsRoutes(app: Router, { route }: RouteHandlers) {
@@ -15,7 +16,7 @@ export function registerSettingsRoutes(app: Router, { route }: RouteHandlers) {
     const ready = chatgpt.signedIn && chatgpt.planEnabled;
     const model = ready ? await chatGPTModel().catch(() => undefined) : undefined;
     const settings = ready ? await modelSettings().catch(() => undefined) : undefined;
-    const codex = process.env.DC_DESIGNER_DESKTOP === "1" ? { codex: codexStatus() } : {};
+    const codex = isDesktopMode() ? { codex: codexStatus() } : {};
     return { imageProvider: imageProviderName(), imageProviders: availableProviders(), imageSettings: readImageSettings(), ...codex, chatgpt: { ...chatgpt, model, ...settings, usageUrl: USAGE_URL }, ai: await aiStatus() };
   }));
   /** レイアウト生成・AI 修正に使う AI を選ぶ（"chatgpt" | "openrouter"、"" で自動） */

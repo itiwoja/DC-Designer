@@ -5,10 +5,10 @@
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { authStatus, getAccessToken, USAGE_URL } from "./chatgpt-auth";
 import { AI_DESTINATIONS, toAiImage, type AiTurn } from "../desktop/aiPayload";
-import { isDesktopMode, reportOutcome, requireConsent, type AiOutcome } from "./ai-consent";
+import { reportOutcome, requireConsent, type AiOutcome } from "./ai-consent";
+import { dataDir, isDesktopMode } from "./env";
 
 /** detail: 画像の読み取りの細かさ（再現のように細部の位置・文字を読ませるときは "high"） */
 export type ImageRef = { mediaType: string; data: string; detail?: "low" | "high" | "auto" };
@@ -55,7 +55,7 @@ export async function listModels(): Promise<ChatGPTModel[]> {
 }
 
 /** 画面で選んだモデルの保存先（data/chatgpt-model.json。テストでは DATA_DIR で差し替える） */
-const MODEL_FILE = join(process.env.DATA_DIR || fileURLToPath(new URL("../data/", import.meta.url)), "chatgpt-model.json");
+const MODEL_FILE = join(dataDir(), "chatgpt-model.json");
 
 /** 画面で選んだモデル（未選択なら undefined = 自動） */
 export function savedModel(): string | undefined {

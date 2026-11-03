@@ -212,12 +212,6 @@ export function googleCssUrl(family: string, weights?: number[]) {
   return `https://fonts.googleapis.com/css2?family=${fam}&display=swap`;
 }
 
-/** カタログにあるウェイトのうち、指定に最も近いもの */
-export function nearestWeight(family: string, weight = 400): number {
-  const ws = FONT_BY_FAMILY.get(family)?.weights ?? [400];
-  return ws.reduce((a, b) => (Math.abs(b - weight) < Math.abs(a - weight) ? b : a));
-}
-
 /**
  * ブラウザが font-weight から選ぶ face（CSS Fonts の照合規則）。
  * 400〜500 は 500 までの重い側 → 軽い側 → 500 超、500 超は重い側 → 軽い側、400 未満は軽い側 → 重い側の順に探す

@@ -10,8 +10,8 @@
 import { createHash, createPublicKey, randomBytes, randomUUID, verify, type JsonWebKeyInput } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { getSecret, removeSecret, SecretError, setSecret } from "./secrets";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { configDir } from "./env";
 
 const ISSUER = "https://auth.openai.com";
 const AUTHORIZE_URL = `${ISSUER}/api/accounts/authorize`;
@@ -24,7 +24,7 @@ const SCOPES = `openid profile email offline_access resource.invoke ${PLAN_SCOPE
 const AGENT_NAME = "DC-Designer";
 export const USAGE_URL = "https://chatgpt.com/settings/usage";
 
-const CONFIG_DIR = process.env.DC_DESIGNER_CONFIG_DIR || join(homedir(), ".config", "dc-designer");
+const CONFIG_DIR = configDir();
 const HOST_FILE = join(CONFIG_DIR, "host.json");
 
 /** ローカルの資格情報レコード（ドキュメントの例に準拠） */

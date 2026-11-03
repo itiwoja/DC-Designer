@@ -23,7 +23,7 @@ export const MIN_TEXT_PT = 7;
 /** 画像の実効解像度がこれ未満だと印刷で粗く見える（dpi） */
 export const MIN_IMAGE_DPI = 150;
 
-function mmToPx(mm: number, dpi = PRINT_DPI) { return Math.round((mm / 25.4) * dpi); }
+function mmToPx(mm: number) { return Math.round((mm / 25.4) * PRINT_DPI); }
 
 export type Orientation = "portrait" | "landscape";
 
@@ -152,13 +152,11 @@ export function safeMarginUnits(width: number, height: number) {
   return Math.ceil(SAFE_MARGIN_MM / a4Fit(width, height).mmPerUnit);
 }
 
-const round = (v: number) => Math.round(v);
-
 /** レイヤーを中心を保ったまま k 倍にする（文字は文字の大きさも） */
 function scaleLayer(l: Layer, k: number): Layer {
   const w = l.w * k, h = l.h * k;
-  const out = { ...l, x: round(l.x + (l.w - w) / 2), y: round(l.y + (l.h - h) / 2), w: round(w), h: round(h) } as Layer;
-  if (out.type === "text") out.size = Math.max(1, round(out.size * k));
+  const out = { ...l, x: Math.round(l.x + (l.w - w) / 2), y: Math.round(l.y + (l.h - h) / 2), w: Math.round(w), h: Math.round(h) } as Layer;
+  if (out.type === "text") out.size = Math.max(1, Math.round(out.size * k));
   return out;
 }
 
@@ -180,8 +178,8 @@ export function fitToA4(spec: PosterSpec): { spec: PosterSpec; resized: boolean;
     let l: Layer = l0;
     if (resized) {
       l = l.h >= H0 * 0.9
-        ? { ...l, y: round(l.y * ky), h: round(l.h * ky) } as Layer
-        : { ...l, y: round((l.y + l.h / 2) * ky - l.h / 2) } as Layer;
+        ? { ...l, y: Math.round(l.y * ky), h: Math.round(l.h * ky) } as Layer
+        : { ...l, y: Math.round((l.y + l.h / 2) * ky - l.h / 2) } as Layer;
     }
     if (!shown(l, spec.theme) || !carriesInfo(l)) return l;
     let b = aabb(l);

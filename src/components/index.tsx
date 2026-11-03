@@ -397,7 +397,7 @@ export const RENDERERS: Record<string, Render> = {
     );
   },
 
-  checklist: (p, { id, w, h, theme }) => {
+  checklist: (p, { id, w, theme }) => {
     const items: string[] = p.items ?? [];
     const fs = p.fontSize ?? 28;
     const gap = fs * (p.lineGap ?? 1.5);

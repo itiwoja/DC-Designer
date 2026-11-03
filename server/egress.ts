@@ -6,6 +6,7 @@
 export type EgressPurpose = "fonts" | "auth" | "ai" | "image" | "tools";
 
 import { CODEX_ASSET_HOSTS, CODEX_RELEASE_HOST, codexReleasePath, PINNED_CODEX } from "./codex-pinned";
+import { isDesktopMode } from "./env";
 
 export class EgressDeniedError extends Error {
   readonly code = "EGRESS_DENIED" as const;
@@ -131,7 +132,7 @@ let installed: EgressGate | null = null;
 
 /** 製品版の worker だけ globalThis.fetch を包む（二重には包まない）。包んだら true */
 export function installEgress(): boolean {
-  if (process.env.DC_DESIGNER_DESKTOP !== "1" || installed) return false;
+  if (!isDesktopMode() || installed) return false;
   installed = createEgressGate(globalThis.fetch.bind(globalThis));
   globalThis.fetch = installed.fetch;
   return true;
