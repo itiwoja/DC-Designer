@@ -6,6 +6,7 @@ import { GENERATED_DIR } from "./imagegen";
 import { createRouteHandlers } from "./route-handlers";
 import { registerAiRoutes } from "./routes/ai";
 import { registerAuthRoutes } from "./routes/auth";
+import { registerFeedbackRoutes } from "./routes/feedback";
 import { registerFontRoutes } from "./routes/fonts";
 import { registerImageRoutes } from "./routes/images";
 import { registerLibraryRoutes } from "./routes/library";
@@ -114,6 +115,7 @@ export function createApp(opts: AppOptions): AppHandle {
   registerAiRoutes(app, handlers);
   registerImageRoutes(app, handlers);
   registerFontRoutes(app, handlers);
+  registerFeedbackRoutes(app, handlers);
   registerLibraryRoutes(app, handlers);
 
   return {

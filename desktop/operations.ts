@@ -83,6 +83,9 @@ export const DESKTOP_OPERATIONS = {
 
   "auth.logout": { method: "POST", route: "/api/auth/chatgpt/logout", chatgpt: true },
 
+  // 要望・不具合の送信。worker が中継へ送る（外部通信の許可表 feedback）。画面は中継を直接呼ばない
+  "feedback.send": { method: "POST", route: "/api/feedback", maxBody: 32 * 1024 },
+
   "fonts.status": { method: "POST", route: "/api/fonts/status", maxBody: 64 * 1024 },
   // 取得・埋め込み・OS 登録は main の fontGate を通す（許可・確認が済むまで worker へ送らない）。fonts.acquire は main 内部専用で載せない
   "fonts.files": { method: "POST", route: "/api/fonts/files", maxBody: 64 * 1024 },

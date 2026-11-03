@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEgressGate, EGRESS_PERMIT_TTL_MS, EgressDeniedError, installEgress, uninstallEgressForTest } from "../server/egress";
 import { JWKS_URL, REVOKE_URL, TOKEN_URL } from "../server/chatgpt-auth";
+import { FEEDBACK_RELAY_HOST, FEEDBACK_RELAY_PATH, FEEDBACK_RELAY_URL } from "../desktop/feedbackRelay";
 import { googleCssUrl } from "../src/fonts";
 
 function setup() {
@@ -20,6 +21,18 @@ describe("egress ゲート", () => {
     expect(real).toHaveBeenCalledTimes(3);
     await denied(gate.fetch(TOKEN_URL)); // method 違い
     await denied(gate.fetch(JWKS_URL, { method: "POST" }));
+  });
+
+  it("feedback：中継の host・exact path の POST だけ通す", async () => {
+    const { gate, real } = setup();
+    await gate.fetch(FEEDBACK_RELAY_URL, { method: "POST" });
+    expect(real).toHaveBeenCalledTimes(1);
+    await denied(gate.fetch(FEEDBACK_RELAY_URL)); // GET
+    await denied(gate.fetch(`https://${FEEDBACK_RELAY_HOST}${FEEDBACK_RELAY_PATH}/1`, { method: "POST" })); // 別 path
+    await denied(gate.fetch(`https://${FEEDBACK_RELAY_HOST}/other`, { method: "POST" }));
+    await denied(gate.fetch(`${FEEDBACK_RELAY_URL}?a=1`, { method: "POST" })); // query 付き
+    await denied(gate.fetch(`https://example.com${FEEDBACK_RELAY_PATH}`, { method: "POST" })); // 別ホスト
+    await denied(gate.fetch(`http://${FEEDBACK_RELAY_HOST}${FEEDBACK_RELAY_PATH}`, { method: "POST" })); // http
   });
 
   it("fonts：Google Fonts の CSS と実体の GET だけ通す", async () => {

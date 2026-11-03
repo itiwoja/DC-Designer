@@ -1,10 +1,12 @@
 /**
  * 製品版 worker の外部通信ゲート（EXE-FR-004 / EXE-NFR）。global fetch を包み、既定拒否で目的別の許可表に合うものだけ通す。
  * worker の外部通信は global fetch だけ（node:http・WebSocket は使わない）なので、ここを通らない通信は無い。
+ * feedback：要望・不具合の中継（FEEDBACK_RELAY_HOST の POST /v1/issues だけ。query なし）。
  * 開発版（DC_DESIGNER_DESKTOP が無い）では包まない。URL の query・本文はエラーにもログにも出さない
  */
-export type EgressPurpose = "fonts" | "auth" | "ai" | "image" | "tools";
+export type EgressPurpose = "fonts" | "auth" | "ai" | "image" | "tools" | "feedback";
 
+import { FEEDBACK_RELAY_HOST, FEEDBACK_RELAY_PATH } from "../desktop/feedbackRelay";
 import { CODEX_ASSET_HOSTS, CODEX_RELEASE_HOST, codexReleasePath, PINNED_CODEX } from "./codex-pinned";
 
 export class EgressDeniedError extends Error {
@@ -63,6 +65,8 @@ export const EGRESS_RULES: readonly Rule[] = [
   { purpose: "ai", method: "POST", host: AI_HOST, path: { exact: AI_RESPONSES_PATH }, once: true },
   // 画像生成：Gemini（server/imagegen.ts の generateGemini）
   { purpose: "image", method: "POST", host: GEMINI_HOST, path: { exact: "/v1beta/interactions" } },
+  // 要望・不具合の送信（server/routes/feedback.ts）
+  { purpose: "feedback", method: "POST", host: FEEDBACK_RELAY_HOST, path: { exact: FEEDBACK_RELAY_PATH } },
   ...comfyRules,
   ...codexRules,
 ];
