@@ -4,6 +4,7 @@ import { postWithProgress, request, type AIProgress, type SetupProgress } from "
 import { withSubject, type AiSubject } from "./aiSubject";
 import { runDesktopSignIn } from "./accountView";
 import { desktopBridge } from "./desktop";
+import type { FeedbackRequest, FeedbackResponse } from "../../desktop/feedbackRelay";
 export type { AIProgress, SetupProgress } from "./apiTransport";
 /** 画像生成 1 回の待ち時間の上限（ミリ秒） */
 const ASSET_TIMEOUT_MS = 16 * 60_000;
@@ -104,6 +105,8 @@ function openChatGPTLogin(newAccount: boolean) {
 }
 
 export const api = {
+  /** 要望・不具合をアプリのサーバー経由で GitHub の Issue にする */
+  sendFeedback: (req: FeedbackRequest, signal?: AbortSignal) => post<FeedbackResponse>("/api/feedback", req, signal),
   status: () => get<Status>("/api/status"),
   /** Sign in with ChatGPT は別タブで行う（API サーバー → OpenAI → ループバック → ?popup=1 付きでここへ戻り、結果を元のタブへ渡して閉じる） */
   chatgptLogin: () => openChatGPTLogin(false),

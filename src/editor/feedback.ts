@@ -1,25 +1,15 @@
-/** 要望・不具合を GitHub の新規 Issue 画面で開くための URL を作る（アプリは直接送らず、利用者が自分のアカウントで送る） */
+/** 要望・不具合の送信まわり。通常はアプリ内で送る（api.sendFeedback）。予備として GitHub の新規 Issue 画面を開く URL も作れる */
 
-export type FeedbackKind = "request" | "bug" | "question";
-
-export const FEEDBACK_KIND_LABELS: Record<FeedbackKind, string> = { request: "要望", bug: "不具合", question: "質問" };
+import type { FeedbackEnv, FeedbackKind } from "../../desktop/feedbackRelay";
+import { FEEDBACK_KIND_LABELS, FEEDBACK_MAX_BODY, FEEDBACK_MAX_TITLE } from "../../desktop/feedbackRelay";
+export type { FeedbackEnv, FeedbackKind, FeedbackRequest, FeedbackResponse } from "../../desktop/feedbackRelay";
+export { FEEDBACK_KIND_LABELS, FEEDBACK_MAX_BODY, FEEDBACK_MAX_ENV_FIELD, FEEDBACK_MAX_TITLE } from "../../desktop/feedbackRelay";
 
 /** 不具合のときにフォームへ最初から入れておく本文 */
 export const BUG_TEMPLATE = "## 起きたこと\n\n\n## 再現手順\n1. \n\n## 期待した動き\n";
 
 export const FEEDBACK_ISSUE_URL = "https://github.com/itiwoja/DC-Designer/issues/new";
-/** URL が長すぎると GitHub が受け付けないので本文・件名を切る */
-export const FEEDBACK_MAX_BODY = 6000;
-export const FEEDBACK_MAX_TITLE = 200;
 const TRUNCATED_NOTE = "\n（長いため途中で切りました）";
-
-export type FeedbackEnv = {
-  /** アプリの版（取れなければ ""） */
-  appVersion: string;
-  /** 製品版（Electron）か開発版（ブラウザ）か */
-  desktop: boolean;
-  os: string;
-};
 
 /** 画面を開いている OS の名前（取れなければ "不明"） */
 export function detectOs(): string {
@@ -54,3 +44,24 @@ export function buildFeedbackUrl({ kind, title, body, env }: { kind: FeedbackKin
   url.searchParams.set("body", text + tail);
   return url.toString();
 }
+
+/** 本文の残り文字数を出し始める境目 */
+export const FEEDBACK_REMAINING_SHOW = 500;
+
+/** 本文の残り文字数の表示。まだ余裕があるときは null */
+export function remainingLabel(bodyLength: number): string | null {
+  const left = Math.max(0, FEEDBACK_MAX_BODY - bodyLength);
+  return left < FEEDBACK_REMAINING_SHOW ? `残り ${left.toLocaleString("en-US")} 文字` : null;
+}
+
+/** 送信に失敗したときの表示。code は server が付ける。通信の失敗（status なし）と中継の不調では、ブラウザで送る予備を出す */
+export function feedbackErrorView(e: unknown): { message: string; canFallback: boolean } {
+  const err = e as { message?: string; status?: number; code?: string } | null;
+  const canFallback = err?.code === "feedback_unavailable" || err?.code === "feedback_rate_limited" || typeof err?.status !== "number";
+  if (typeof err?.status !== "number") return { message: "通信に失敗しました。", canFallback };
+  const message = err?.message || "送れませんでした。しばらくしてからもう一度お試しください。";
+  return { message, canFallback };
+}
+
+/** 完了後に「GitHub で見る」を出してよい URL か */
+export const isGithubUrl = (url: string) => url.startsWith("https://github.com/");

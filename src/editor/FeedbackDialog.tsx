@@ -1,28 +1,42 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { version as devVersion } from "../../package.json";
 import { desktopBridge, useDesktopVersion } from "./desktop";
-import { BUG_TEMPLATE, buildFeedbackUrl, detectOs, FEEDBACK_KIND_LABELS, type FeedbackKind } from "./feedback";
+import { api } from "./api";
+import { BUG_TEMPLATE, buildFeedbackUrl, detectOs, feedbackErrorView, FEEDBACK_KIND_LABELS, FEEDBACK_MAX_BODY, isGithubUrl, remainingLabel, type FeedbackKind } from "./feedback";
 import { Ico } from "./uiIcons";
 
-/** 「要望・不具合を送る」フォーム。送ると GitHub の新規 Issue 画面（件名・本文入り）を既定のブラウザで開く */
+type Phase = { kind: "edit" } | { kind: "sending" } | { kind: "done"; number: number; url: string } | { kind: "error"; message: string; canFallback: boolean };
+
+/** 「要望・不具合を送る」フォーム。アプリのサーバー経由で GitHub の Issue にして、番号を見せる。送れないときはブラウザの GitHub で送る予備を出す */
 export function FeedbackDialog({ onClose }: { onClose: () => void }) {
   const [kind, setKind] = useState<FeedbackKind>("request");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [withEnv, setWithEnv] = useState(true);
+  const [phase, setPhase] = useState<Phase>({ kind: "edit" });
+  const abortRef = useRef<AbortController | null>(null);
+  const aliveRef = useRef(true);
+  const sendingRef = useRef(false);
   const desktop = !!desktopBridge();
   const desktopVersion = useDesktopVersion();
+  const sending = phase.kind === "sending";
+  // 送信中なら中断してから閉じる
+  const close = useCallback(() => { abortRef.current?.abort(); onClose(); }, [onClose]);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => { aliveRef.current = false; abortRef.current?.abort(); };
+  }, []);
   useEffect(() => {
     // 先に受けて止める（エディタの Esc＝選択の解除まで動かさない）
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       e.preventDefault();
       e.stopPropagation();
-      onClose();
+      close();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
+  }, [close]);
 
   const pickKind = (next: FeedbackKind) => {
     // 不具合を選んだときだけ、まだ書いていなければ本文の雛形を入れる（雛形のまま種類を戻したら消す）
@@ -30,35 +44,73 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
     else if (next !== "bug" && body === BUG_TEMPLATE) setBody("");
     setKind(next);
   };
-  const send = () => {
+  const makeEnv = () => (withEnv ? { appVersion: desktop ? desktopVersion : devVersion, desktop, os: detectOs() } : undefined);
+  const send = async () => {
+    if (!title.trim() || sendingRef.current) return;
+    sendingRef.current = true;
+    const ac = new AbortController();
+    abortRef.current = ac;
+    setPhase({ kind: "sending" });
+    try {
+      const res = await api.sendFeedback({ kind, title, body, env: makeEnv() }, ac.signal);
+      if (aliveRef.current && !ac.signal.aborted) setPhase({ kind: "done", number: res.number, url: res.url });
+    } catch (e) {
+      if (aliveRef.current && !ac.signal.aborted) setPhase({ kind: "error", ...feedbackErrorView(e) });
+    } finally {
+      sendingRef.current = false;
+    }
+  };
+  const sendByBrowser = () => {
     if (!title.trim()) return;
-    const env = withEnv ? { appVersion: desktop ? desktopVersion : devVersion, desktop, os: detectOs() } : undefined;
-    const url = buildFeedbackUrl({ kind, title, body, env });
-    window.open(url, "_blank", "noopener,noreferrer");
-    setTitle(""); setBody("");
+    window.open(buildFeedbackUrl({ kind, title, body, env: makeEnv() }), "_blank", "noopener,noreferrer");
     onClose();
   };
+  const remaining = remainingLabel(body.length);
   return (
-    <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && close()}>
       <div className="modal feedback-dialog" role="dialog" aria-modal="true" aria-labelledby="feedback-title">
         <h2 id="feedback-title">要望・不具合を送る</h2>
-        <div className="feedback-kinds" role="radiogroup" aria-label="種類">
-          {(Object.keys(FEEDBACK_KIND_LABELS) as FeedbackKind[]).map((k, i) => (
-            <label key={k}><input type="radio" name="feedback-kind" checked={kind === k} autoFocus={i === 0} onChange={() => pickKind(k)} /> {FEEDBACK_KIND_LABELS[k]}</label>
-          ))}
-        </div>
-        <label className="feedback-field">件名（必須）
-          <input type="text" value={title} maxLength={150} onChange={(e) => setTitle(e.target.value)} />
-        </label>
-        <label className="feedback-field">内容
-          <textarea rows={8} value={body} onChange={(e) => setBody(e.target.value)} />
-        </label>
-        <label className="feedback-check"><input type="checkbox" checked={withEnv} onChange={(e) => setWithEnv(e.target.checked)} /> アプリの版と OS を添える</label>
-        <p className="hint small">GitHub の Issue 作成画面をブラウザで開きます。送るには GitHub のアカウントが必要です。書いた内容は公開されます。個人情報や作品の内容は書かないでください。</p>
-        <div className="row end">
-          <button onClick={onClose}>キャンセル</button>
-          <button className="primary" disabled={!title.trim()} onClick={send}>GitHub で送る</button>
-        </div>
+        {phase.kind === "done" ? (
+          <>
+            <p className="feedback-done" role="status">#{phase.number} として送りました。ありがとうございます。</p>
+            <div className="row end">
+              {isGithubUrl(phase.url) && <button onClick={() => window.open(phase.url, "_blank", "noopener,noreferrer")}>GitHub で見る</button>}
+              <button className="primary" autoFocus onClick={onClose}>閉じる</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="feedback-kinds" role="radiogroup" aria-label="種類">
+              {(Object.keys(FEEDBACK_KIND_LABELS) as FeedbackKind[]).map((k, i) => (
+                <label key={k}><input type="radio" name="feedback-kind" checked={kind === k} autoFocus={i === 0} disabled={sending} onChange={() => pickKind(k)} /> {FEEDBACK_KIND_LABELS[k]}</label>
+              ))}
+            </div>
+            <label className="feedback-field">件名（必須）
+              <input type="text" value={title} maxLength={150} disabled={sending} onChange={(e) => setTitle(e.target.value)} />
+            </label>
+            <label className="feedback-field">内容
+              <textarea rows={8} value={body} maxLength={FEEDBACK_MAX_BODY} disabled={sending} onChange={(e) => setBody(e.target.value)} />
+            </label>
+            {remaining && <p className="feedback-count small">{remaining}</p>}
+            <label className="feedback-check"><input type="checkbox" checked={withEnv} disabled={sending} onChange={(e) => setWithEnv(e.target.checked)} /> アプリの版と OS を添える</label>
+            {phase.kind === "error" && (
+              <div className="feedback-error" role="alert">
+                <p>{phase.message}</p>
+                {phase.canFallback && (
+                  <>
+                    <p>代わりにブラウザの GitHub で送れます。GitHub のアカウントが要ります。</p>
+                    <button disabled={!title.trim()} onClick={sendByBrowser}>ブラウザの GitHub で送る</button>
+                  </>
+                )}
+              </div>
+            )}
+            <p className="hint small">GitHub のアカウントは要りません。送った内容は GitHub の Issue として公開されます。個人情報や作品の内容は書かないでください。</p>
+            <div className="row end">
+              <button onClick={close}>キャンセル</button>
+              <button className="primary" disabled={!title.trim() || sending} onClick={send}>{sending ? "送っています…" : "送る"}</button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
