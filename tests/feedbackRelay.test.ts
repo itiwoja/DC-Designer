@@ -1,11 +1,12 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearGithubAppCache } from "../relay/src/githubApp";
 import { buildIssue, handleRequest, neutralizeMentions, rateLimitKey, MAX_REQUEST_BYTES, type Env } from "../relay/src/index";
+import { QUOTA_PER_DAY, QUOTA_PER_HOUR, takeQuota } from "../relay/src/quota";
 
 const ZW = "​";
 const URL_ = "https://relay.example/v1/issues";
 
-type Over = Partial<{ perIp: boolean; global: boolean; appId: string | undefined; installationId: string | undefined; key: string | undefined }>;
+type Over = Partial<{ perIp: boolean; global: boolean; quota: boolean; appId: string | undefined; installationId: string | undefined; key: string | undefined }>;
 
 let pem = "";
 let publicKey: CryptoKey;
@@ -28,14 +29,16 @@ beforeAll(async () => {
 function makeEnv(over: Over = {}) {
   const perIp = vi.fn(async () => ({ success: over.perIp ?? true }));
   const global = vi.fn(async () => ({ success: over.global ?? true }));
+  const quotaFetch = vi.fn(async () => new Response(null, { status: over.quota === false ? 429 : 204 }));
   const env: Env = {
     GITHUB_APP_ID: "appId" in over ? over.appId : "12345",
     GITHUB_APP_INSTALLATION_ID: "installationId" in over ? over.installationId : "678",
     GITHUB_APP_PRIVATE_KEY: "key" in over ? over.key : pem,
     PER_IP: { limit: perIp },
     GLOBAL: { limit: global },
+    QUOTA: { idFromName: (n: string) => n, get: () => ({ fetch: quotaFetch }) },
   };
-  return { env, perIp, global };
+  return { env, perIp, global, quotaFetch };
 }
 
 function post(body: unknown, init: RequestInit & { raw?: string } = {}) {
@@ -215,6 +218,20 @@ describe("handleRequest", () => {
     expect((await handleRequest(req, env)).status).toBe(413);
   });
 
+  it("全体の 1 時間・1 日の上限に達したら GitHub を呼ばずに 503（アプリは予備の方式を出す）", async () => {
+    const { env, quotaFetch } = makeEnv({ quota: false });
+    const res = await handleRequest(post(valid), env);
+    expect(res.status).toBe(503);
+    expect(quotaFetch).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("中身が正しくない要求は全体の枠を使わない", async () => {
+    const { env, quotaFetch } = makeEnv();
+    expect((await handleRequest(post({ kind: "x" }), env)).status).toBe(400);
+    expect(quotaFetch).not.toHaveBeenCalled();
+  });
+
   it("IP ごとの上限は IPv6 なら /64 で数える", async () => {
     const { env, perIp, global } = makeEnv();
     await handleRequest(post(valid, { headers: { "CF-Connecting-IP": "2001:db8:1:2:aaaa::1" } }), env);
@@ -369,5 +386,29 @@ describe("GitHub App 認証", () => {
     expect(logs).not.toContain("SECRETBODY");
     expect(logs).not.toContain("eyJ");
     expect(logs).toContain("401");
+  });
+});
+
+describe("takeQuota", () => {
+  const memory = () => {
+    const m = new Map<string, unknown>();
+    return { get: async <T,>(k: string) => m.get(k) as T | undefined, put: async <T,>(k: string, v: T) => { m.set(k, v); } };
+  };
+
+  it("1 時間の上限まで通し、次の時間になればまた通す", async () => {
+    const st = memory();
+    const t0 = Date.UTC(2026, 10, 3, 10, 0, 0);
+    for (let i = 0; i < QUOTA_PER_HOUR; i++) expect(await takeQuota(st, t0 + i)).toBe(true);
+    expect(await takeQuota(st, t0 + 1000)).toBe(false);
+    expect(await takeQuota(st, t0 + 3_600_000)).toBe(true);
+  });
+
+  it("1 日の上限に達したら、時間が変わっても翌日まで通さない", async () => {
+    const st = memory();
+    const day = Date.UTC(2026, 10, 3, 0, 0, 0);
+    let ok = 0;
+    for (let h = 0; h < 24; h++) for (let i = 0; i < QUOTA_PER_HOUR; i++) if (await takeQuota(st, day + h * 3_600_000 + i)) ok++;
+    expect(ok).toBe(QUOTA_PER_DAY);
+    expect(await takeQuota(st, day + 86_400_000)).toBe(true);
   });
 });

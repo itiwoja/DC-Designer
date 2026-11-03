@@ -8,5 +8,8 @@
   "ratelimits": [
     { "name": "PER_IP", "namespace_id": "1001", "simple": { "limit": 3, "period": 60 } },
     { "name": "GLOBAL", "namespace_id": "1002", "simple": { "limit": 30, "period": 60 } }
-  ]
+  ],
+  // Rate Limiting は拠点ごとに数えるので、本当の全体の上限（1 時間・1 日あたり）は Durable Object 1 つで数える（src/quota.ts）
+  "durable_objects": { "bindings": [{ "name": "QUOTA", "class_name": "FeedbackQuota" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["FeedbackQuota"] }]
 }

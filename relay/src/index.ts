@@ -17,6 +17,9 @@ import {
   type FeedbackResponse,
 } from "../../desktop/feedbackRelay";
 import { getInstallationToken, readGithubAppConfig, type GithubAppEnv } from "./githubApp";
+import { takeGlobalQuota, type QuotaNamespace } from "./quota";
+
+export { FeedbackQuota } from "./quota";
 
 /** Workers Rate Limiting バインディングの最小の型 */
 export interface RateLimit {
@@ -26,6 +29,8 @@ export interface RateLimit {
 export interface Env extends GithubAppEnv {
   PER_IP: RateLimit;
   GLOBAL: RateLimit;
+  /** 全体の 1 時間・1 日あたりの上限（Durable Object） */
+  QUOTA: QuotaNamespace;
 }
 
 /** 本文（JSON）の上限（バイト） */
@@ -202,6 +207,8 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
     console.error("GitHub App の設定がありません");
     return fail(503, "unavailable");
   }
+  // 中身が正しいものだけを全体の枠で数える（壊れた要求で枠を使い切られないように）
+  if (!(await takeGlobalQuota(env.QUOTA))) return fail(503, "unavailable");
   const created = await createIssueAsApp(buildIssue(parsed), env);
   return created ? json(201, created) : fail(502, "unavailable");
 }
