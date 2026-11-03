@@ -991,7 +991,7 @@ export function App() {
     if (!specs.length) return;
     const cur = deck.slides.findIndex((s) => s.id === posterIdRef.current);
     const view = withView ? openPresenterWindow() : null;
-    if (withView && !view) notify({ kind: "error", text: "発表者ビューのウィンドウを開けませんでした。ブラウザのポップアップのブロックを解除してください" });
+    if (withView && !view) notify({ kind: "error", text: desktopBridge() ? "発表者ビューのウィンドウを開けませんでした" : "発表者ビューのウィンドウを開けませんでした。ブラウザのポップアップのブロックを解除してください" });
     setShow({ slides: specs, start: fromCurrent ? Math.max(cur, 0) : 0, view });
   };
   /** 投影を終えたら、発表者ビューを閉じ、最後に映していたスライドを開く */

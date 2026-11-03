@@ -7,9 +7,13 @@ import { PresenterView } from "./PresenterView";
 import { Ico } from "./uiIcons";
 import { TRANSITION_EASING, transitionKeyframes } from "../transition";
 import { playSound, preloadSounds, specSounds } from "../sounds";
+import { desktopBridge } from "./desktop";
+import type { PresenterPlacement } from "../../desktop/bridge";
 import { createBgmPlayer, nextClickBgm, preloadBgm } from "../bgm";
 
 const SHOW_NOTES_KEY = "dc-designer:show-notes";
+/** 製品版：スライドを映す画面（Display.id）を選んだら覚える */
+const DISPLAY_KEY = "dc-designer:presenter-display";
 
 /** カーソルと操作バーを隠すまでの時間 */
 const IDLE_MS = 2500;
@@ -192,10 +196,28 @@ export function Presenter({ slides, start, view: viewWin, onExit }: { slides: Po
     if (pos.i > 0) go(pos.i - 1, true);
   };
 
+  // 製品版：main が編集窓を選んだ画面へ移して全画面にする（失敗しても重ね表示のまま続ける）
+  const [placement, setPlacement] = useState<PresenterPlacement | null>(null);
+  const moveDisplay = (id: number) => {
+    const presenter = desktopBridge()?.presenter;
+    if (!presenter) return;
+    presenter.move(id).then((p) => { setPlacement(p); writePref(DISPLAY_KEY, String(id)); }).catch(() => {});
+  };
+
   // 全画面にする（できない環境でも画面いっぱいの重ね表示で続ける）。ブラウザの Esc で全画面を抜けたら終了
   useEffect(() => {
     const el = rootRef.current;
     el?.focus();
+    const presenter = desktopBridge()?.presenter;
+    if (presenter) {
+      let alive = true;
+      // 覚えた画面は発表者ビューがあるときだけ渡す（無ければ今の画面）
+      const saved = viewWin ? Number(readPref(DISPLAY_KEY)) : NaN;
+      presenter.start({ displayId: Number.isInteger(saved) && readPref(DISPLAY_KEY) ? saved : undefined, withView: !!viewWin })
+        .then((p) => { if (alive) setPlacement(p); })
+        .catch(() => {});
+      return () => { alive = false; presenter.end().catch(() => {}); };
+    }
     let entered = false;
     const onChange = () => {
       if (document.fullscreenElement === el) entered = true;
@@ -319,6 +341,7 @@ export function Presenter({ slides, start, view: viewWin, onExit }: { slides: Po
           win={view} slides={slides} index={pos.i} built={builtN} builds={groups.length} blank={blank}
           onNext={next} onPrev={prev} onGo={(i) => { setBlank(null); go(i); }}
           onBlank={(b) => setBlank((cur) => (cur === b ? null : b))} onExit={exit}
+          displays={placement?.displays} slideDisplayId={placement?.slideDisplayId} onMoveDisplay={moveDisplay}
         />
       )}
     </>

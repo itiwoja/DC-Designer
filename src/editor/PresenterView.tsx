@@ -5,6 +5,7 @@ import { Poster } from "../render/Poster";
 import { hideGroup, slideGroups } from "../render/animatePreview";
 import { readPref, writePref } from "./storage";
 import { Ico } from "./uiIcons";
+import type { PresenterDisplay } from "../../desktop/bridge";
 
 const NOTES_SIZE_KEY = "dc-designer:presenter-notes-size";
 const NOTES_SIZES = [16, 18, 20, 24, 28, 34, 40];
@@ -80,9 +81,13 @@ function SlideBox({ spec, built, idPrefix }: { spec: PosterSpec; built?: number;
  * 投影の状態はスライドショー（Presenter）が持ち、ここは表示と操作の受け口だけ
  */
 export function PresenterView({
-  win, slides, index, built, builds, blank, onNext, onPrev, onGo, onBlank, onExit,
+  win, slides, index, built, builds, blank, onNext, onPrev, onGo, onBlank, onExit, displays, slideDisplayId, onMoveDisplay,
 }: {
   win: Window;
+  /** 製品版：スライドを映せる画面と、今映している画面。2 つ以上のときだけ選択を出す */
+  displays?: PresenterDisplay[];
+  slideDisplayId?: number | null;
+  onMoveDisplay?: (id: number) => void;
   slides: PosterSpec[];
   /** 映しているスライド（slides.length なら最後の黒い画面） */
   index: number;
@@ -174,6 +179,12 @@ export function PresenterView({
         <select value={Math.min(index, slides.length - 1)} onChange={(e) => onGo(Number(e.target.value))} aria-label="スライドへ移動" title="スライドへ移動">
           {slides.map((s, i) => <option key={i} value={i}>{i + 1}. {s.meta.title}</option>)}
         </select>
+        {displays && displays.length >= 2 && (
+          <select value={slideDisplayId ?? ""} onChange={(e) => onMoveDisplay?.(Number(e.target.value))} aria-label="スライドを映す画面" title="スライドを映す画面">
+            {slideDisplayId == null && <option value="" disabled>スライドを映す画面</option>}
+            {displays.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+          </select>
+        )}
         <span className="spacer" />
         <button onClick={() => onBlank("black")} aria-pressed={blank === "black"} title="黒い画面（B）">黒い画面</button>
         <button onClick={() => onBlank("white")} aria-pressed={blank === "white"} title="白い画面（W）">白い画面</button>
