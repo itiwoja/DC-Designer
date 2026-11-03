@@ -142,7 +142,7 @@ sequenceDiagram
 | <a id="exe-api-001"></a>EXE-API-001 `desktopRuntime.getState`／`desktopRuntime.retryStart`／`desktopRuntime.onStateChanged` | getState・retryStartは引数なし。起動／復旧・通常編集窓に限定。購読は解除関数を返す | `state`、`appVersion`、`busy`、`saveState`、分類`error?`のsnapshot。stateは`starting/ready/failed/recovering/closing`。retryStartは旧管理対象の停止確認後だけ新しい個体を起動。稼働中・停止不明は拒否し、多重起動しない |
 | <a id="exe-api-002"></a>EXE-API-002 `desktopRuntime.requestClose` | 通常編集窓から`action: request/wait/returnToEdit/stopAfterSave`とmain発行の`promptId?`。OSの閉じる操作も同じ調停へ合流 | `pending/canceled/blocked/closing`と分類。waitは通常終了のbusy待ちだけ。stopAfterSaveは全保存成功後の終了ハング警告への本人同意だけに有効。生成cancelや更新許可には使えない |
 | 同EXE-API-002 `prepareForClose`／`completeClosePreparation` | main→登録編集窓へ`requestId`、窓→mainへ同ID・`allSaved`・`busy`・保存revision／分類。要求ごとに対象集合をmainが固定 | 全対象一致・worker書込drain ACKまで終了不可。切断・未応答・不一致・失敗は閉じない。更新は既存`desktopUpdate.prepareForRestart`を維持し、同じ保存調停を使う |
-| <a id="exe-api-008"></a>EXE-API-008 `desktopWindows.openPresenter` | 通常編集窓から登録済み`workspaceId`と`purpose: presenter/print`。任意URL・HTML・pathは不可 | mainが内部発表者／印刷窓を生成・登録し、opaque `windowId`を返す。作品不明は`NOT_FOUND`、生成不可は`WINDOW_UNAVAILABLE`。印刷ダイアログもmainが当該窓を制御し、OS拒否は分類して返す |
+| <a id="exe-api-008"></a>EXE-API-008 `desktopWindows.openPresenter`（未実装。発表者ビューは Issue #76 で`about:blank`窓＋`window.dcDesktop.presenter`の方式にした。下の窓の制限を参照） | 通常編集窓から登録済み`workspaceId`と`purpose: presenter/print`。任意URL・HTML・pathは不可 | mainが内部発表者／印刷窓を生成・登録し、opaque `windowId`を返す。作品不明は`NOT_FOUND`、生成不可は`WINDOW_UNAVAILABLE`。印刷ダイアログもmainが当該窓を制御し、OS拒否は分類して返す |
 | <a id="exe-api-009"></a>EXE-API-009 `desktopApi.request` | `operation`、`workspaceId?`と操作別schemaに適合する引数。operationは製品の静的操作表で現行のローカルなポスター／デッキ／素材操作へ対応付ける。自由URL・method・header・path指定は禁止 | mainが実送信frameと作品権限を確認してから固定内部APIを呼ぶ。JSONまたは検証済みMIMEの素材bytesとopaque `requestId`を返す。進捗・完了・取消は同じ窓と要求へ結び付ける。未許可・過大入力・古い個体は拒否し、内部token・port・HTTPヘッダーを返さない |
 
 </details>
@@ -156,7 +156,7 @@ AI送信・OSフォント登録・資格情報・更新・プロセス制御はE
 <a id="exe-fr-008"></a>
 ### EXE-FR-008：内部窓・外部リンク・OS操作
 
-- 任意の`window.open`・popup生成は拒否する。発表者・印刷はEXE-API-008からmainが同梱資源を読み込む内部窓にする。mainが作品参照・初期表示・窓間同期を管理し、任意HTMLを書き込ませない。
+- 任意の`window.open`・popup生成は拒否する。例外は発表者ビュー（Issue #76）だけで、編集窓が名前`dc-designer-presenter`で開く`about:blank`の窓に限り許可する（`desktop/presenterWindow.ts`の`isPresenterPopup`）。中身は編集窓の React が描き、窓の置き場所・全画面は`window.dcDesktop.presenter`（start / move / end）で main が扱う。発表者ビューの窓からの IPC は`isTrusted`で拒否する。発表者・印刷はEXE-API-008からmainが同梱資源を読み込む内部窓にする。mainが作品参照・初期表示・窓間同期を管理し、任意HTMLを書き込ませない。
 - 内部窓にもsandbox・限定preload・固定originを適用し、発表操作・読取／印刷だけを許可する。外部ページへのナビゲーション、汎用IPC、更新適用、資格情報操作を許可しない。
 - 外部リンクはmainの`shell.openExternal`から用途別に許可したHTTPS先だけを開く。OAuth・公式release・利用状況の確認先を分け、`file:`・`javascript:`・任意scheme・renderer指定の自由URLを拒否する。
 - 印刷・保存ダイアログ・フォントOS登録は各用途の限定操作とし、共通の任意OSコマンドAPIを作らない。フォントの取得・OS登録条件は[画像保護設計](./desktop-release-privacy.md#fonts)のまま維持する。
