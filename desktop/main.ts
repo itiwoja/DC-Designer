@@ -365,6 +365,8 @@ function buildMenu(): void {
 let presenterView: BrowserWindow | null = null;
 /** 投影を始める前の編集窓の位置・大きさ */
 let saved: { bounds: Electron.Rectangle; maximized: boolean } | null = null;
+/** 投影の世代。start が発表者ビューの窓を待つ間に end が来たら、待ち終えた start は何もしない */
+let showGen = 0;
 
 const liveView = (): BrowserWindow | null => (presenterView && !presenterView.isDestroyed() ? presenterView : null);
 
@@ -407,7 +409,9 @@ function placeView(slideId: number, editorDisplayId: number | null): void {
 async function presenterStart(requested: number | undefined, withView: boolean): Promise<PresenterPlacement> {
   const w = editorWindow;
   if (!w || w.isDestroyed()) return placement();
+  const gen = showGen;
   const view = withView ? liveView() ?? await waitForView() : null;
+  if (gen !== showGen || w.isDestroyed()) return placement();
   const displays = screen.getAllDisplays();
   // 画面が 1 つで発表者ビューがあるなら、全画面にすると発表者ビューが隠れるので、発表者ビューを前に出すだけにする
   if (view && displays.length < 2) {
@@ -440,6 +444,7 @@ function presenterMove(id: number): PresenterPlacement {
 }
 
 function presenterEnd(): void {
+  showGen++;
   const w = editorWindow;
   if (!w || w.isDestroyed()) { saved = null; return; }
   if (w.isFullScreen()) w.setFullScreen(false);
@@ -478,6 +483,11 @@ function createWindow(): BrowserWindow {
   win.webContents.on("did-create-window", (child) => {
     presenterView = child;
     child.on("closed", () => { if (presenterView === child) presenterView = null; });
+  });
+  // 投影中にレンダラーが落ちる・読み込み直されると end が届かないので、ここで片付ける
+  win.webContents.on("render-process-gone", () => presenterEnd());
+  win.webContents.on("did-start-navigation", (details) => {
+    if (details.isMainFrame && !details.isSameDocument) presenterEnd();
   });
   win.on("closed", () => {
     if (editorWindow === win) editorWindow = null;
