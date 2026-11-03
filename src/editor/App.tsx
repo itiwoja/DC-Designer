@@ -979,10 +979,27 @@ export function App() {
   /** 投影中のスライド（開始時点の中身）と、始めるスライドの番号 */
   const [show, setShow] = useState<{ slides: PosterSpec[]; start: number; view: Window | null } | null>(null);
   /**
-   * fromCurrent なら開いているスライドから、そうでなければ 1 枚目から投影する。
-   * withView なら発表者ビューを別ウィンドウで開く（ポップアップを止められないよう、クリック・キーの処理の中で同期的に開く）
+   * 製品版：つながっている画面の数（発表者ビューの窓はクリック・キーの中で同期的に開くので、先に数えておく）。
+   * モニターの抜き差しに追いつくよう、窓に戻ってきたときにも数え直す
    */
-  const startShow = (fromCurrent: boolean, withView = false) => {
+  const displayCount = useRef(1);
+  useEffect(() => {
+    const p = desktopBridge()?.presenter;
+    if (!p) return;
+    const count = () => { p.displayCount().then((n) => { displayCount.current = n; }).catch(() => {}); };
+    count();
+    window.addEventListener("focus", count);
+    return () => window.removeEventListener("focus", count);
+  }, []);
+  /** 画面が 2 つ以上つながっているか（PowerPoint と同じく、そのときは発表者ビュー付きで投影する） */
+  const hasExtraScreen = () =>
+    desktopBridge()?.presenter ? displayCount.current >= 2 : !!(screen as Screen & { isExtended?: boolean }).isExtended;
+  /**
+   * fromCurrent なら開いているスライドから、そうでなければ 1 枚目から投影する。
+   * withView なら発表者ビューを別ウィンドウで開く（ポップアップを止められないよう、クリック・キーの処理の中で同期的に開く）。
+   * 省くと、画面が 2 つ以上のときだけ発表者ビュー付きにする
+   */
+  const startShow = (fromCurrent: boolean, withView = hasExtraScreen()) => {
     if (!deck) return;
     previewRef.current?.cancel();
     setTextEdit(null);
@@ -1046,8 +1063,8 @@ export function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || show) return; // メニューを閉じた Esc など・投影中
       const mod = e.ctrlKey || e.metaKey;
-      // PowerPoint と同じく F5 で最初から、Shift+F5 で今のスライドから投影する。Alt+F5 は今のスライドから発表者ビュー付きで
-      if (e.key === "F5" && isSlides && !mod) { e.preventDefault(); startShow(e.shiftKey || e.altKey, e.altKey); return; }
+      // PowerPoint と同じく F5 で最初から、Shift+F5 で今のスライドから投影する（画面が 2 つ以上なら発表者ビュー付き）。Alt+F5 は画面が 1 つでも発表者ビュー付きで
+      if (e.key === "F5" && isSlides && !mod) { e.preventDefault(); startShow(e.shiftKey || e.altKey, e.altKey || undefined); return; }
       const key = e.key.toLowerCase();
       // 保存は入力欄にフォーカスがあっても効かせる（ブラウザの「ページを保存」を出さない）
       if (mod && !e.shiftKey && key === "s") { e.preventDefault(); saveNow(); return; }
@@ -1510,7 +1527,7 @@ export function App() {
             <button className="icon-btn" onClick={redo} disabled={!canRedo} title={`やり直す（${MOD}+Shift+Z）`} aria-label="やり直す"><Ico name="redo" /></button>
           </div>
           <span className="spacer" />
-          {isSlides && <button className="icon-btn" onClick={() => startShow(true)} title="このスライドから投影（Shift+F5。F5 で最初から）" aria-label="スライドショー"><Ico name="monitor" /></button>}
+          {isSlides && <button className="icon-btn" onClick={() => startShow(true)} title="このスライドから投影（Shift+F5。F5 で最初から）。モニターが 2 台以上なら、もう一方に台本の出る発表者ビューを出す" aria-label="スライドショー"><Ico name="monitor" /></button>}
           {isSlides && <button className="icon-btn" onClick={() => previewAnimations()} disabled={!animOrder.size} title={animOrder.size ? `このスライドの動きを再生（${animOrder.size} 件）` : "このスライドには動き（アニメーション）がありません。要素を選んでインスペクターで付けられます"} aria-label="このスライドの動きを再生"><Ico name="play" /></button>}
           {!deck && <button className="icon-btn" onClick={() => setPosterFontDialog(true)} disabled={!!busy} title="ポスターの雰囲気に合うフォントを ChatGPT に提案してもらい、適用する（未インストールなら PC に入れる）" aria-label="フォントを提案してもらう"><Ico name="type" /></button>}
           {mode === "poster" && (

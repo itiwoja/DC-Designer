@@ -133,8 +133,8 @@ export function DeckStrip({
         <button onClick={onDuplicate} disabled={disabled || index < 0} title={`この${unit}を複製`}><Ico name="copy" size={14} /> 複製</button>
         <button onClick={onRemove} disabled={disabled || (multi ? selectedIds.length >= deck.slides.length : index < 0 || deck.slides.length <= 1)} title={multi ? `選択した${selectedIds.length}枚を削除` : `この${unit}を削除`} aria-label={multi ? `選択した${selectedIds.length}枚を削除` : `この${unit}を削除`}><Ico name="trash" size={14} /></button>
         <button onClick={onFonts} disabled={disabled} title={`雰囲気に合うフォントを ChatGPT に提案してもらい、全${unit}に適用する`}><Ico name="type" size={14} /> フォント</button>
-        <button onClick={onPresent} title="1 枚目から画面いっぱいに投影（F5。Shift+F5 で今のスライドから）"><Ico name="monitor" size={14} /> 投影</button>
-        <button onClick={onPresentView} title="今のスライドから、別ウィンドウの発表者ビュー（台本・次のスライド・経過時間）付きで投影（Alt+F5）"><Ico name="notes" size={14} /> 発表者ビュー</button>
+        <button onClick={onPresent} title="1 枚目から画面いっぱいに投影（F5。Shift+F5 で今のスライドから）。モニターが 2 台以上なら、もう一方に台本の出る発表者ビューを出す"><Ico name="monitor" size={14} /> 投影</button>
+        <button onClick={onPresentView} title="今のスライドから、別ウィンドウの発表者ビュー（台本・次のスライド・経過時間）付きで投影（Alt+F5）。モニターが 1 台でもリハーサルに使える"><Ico name="notes" size={14} /> 発表者ビュー</button>
         <button className="primary" onClick={onExport} disabled={disabled} title="全スライドを 1 つの PowerPoint に書き出す">PPTX で書き出し</button>
         </div>
         <button className="icon" onClick={() => onToggle(!open)} title={open ? `${unit}一覧を畳む` : `${unit}一覧を開く`} aria-label={open ? `${unit}一覧を畳む` : `${unit}一覧を開く`} aria-expanded={open}><Ico name={open ? "chevronDown" : "chevronUp"} size={14} /></button>
