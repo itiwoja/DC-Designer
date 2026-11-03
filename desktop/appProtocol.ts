@@ -33,6 +33,7 @@ const PDF_TYPES: Record<string, Record<string, string>> = {
 const GENERATED_TYPES: Record<string, string> = {
   png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif", avif: "image/avif",
   svg: "image/svg+xml", mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", m4a: "audio/mp4",
+  aac: "audio/aac", webm: "audio/webm",
 };
 
 const FILE_RE = /^[A-Za-z0-9._-]+$/;

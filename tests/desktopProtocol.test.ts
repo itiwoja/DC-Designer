@@ -62,6 +62,10 @@ describe("resolveAppTarget", () => {
   it("generated は安全なファイル名と画像・音声の拡張子だけ", () => {
     expect(resolveAppTarget(`${A}/generated/abc-1.png`)).toEqual({ kind: "generated", file: "abc-1.png", type: "image/png" });
     expect(resolveAppTarget(`${A}/generated/a.MP3`)).toMatchObject({ type: "audio/mpeg" });
+    // サーバーが受け付ける音声（server/imagegen.ts の UPLOAD_EXT）はすべて配信できる
+    for (const [ext, type] of [["wav", "audio/wav"], ["ogg", "audio/ogg"], ["m4a", "audio/mp4"], ["aac", "audio/aac"], ["webm", "audio/webm"]]) {
+      expect(resolveAppTarget(`${A}/generated/a.${ext}`)).toMatchObject({ type });
+    }
     for (const p of ["/generated/a.html", "/generated/a.js", "/generated/x", "/generated/", "/generated/a/b.png", "/generated/..%2fa.png", "/generated/a..b.png"]) {
       expect(resolveAppTarget(`${A}${p}`)).toBeNull();
     }
