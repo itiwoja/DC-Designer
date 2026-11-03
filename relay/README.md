@@ -8,7 +8,7 @@ GitHub のアカウントが無い利用者の要望・不具合を、GitHub App
 
 - 受け付けるのは `POST /v1/issues` だけです。本文は JSON で 32KB までです。
 - 検証は `desktop/feedbackRelay.ts` の `parseFeedbackRequest` を使います（アプリのサーバーと共通）。
-- IP ごと（`PER_IP`）と全体（`GLOBAL`）のレート制限があります。数値は `wrangler.jsonc` の `ratelimits` で変えます。
+- IP ごと（`PER_IP`、IPv6 は /64 ごと）と全体（`GLOBAL`）のレート制限があります。数値は `wrangler.jsonc` の `ratelimits` で変えます。Rate Limiting は Cloudflare の拠点ごとに数えるため、`GLOBAL` も拠点ごとの上限です。
 - Issue には `from-app` と種類のラベル（enhancement / bug / question）が付きます。本文と件名の `@` メンションは無効にします。
 - CORS は付けません。ブラウザからは呼びません。
 

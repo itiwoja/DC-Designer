@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearGithubAppCache } from "../relay/src/githubApp";
-import { buildIssue, handleRequest, neutralizeMentions, MAX_REQUEST_BYTES, type Env } from "../relay/src/index";
+import { buildIssue, handleRequest, neutralizeMentions, rateLimitKey, MAX_REQUEST_BYTES, type Env } from "../relay/src/index";
 
 const ZW = "​";
 const URL_ = "https://relay.example/v1/issues";
@@ -122,6 +122,20 @@ describe("buildIssue", () => {
   it("neutralizeMentions は @ の直後にだけ U+200B を入れる", () => {
     expect(neutralizeMentions("a@b @@c")).toBe(`a@${ZW}b @${ZW}@${ZW}c`);
   });
+
+  it("ほかのリポジトリへの参照（owner/repo#123）も無効にし、同じリポジトリの #123 はそのまま", () => {
+    expect(neutralizeMentions("see foo/bar#12 and #3")).toBe(`see foo/bar#${ZW}12 and #3`);
+    expect(neutralizeMentions("a/b#x")).toBe("a/b#x");
+  });
+
+  it("rateLimitKey は IPv4 はそのまま、IPv6 は /64 にまとめる", () => {
+    expect(rateLimitKey("1.2.3.4")).toBe("1.2.3.4");
+    expect(rateLimitKey(null)).toBe("unknown");
+    expect(rateLimitKey("2001:db8:1:2:aaaa::1")).toBe("2001:db8:1:2::/64");
+    expect(rateLimitKey("2001:0DB8:0001:0002:0:0:0:9")).toBe("2001:db8:1:2::/64");
+    expect(rateLimitKey("2001:db8::1")).toBe("2001:db8:0:0::/64");
+    expect(rateLimitKey("::1")).toBe("0:0:0:0::/64");
+  });
 });
 
 describe("handleRequest", () => {
@@ -199,6 +213,13 @@ describe("handleRequest", () => {
     });
     const req = new Request(URL_, { method: "POST", headers: { "Content-Type": "application/json" }, body: stream, duplex: "half" } as RequestInit);
     expect((await handleRequest(req, env)).status).toBe(413);
+  });
+
+  it("IP ごとの上限は IPv6 なら /64 で数える", async () => {
+    const { env, perIp, global } = makeEnv();
+    await handleRequest(post(valid, { headers: { "CF-Connecting-IP": "2001:db8:1:2:aaaa::1" } }), env);
+    expect(perIp).toHaveBeenCalledWith({ key: "2001:db8:1:2::/64" });
+    expect(global).toHaveBeenCalledWith({ key: "all" });
   });
 
   it("レート制限（IP ごと・全体）を超えれば 429", async () => {

@@ -31,6 +31,12 @@ export interface Env extends GithubAppEnv {
 /** 本文（JSON）の上限（バイト） */
 export const MAX_REQUEST_BYTES = 32 * 1024;
 const GITHUB_TIMEOUT_MS = 10_000;
+/**
+ * 1 回の送信にかける時間の上限（トークン取得・取り直しを含む）。
+ * アプリのサーバーは 15 秒で諦めて「ブラウザの GitHub で送る」を出すので、それより先に必ず終える
+ * （遅れて Issue ができ、利用者がもう一度送って 2 件になるのを防ぐ）
+ */
+export const RELAY_DEADLINE_MS = 12_000;
 
 const MESSAGES = {
   invalid: "送る内容の形が正しくありません",
@@ -40,9 +46,23 @@ const MESSAGES = {
 
 export type GitHubIssuePayload = { title: string; body: string; labels: string[] };
 
-/** 通知の悪用を防ぐため、@ の直後にゼロ幅スペースを入れてメンションを無効にする */
+/**
+ * 通知の悪用を防ぐため、@ の直後にゼロ幅スペースを入れてメンションを無効にする。
+ * owner/repo#123 の形も、ほかのリポジトリに「参照されました」が残らないよう # の直後に入れる
+ */
 export function neutralizeMentions(s: string): string {
-  return s.replace(/@/g, "@​");
+  return s.replace(/@/g, "@​").replace(/([\w.-]+\/[\w.-]+)#(?=\d)/g, "$1#​");
+}
+
+/** IP ごとの上限のキー。IPv6 は 1 契約に /64 が割り当てられるので、アドレスを替えて上限を逃れられないよう /64 にまとめる */
+export function rateLimitKey(ip: string | null): string {
+  if (!ip) return "unknown";
+  if (!ip.includes(":")) return ip;
+  const [head, tail = ""] = ip.toLowerCase().split("::");
+  const h = head ? head.split(":") : [];
+  const t = tail ? tail.split(":") : [];
+  const groups = ip.includes("::") ? [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t] : h;
+  return `${groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, "")).join(":")}::/64`;
 }
 
 /** アプリ内の feedback.ts の envSection と同じ書式 */
@@ -108,7 +128,7 @@ async function readLimited(req: Request): Promise<string | null> {
 }
 
 /** GitHub に Issue を作る。成功なら {number,url}、401 なら "unauthorized"、それ以外は null（エラー本文は返さない） */
-async function createIssue(issue: GitHubIssuePayload, token: string): Promise<FeedbackResponse | "unauthorized" | null> {
+async function createIssue(issue: GitHubIssuePayload, token: string, deadline: AbortSignal): Promise<FeedbackResponse | "unauthorized" | null> {
   try {
     const res = await fetch(`https://api.github.com/repos/${FEEDBACK_REPO}/issues`, {
       method: "POST",
@@ -120,7 +140,7 @@ async function createIssue(issue: GitHubIssuePayload, token: string): Promise<Fe
         "Content-Type": "application/json",
       },
       body: JSON.stringify(issue),
-      signal: AbortSignal.timeout(GITHUB_TIMEOUT_MS),
+      signal: AbortSignal.any([deadline, AbortSignal.timeout(GITHUB_TIMEOUT_MS)]),
     });
     if (res.status === 401) {
       console.warn("GitHub API が 401 を返しました");
@@ -144,13 +164,14 @@ async function createIssue(issue: GitHubIssuePayload, token: string): Promise<Fe
 
 /** トークンを取って Issue を作る。401 ならキャッシュを捨てて 1 回だけ取り直す */
 async function createIssueAsApp(issue: GitHubIssuePayload, env: Env): Promise<FeedbackResponse | null> {
-  let token = await getInstallationToken(env);
+  const signal = AbortSignal.timeout(RELAY_DEADLINE_MS);
+  let token = await getInstallationToken(env, { signal });
   if (!token) return null;
-  let created = await createIssue(issue, token);
+  let created = await createIssue(issue, token, signal);
   if (created === "unauthorized") {
-    token = await getInstallationToken(env, { refresh: true });
+    token = await getInstallationToken(env, { refresh: true, signal });
     if (!token) return null;
-    created = await createIssue(issue, token);
+    created = await createIssue(issue, token, signal);
   }
   return created === "unauthorized" ? null : created;
 }
@@ -159,7 +180,7 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
   if (new URL(req.url).pathname !== FEEDBACK_RELAY_PATH) return json(404, { error: "invalid", message: "見つかりません" });
   if (req.method !== "POST") return json(405, { error: "invalid", message: "POST だけ受け付けます" }, { Allow: "POST" });
 
-  const ip = req.headers.get("CF-Connecting-IP") ?? "unknown";
+  const ip = rateLimitKey(req.headers.get("CF-Connecting-IP"));
   const [perIp, global] = await Promise.all([env.PER_IP.limit({ key: ip }), env.GLOBAL.limit({ key: "all" })]);
   if (!perIp.success || !global.success) return fail(429, "rate_limited");
 

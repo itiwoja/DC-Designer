@@ -73,7 +73,7 @@ async function createJwt(cfg: Config, nowMs: number): Promise<string> {
   return `${input}.${base64url(new Uint8Array(sig))}`;
 }
 
-async function requestToken(cfg: Config, nowMs: number): Promise<{ token: string; expiresAt: number } | null> {
+async function requestToken(cfg: Config, nowMs: number, signal?: AbortSignal): Promise<{ token: string; expiresAt: number } | null> {
   const jwt = await createJwt(cfg, nowMs);
   const res = await fetch(`${API}/app/installations/${cfg.installationId}/access_tokens`, {
     method: "POST",
@@ -85,7 +85,7 @@ async function requestToken(cfg: Config, nowMs: number): Promise<{ token: string
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ repositories: [FEEDBACK_REPO.split("/")[1]], permissions: { issues: "write" } }),
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)]) : AbortSignal.timeout(TIMEOUT_MS),
   });
   if (res.status !== 201) {
     console.warn(`GitHub App のトークン取得が ${res.status} を返しました`);
@@ -100,8 +100,8 @@ async function requestToken(cfg: Config, nowMs: number): Promise<{ token: string
   return { token: data.token, expiresAt };
 }
 
-/** インストールトークンを返す。失敗は null。refresh で期限前でも取り直す */
-export async function getInstallationToken(env: GithubAppEnv, opts: { refresh?: boolean } = {}): Promise<string | null> {
+/** インストールトークンを返す。失敗は null。refresh で期限前でも取り直す。signal で全体の持ち時間を渡せる */
+export async function getInstallationToken(env: GithubAppEnv, opts: { refresh?: boolean; signal?: AbortSignal } = {}): Promise<string | null> {
   const cfg = readGithubAppConfig(env);
   if (!cfg) return null;
   const id = `${cfg.appId}:${cfg.installationId}:${cfg.pem}`;
@@ -109,7 +109,7 @@ export async function getInstallationToken(env: GithubAppEnv, opts: { refresh?: 
   if (!opts.refresh && tokenCache?.id === id && tokenCache.expiresAt - REFRESH_MARGIN_MS > now) return tokenCache.token;
   tokenCache = null;
   try {
-    const got = await requestToken(cfg, now);
+    const got = await requestToken(cfg, now, opts.signal);
     if (!got) return null;
     tokenCache = { id, ...got };
     return got.token;
