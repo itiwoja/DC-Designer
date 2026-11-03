@@ -7,9 +7,10 @@ import { delimiter, dirname, join } from "node:path";
 import type { AssetContext, AssetRequest } from "../src/schema";
 import { httpError } from "./http-error";
 import { ImageGenError } from "./imagegen-error";
-import { appCodexExe, codexExeName, comfyBaseUrl, dataDir, readImageSettings } from "./image-settings";
+import { appCodexExe, codexExeName, comfyBaseUrl, readImageSettings } from "./image-settings";
 import { getSecret, hasSecret } from "./secrets";
 import { PINNED_CODEX, pinnedCodexAsset } from "./codex-pinned";
+import { dataDir, isDesktopMode as isDesktop } from "./env";
 
 /** 生成・取り込んだ画像の置き場所（/generated/<ファイル名> で配信。テストでは GENERATED_DIR で差し替える） */
 export const GENERATED_DIR = process.env.GENERATED_DIR || fileURLToPath(new URL("../public/generated/", import.meta.url));
@@ -54,7 +55,6 @@ type ImageProvider = "openai" | "gemini" | "comfyui" | "codex" | "placeholder";
 /** 透過背景を出せないプロバイダ。透過アセットは OpenAI が使えればそちらに回し、無ければ白背景で生成する */
 const NO_TRANSPARENCY: ImageProvider[] = ["gemini", "comfyui"];
 
-const isDesktop = () => process.env.DC_DESIGNER_DESKTOP === "1";
 
 /** キーが揃っていて今すぐ使えるプロバイダ（placeholder は常に使える）。
  *  ComfyUI はキー不要なので常に選択肢に出す（起動していなければ生成時に接続エラーを返す） */

@@ -1,14 +1,14 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { PosterSpecSchema, type PosterSpec } from "../src/schema";
 import { httpError } from "./http-error";
 import { GENERATED_DIR } from "./imagegen";
+import { dataDir } from "./env";
 
 const ID_RE = /^[a-z0-9]{12}$/;
 /** 保存先（テストでは DATA_DIR で一時ディレクトリに差し替える） */
-const DATA_DIR = process.env.DATA_DIR || fileURLToPath(new URL("../data/", import.meta.url));
+const DATA_DIR = dataDir();
 const newId = () => randomBytes(6).toString("hex");
 const now = () => new Date().toISOString();
 

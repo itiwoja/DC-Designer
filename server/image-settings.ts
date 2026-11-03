@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, posix, win32 } from "node:path";
-import { fileURLToPath } from "node:url";
 import { httpError } from "./http-error";
 import { PINNED_CODEX } from "./codex-pinned";
+import { dataDir, isDesktopMode as isDesktop } from "./env";
 
 /** 画像生成まわりの設定（画面の設定から保存。空文字＝既定） */
 export type ImageSettings = { comfyuiUrl: string; codexPath: string };
@@ -10,10 +10,8 @@ export type ImageSettings = { comfyuiUrl: string; codexPath: string };
 export const DEFAULT_COMFYUI_URL = "http://127.0.0.1:8188";
 
 /** データの置き場所（server/chatgpt.ts の MODEL_FILE と同じ決め方。呼び出しごとに読む） */
-export const dataDir = () => process.env.DATA_DIR || fileURLToPath(new URL("../data/", import.meta.url));
 const settingsFile = () => join(dataDir(), "image-settings.json");
 
-const isDesktop = () => process.env.DC_DESIGNER_DESKTOP === "1";
 
 /** 保存済みの設定。ファイルが無い・壊れている・型が違う項目は空文字（既定）として扱う */
 export function readImageSettings(): ImageSettings {

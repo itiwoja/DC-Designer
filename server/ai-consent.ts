@@ -9,6 +9,7 @@ import { AI_CONSENT_TTL_MS, payloadHash, type AiConsentPayload, type AiSubject }
 import type { MainToWorker, WorkerToMain } from "../desktop/protocol";
 import { allowAiSendOnce } from "./egress";
 import { httpError } from "./http-error";
+import { isDesktopMode } from "./env";
 
 export type ConsentDecision = Extract<MainToWorker, { type: "ai-consent-result" }>;
 export type AiOutcome = Extract<WorkerToMain, { type: "ai-outcome" }>["outcome"];
@@ -72,8 +73,6 @@ let backend: ConsentBackend | null = null;
 /** 製品版の worker が起動時に差し替える（テストは null で既定＝ゲートなしに戻す） */
 export function setConsentBackend(b: ConsentBackend | null): void { backend = b; }
 
-/** 製品版か（DC_DESIGNER_DESKTOP=1） */
-export const isDesktopMode = () => process.env.DC_DESIGNER_DESKTOP === "1";
 
 const subjectStore = new AsyncLocalStorage<AiSubject | undefined>();
 /** 画面が要求に付けた対象作品を、この呼び出しの間だけ requireConsent が payload に入れられるようにする */
