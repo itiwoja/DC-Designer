@@ -52,6 +52,20 @@ export type DesktopCallOptions = {
   onProgress?: (p: DesktopProgress) => void;
 };
 
+/** 発表者ビュー付きの投影で使う画面（モニター）。id は Electron の Display.id */
+export type PresenterDisplay = {
+  id: number;
+  /** 画面に出す名前（例「メイン画面（1920×1080）」） */
+  label: string;
+  /** OS のメイン画面か */
+  primary: boolean;
+};
+export type PresenterPlacement = {
+  displays: PresenterDisplay[];
+  /** スライドを映している画面（全画面にできなければ null） */
+  slideDisplayId: number | null;
+};
+
 export type DesktopBridge = {
   /** 静的操作表（desktop/operations.ts）にある操作だけ */
   request(req: DesktopRequest, opts?: DesktopCallOptions): Promise<DesktopResult>;
@@ -100,6 +114,24 @@ export type DesktopBridge = {
     /** 解除関数を返す */
     onStateChanged(cb: (s: UpdateSnapshot) => void): () => void;
   };
+  /**
+   * スライドショーの窓の置き場所（Issue #76）。スライドは編集窓を全画面にして映し、発表者ビューの窓は別の画面へ置く。
+   * Web 版の Window Management API の代わりに main が画面を扱う
+   */
+  presenter: {
+    /**
+     * 編集窓を displayId の画面へ移して全画面にする。displayId を省く・見つからないときは、発表者ビューの窓があり画面が 2 つ以上ならメイン画面、
+     * そうでなければ編集窓が今ある画面。発表者ビューの窓がスライドと同じ画面にあれば別の画面へ移して最大化する。
+     * withView は発表者ビューの窓を開いたか（開いたときだけ main が窓の登録を少し待つ。画面が 1 つなら全画面にせず発表者ビューを前に出す）
+     */
+    start(opts: { displayId?: number; withView: boolean }): Promise<PresenterPlacement>;
+    /** 投影中にスライドを映す画面を変える */
+    move(displayId: number): Promise<PresenterPlacement>;
+    /** 全画面を解き、編集窓を start 前の位置・大きさ・最大化状態に戻す */
+    end(): Promise<void>;
+    /** つながっている画面（モニター）の数。2 つ以上なら投影を発表者ビュー付きで始める */
+    displayCount(): Promise<number>;
+  };
   /** 要望・不具合のフォーム。メニュー「ヘルプ → 要望・不具合を送る…」で main が開く合図を送る */
   feedback: {
     /** 解除関数を返す */
@@ -135,4 +167,8 @@ export const IPC = {
   cancel: "dc:api-cancel",
   /** main → 画面：要望フォームを開く（値なし） */
   feedbackOpen: "dc:feedback-open",
+  presenterStart: "dc:presenter-start",
+  presenterMove: "dc:presenter-move",
+  presenterEnd: "dc:presenter-end",
+  presenterDisplayCount: "dc:presenter-display-count",
 } as const;

@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import {
-  app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, safeStorage, session, shell, utilityProcess,
+  app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, safeStorage, screen, session, shell, utilityProcess,
   type IpcMainInvokeEvent, type MenuItemConstructorOptions,
 } from "electron";
 import { autoUpdater } from "electron-updater";
@@ -18,11 +18,12 @@ import {
 import { createAppHandler } from "./appHandler";
 import { createAiConsentBroker } from "./aiConsent";
 import { createAuthGate } from "./authGate";
-import { IPC, type DesktopResult, type PrepareCloseResult } from "./bridge";
+import { IPC, type DesktopResult, type PrepareCloseResult, type PresenterPlacement } from "./bridge";
 import { createCallRegistry, parseCallOptions } from "./callRegistry";
 import { createCloseCoordinator } from "./close";
 import { consentDialogOptions, createFontGate, installDialogOptions } from "./fontGate";
 import { resolveDesktopRequest } from "./operations";
+import { isPresenterPopup, pickSlideDisplay, pickViewDisplay, toPresenterDisplays } from "./presenterWindow";
 import { USER_ROOT_DIRS } from "./protocol";
 import { buildWorkerEnv, createRuntime, type WorkerChild } from "./runtime";
 import { createSecretStore, type SecretResult } from "./secrets";
@@ -178,6 +179,26 @@ function registerIpc(): void {
   ipcMain.handle(IPC.retryStart, (e) => {
     if (!isTrusted(e)) throw new Error("UNAUTHORIZED_CONTEXT");
     return runtime.retryStart();
+  });
+  // 発表者ビュー：画面 id は整数だけ通す（start は省略可）
+  ipcMain.handle(IPC.presenterStart, (e, opts: unknown): Promise<PresenterPlacement> => {
+    if (!isTrusted(e)) throw new Error("UNAUTHORIZED_CONTEXT");
+    const o = (opts && typeof opts === "object" ? opts : {}) as { displayId?: unknown; withView?: unknown };
+    if (o.displayId !== undefined && !Number.isInteger(o.displayId)) throw new Error("INVALID_ARGUMENT");
+    return presenterStart(o.displayId as number | undefined, o.withView === true);
+  });
+  ipcMain.handle(IPC.presenterMove, (e, displayId: unknown): PresenterPlacement => {
+    if (!isTrusted(e)) throw new Error("UNAUTHORIZED_CONTEXT");
+    if (!Number.isInteger(displayId)) throw new Error("INVALID_ARGUMENT");
+    return presenterMove(displayId as number);
+  });
+  ipcMain.handle(IPC.presenterDisplayCount, (e): number => {
+    if (!isTrusted(e)) throw new Error("UNAUTHORIZED_CONTEXT");
+    return screen.getAllDisplays().length;
+  });
+  ipcMain.handle(IPC.presenterEnd, (e): void => {
+    if (!isTrusted(e)) throw new Error("UNAUTHORIZED_CONTEXT");
+    presenterEnd();
   });
   ipcMain.handle(IPC.windowTheme, (e, theme: unknown): void => {
     if (!isTrusted(e) || (theme !== "light" && theme !== "dark")) return;
@@ -339,6 +360,97 @@ function buildMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(menu));
 }
 
+// ---- 発表者ビュー（Issue #76）----
+
+let presenterView: BrowserWindow | null = null;
+/** 投影を始める前の編集窓の位置・大きさ */
+let saved: { bounds: Electron.Rectangle; maximized: boolean } | null = null;
+
+const liveView = (): BrowserWindow | null => (presenterView && !presenterView.isDestroyed() ? presenterView : null);
+
+/** window.open の直後は did-create-window がまだのことがあるので、少しだけ待つ */
+async function waitForView(): Promise<BrowserWindow | null> {
+  for (let i = 0; i < 10 && !liveView(); i++) await new Promise((r) => setTimeout(r, 100));
+  return liveView();
+}
+
+const displayIdOf = (w: BrowserWindow): number => screen.getDisplayMatching(w.getBounds()).id;
+
+function placement(): PresenterPlacement {
+  const w = editorWindow;
+  return {
+    displays: toPresenterDisplays(screen.getAllDisplays(), screen.getPrimaryDisplay().id),
+    slideDisplayId: w && !w.isDestroyed() && w.isFullScreen() ? displayIdOf(w) : null,
+  };
+}
+
+/** 窓を画面の bounds へ移す。全画面・最大化は先に解く */
+function moveTo(w: BrowserWindow, bounds: Electron.Rectangle): void {
+  if (w.isFullScreen()) w.setFullScreen(false);
+  if (w.isMaximized()) w.unmaximize();
+  w.setBounds(bounds);
+}
+
+/** 発表者ビューがスライドと同じ画面なら別の画面へ移して最大化する。画面が 1 つ・すでに別の画面なら触らない */
+function placeView(slideId: number, editorDisplayId: number | null): void {
+  const v = liveView();
+  if (!v) return;
+  const displays = screen.getAllDisplays();
+  const viewId = pickViewDisplay(displays, slideId, editorDisplayId);
+  if (viewId === null || viewId === slideId || displayIdOf(v) === viewId) return;
+  const d = displays.find((x) => x.id === viewId);
+  if (!d) return;
+  moveTo(v, d.workArea);
+  v.maximize();
+}
+
+async function presenterStart(requested: number | undefined, withView: boolean): Promise<PresenterPlacement> {
+  const w = editorWindow;
+  if (!w || w.isDestroyed()) return placement();
+  const view = withView ? liveView() ?? await waitForView() : null;
+  const displays = screen.getAllDisplays();
+  // 画面が 1 つで発表者ビューがあるなら、全画面にすると発表者ビューが隠れるので、発表者ビューを前に出すだけにする
+  if (view && displays.length < 2) {
+    view.focus();
+    return placement();
+  }
+  const editorDisplayId = displayIdOf(w);
+  // 最大化中は getBounds が作業領域になるので、元に戻したときの大きさ（getNormalBounds）を覚える
+  if (!saved) saved = { bounds: w.getNormalBounds(), maximized: w.isMaximized() };
+  const slideId = pickSlideDisplay(displays, {
+    requested, hasView: !!view, editorDisplayId, primaryId: screen.getPrimaryDisplay().id,
+  });
+  const d = displays.find((x) => x.id === slideId);
+  if (d) {
+    moveTo(w, d.bounds);
+    w.setFullScreen(true);
+    if (view) placeView(d.id, saved && screen.getDisplayMatching(saved.bounds).id);
+  }
+  return placement();
+}
+
+function presenterMove(id: number): PresenterPlacement {
+  const w = editorWindow;
+  const d = screen.getAllDisplays().find((x) => x.id === id);
+  if (!w || w.isDestroyed() || !d) return placement();
+  moveTo(w, d.bounds);
+  w.setFullScreen(true);
+  placeView(d.id, saved ? screen.getDisplayMatching(saved.bounds).id : null);
+  return placement();
+}
+
+function presenterEnd(): void {
+  const w = editorWindow;
+  if (!w || w.isDestroyed()) { saved = null; return; }
+  if (w.isFullScreen()) w.setFullScreen(false);
+  const s = saved;
+  saved = null;
+  if (!s) return;
+  if (w.isMaximized()) w.unmaximize();
+  w.setBounds(s.bounds);
+  if (s.maximized) w.maximize();
+}
+
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1440, height: 900, minWidth: 1024, minHeight: 640, show: false, autoHideMenuBar: true,
@@ -362,7 +474,18 @@ function createWindow(): BrowserWindow {
     e.preventDefault();
     void closer.requestClose();
   });
-  win.on("closed", () => { if (editorWindow === win) editorWindow = null; });
+  // 発表者ビューの窓を覚える（閉じたら忘れる。編集窓が閉じたら一緒に閉じる）
+  win.webContents.on("did-create-window", (child) => {
+    presenterView = child;
+    child.on("closed", () => { if (presenterView === child) presenterView = null; });
+  });
+  win.on("closed", () => {
+    if (editorWindow === win) editorWindow = null;
+    saved = null;
+    const v = presenterView;
+    presenterView = null;
+    if (v && !v.isDestroyed()) v.destroy();
+  });
   return win;
 }
 
@@ -371,7 +494,17 @@ function hardenContents(): void {
   app.on("web-contents-created", (_e, contents) => {
     contents.on("will-attach-webview", (e) => e.preventDefault());
     if (contents.getType() !== "window") return;
-    contents.setWindowOpenHandler(({ url }) => {
+    contents.setWindowOpenHandler(({ url, frameName }) => {
+      // 発表者ビュー（編集窓が開く名前つきの空の窓）だけ許す
+      if (isPresenterPopup({ url, frameName, fromEditor: !!editorWindow && contents === editorWindow.webContents })) {
+        return {
+          action: "allow",
+          overrideBrowserWindowOptions: {
+            autoHideMenuBar: true, title: "発表者ビュー", backgroundColor: "#111",
+            webPreferences: { partition: PARTITION, sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, spellcheck: false },
+          },
+        };
+      }
       if (isExternalHttpsUrl(url)) void shell.openExternal(url);
       return { action: "deny" };
     });

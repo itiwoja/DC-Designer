@@ -59,6 +59,12 @@ const bridge: DesktopBridge = {
     respond: (promptId, action) => ipcRenderer.invoke(IPC.updateRespond, promptId, action),
     onStateChanged: (cb) => subscribe<UpdateSnapshot>(IPC.updateState, cb),
   },
+  presenter: {
+    start: (opts) => ipcRenderer.invoke(IPC.presenterStart, { displayId: opts.displayId, withView: opts.withView === true }),
+    move: (displayId) => ipcRenderer.invoke(IPC.presenterMove, displayId),
+    end: () => ipcRenderer.invoke(IPC.presenterEnd),
+    displayCount: () => ipcRenderer.invoke(IPC.presenterDisplayCount),
+  },
   feedback: {
     onOpen: (cb) => subscribe<unknown>(IPC.feedbackOpen, () => cb()),
   },
