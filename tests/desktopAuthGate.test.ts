@@ -14,7 +14,7 @@ function setup(opts: { complete?: (query: Record<string, string>) => unknown; st
   let n = 0;
   const gate = createAuthGate({
     timeoutMs: opts.timeoutMs,
-    request: async (op: DesktopOperation, path: string, body: unknown): Promise<DesktopResult> => {
+    request: async (_op: DesktopOperation, path: string, body: unknown): Promise<DesktopResult> => {
       calls.push({ route: path, body });
       if (path === "/api/auth/chatgpt/start") return { ok: true, data: opts.start ? opts.start() : { url: authUrl(`s${++n}`) } };
       return { ok: true, data: opts.complete ? opts.complete((body as any).query) : { kind: "done", result: "signed-in" } };

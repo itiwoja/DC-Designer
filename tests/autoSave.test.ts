@@ -7,7 +7,7 @@ import { PosterSpecSchema } from "../src/schema";
 import { resolveTheme } from "../src/themes";
 import { api } from "../src/editor/api";
 import { CURRENT_ID_KEY, STORAGE_KEY, SYNCED_KEY } from "../src/editor/storage";
-import { SAVE_FAILED, useAutoSave } from "../src/editor/useAutoSave";
+import { useAutoSave } from "../src/editor/useAutoSave";
 import { useDeck } from "../src/editor/useDeck";
 
 const spec = (title: string) => PosterSpecSchema.parse({ meta: { title, width: 1000, height: 1414 }, theme: "ocean", layers: [] });
