@@ -7,6 +7,8 @@
 export type FeedbackKind = "request" | "bug" | "question";
 export const FEEDBACK_KINDS: readonly FeedbackKind[] = ["request", "bug", "question"];
 export const FEEDBACK_KIND_LABELS: Record<FeedbackKind, string> = { request: "要望", bug: "不具合", question: "質問" };
+/** 画面で選べる種類。question は旧版のアプリから届くので受け付けは続けるが、画面には出さない */
+export const FEEDBACK_SELECTABLE_KINDS: readonly FeedbackKind[] = ["request", "bug"];
 
 /** 件名・本文の上限（文字数）。中継でも同じ値で検証する */
 export const FEEDBACK_MAX_TITLE = 200;
