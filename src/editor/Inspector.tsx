@@ -551,13 +551,15 @@ export function Inspector({ layer, multiCount, spec, onChange, onReplace, onRege
             const family = familyOf(spec, layer.font);
             const range = weightRange(family);
             if (!range) return null;
-            const { extra } = syntheticWeight(family, layer.weight);
+            const { face, extra } = syntheticWeight(family, layer.weight);
             const lighter = lighterFontSuggestions(family);
             return (
               <>
                 <p className="hint small">
                   このフォントの太さ: {range.min === range.max ? range.min : `${range.min}〜${range.max}`}
-                  {extra > 0 && `（${range.max} より太いぶんは文字に線を足しています）`}
+                  {extra > 0 && (face === range.max
+                    ? `（${range.max} より太いぶんは文字に線を足しています）`
+                    : `（${face} の文字に線を足して ${layer.weight} にしています）`)}
                 </p>
                 {lighter.length > 0 && (
                   <div className="row">
