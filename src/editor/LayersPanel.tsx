@@ -27,7 +27,7 @@ interface Props {
   onAddComponent: (name: string) => void;
   /** PPTX モード: レイヤー id → アニメーションの再生順 */
   animOrder?: Map<string, number>;
-  /** 開いているか。閉じるとリストと追加欄を出さず、見出しだけになる */
+  /** 開いているか。閉じるとリストを出さず、見出しと追加のボタンだけになる */
   open: boolean;
   onToggle: (open: boolean) => void;
 }
@@ -49,16 +49,16 @@ export function LayersPanel({ spec, selectedIds, hovered, generatingIds, onSelec
           <Ico name={open ? "chevronDown" : "chevronUp"} size={14} />
         </button>
       </h3>
+      {/* 追加のボタンは畳んでも残す（文字・パーツを足せるのはここだけ） */}
+      <div className="add-row">
+        <button onClick={onAddText}><Ico name="type" size={14} /> 文字</button>
+        <button onClick={onAddImage}><Ico name="image" size={14} /> 画像</button>
+        <select value="" onChange={(e) => e.target.value && onAddComponent(e.target.value)} aria-label="パーツを追加">
+          <option value="">＋パーツ…</option>
+          {CATALOG.map((c) => <option key={c.name} value={c.name}>{c.label}</option>)}
+        </select>
+      </div>
       {open && (
-        <>
-        <div className="add-row">
-          <button onClick={onAddText}><Ico name="type" size={14} /> 文字</button>
-          <button onClick={onAddImage}><Ico name="image" size={14} /> 画像</button>
-          <select value="" onChange={(e) => e.target.value && onAddComponent(e.target.value)} aria-label="パーツを追加">
-            <option value="">＋パーツ…</option>
-            {CATALOG.map((c) => <option key={c.name} value={c.name}>{c.label}</option>)}
-          </select>
-        </div>
         <ul className="layers" role="listbox" aria-label="レイヤー一覧（上が前面）" aria-multiselectable onPointerLeave={() => onHover(null)}>
           {[...spec.layers].reverse().map((l) => {
             const isPending = findPendingAssets({ ...spec, layers: [l] }).length > 0;
@@ -130,7 +130,6 @@ export function LayersPanel({ spec, selectedIds, hovered, generatingIds, onSelec
             );
           })}
         </ul>
-        </>
       )}
     </section>
   );

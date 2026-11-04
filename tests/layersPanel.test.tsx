@@ -42,12 +42,13 @@ it("開いているときは追加欄とレイヤー一覧を出し、aria-expan
   expect(container.querySelector("ul.layers")).not.toBeNull();
 });
 
-it("閉じているときは見出しだけで、追加欄とレイヤー一覧を出さない", async () => {
+it("閉じているときは見出しと追加欄だけで、レイヤー一覧を出さない", async () => {
   await render(false);
   expect(toggle().getAttribute("aria-expanded")).toBe("false");
   expect(toggle().getAttribute("aria-label")).toBe("レイヤーを開く");
   expect(container.querySelector("h3")).not.toBeNull();
-  expect(container.querySelector(".add-row")).toBeNull();
+  // 文字・パーツを足せるのはこの欄だけなので、畳んでも残す
+  expect(container.querySelector(".add-row")).not.toBeNull();
   expect(container.querySelector("ul.layers")).toBeNull();
 });
 
