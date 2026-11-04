@@ -5,7 +5,7 @@ import { BGM_FILE_MAX_BYTES, createBgmPlayer } from "../bgm";
 import { LayerSchema } from "../schema";
 import { CATALOG_BY_NAME } from "../components/catalog";
 import { THEMES, resolveTheme } from "../themes";
-import { FONT_BY_FAMILY, FONT_CATALOG, FONT_ROLE_LABELS, FONT_SCRIPT_LABELS, clampWeightToFont, lighterFontSuggestions, syntheticWeight, weightChoicesFor, weightRange, type FontScript } from "../fonts";
+import { FONT_BY_FAMILY, FONT_CATALOG, FONT_ROLE_LABELS, FONT_SCRIPT_LABELS, clampWeightToFont, lighterFontSuggestions, snapWeightToChoice, syntheticWeight, weightChoicesFor, weightRange, type FontScript } from "../fonts";
 import { TYPE_LABEL } from "./LayersPanel";
 import { CROP_MAX_SCALE, clampCrop, cropLimits, cropTarget, roundPhotoRadius, withCrop } from "../render/ImageBox";
 import { Ico } from "./uiIcons";
@@ -70,9 +70,12 @@ function familyOf(spec: PosterSpec, font: string): string {
 
 /**
  * 太さの数値入力。打った値は Enter かフォーカスを外したときに確定する（打ちかけの「7」「70」を反映しない）。
- * ▲▼・矢印キーは 100 刻み（フォントが持つ太さを含む）の次の値へ進む
+ * ▲▼・矢印キーも、打った値も、そのフォントで選べる太さ（持っている太さ＋最大より上の 100 刻み）だけにする。
+ * 間の値を打ったら最も近い選択肢に丸める。カタログに無いフォントは任意の整数。
+ * 保存済みの間の値（AI が 600 を入れた等）は書き換えず、▲▼を押したときに次の選択肢へ進む。
+ * 最小より細くしようとしたとき（最小で▼・↓、最小より細い値の確定）は onTooLight で知らせる
  */
-function WeightInput({ spec, layer, onChange }: { spec: PosterSpec; layer: Extract<Layer, { type: "text" }>; onChange: (v: number) => void }) {
+function WeightInput({ spec, layer, onChange, onTooLight }: { spec: PosterSpec; layer: Extract<Layer, { type: "text" }>; onChange: (v: number) => void; onTooLight: () => void }) {
   const family = familyOf(spec, layer.font);
   const options = weightChoicesFor(family);
   const min = weightRange(family)?.min ?? 1;
@@ -83,19 +86,21 @@ function WeightInput({ spec, layer, onChange }: { spec: PosterSpec; layer: Extra
   const commit = () => {
     const v = Number(text);
     if (text.trim() === "" || !Number.isFinite(v)) return setText(String(shown));
-    const w = Math.round(Math.min(1000, Math.max(min, v)));
+    if (v < min && weightRange(family)) onTooLight();
+    const w = snapWeightToChoice(family, Math.max(min, v));
     setText(String(w));
     if (w !== layer.weight) onChange(w);
   };
   const stepTo = (dir: 1 | -1) => {
     const next = dir > 0 ? options.find((w) => w > shown) : [...options].reverse().find((w) => w < shown);
     if (next !== undefined) onChange(next);
+    else if (dir < 0 && weightRange(family)) onTooLight();
   };
   return (
     <label className="num">
       <span>太さ</span>
       <input
-        type="number" min={min} max={1000} step={100} value={text}
+        type="number" step={100} value={text}
         onChange={(e) => {
           const v = Number(e.target.value);
           // ▲▼のクリックは inputType が空で届く。打鍵・貼り付けは打っている途中とみなす
@@ -460,6 +465,9 @@ export function TransitionBox({ transition: t, bgm, slideCount, onChange, onBgmC
 export function Inspector({ layer, multiCount, spec, onChange, onReplace, onRegenerate, onPickImage, onDuplicate, onDelete, onAlign, onArrange, busy, generating, cropping, cropRatio, onToggleCrop, animation, mod }: Props) {
   const [json, setJson] = useState("");
   const [jsonErr, setJsonErr] = useState<string | null>(null);
+  // 最小より細くしようとしたレイヤー（代わりのフォントのボタンを出す）。レイヤーを選び直したら消す
+  const [lightTryId, setLightTryId] = useState<string | null>(null);
+  useEffect(() => setLightTryId(null), [layer?.id]);
   useEffect(() => { setJson(layer ? JSON.stringify(layer, null, 2) : ""); setJsonErr(null); }, [layer]);
   // 「画像ファイル」の行へ画像をドロップしたら差し替える（キャンバスの画像へのドロップと同じ）
   const imageDrop = useFileDrop((files) => onPickImage(files), { disabled: busy || generating });
@@ -548,7 +556,7 @@ export function Inspector({ layer, multiCount, spec, onChange, onReplace, onRege
           </label>
           <div className="grid4">
             <Num label="サイズ" value={layer.size} onChange={(v) => onChange({ size: v } as any, `s-${layer.id}`)} />
-            <WeightInput spec={spec} layer={layer} onChange={(v) => onChange({ weight: v } as any, `wt-${layer.id}`)} />
+            <WeightInput spec={spec} layer={layer} onChange={(v) => onChange({ weight: v } as any, `wt-${layer.id}`)} onTooLight={() => setLightTryId(layer.id)} />
             <Num label="行間" step={0.05} value={layer.lineHeight} onChange={(v) => onChange({ lineHeight: v } as any, `lh-${layer.id}`)} />
             <Num label="字間em" step={0.01} value={layer.letterSpacing ?? 0} onChange={(v) => onChange({ letterSpacing: v } as any, `ls-${layer.id}`)} />
           </div>
@@ -557,7 +565,8 @@ export function Inspector({ layer, multiCount, spec, onChange, onReplace, onRege
             const range = weightRange(family);
             if (!range) return null;
             const { face, extra } = syntheticWeight(family, layer.weight);
-            const lighter = lighterFontSuggestions(family);
+            const lighter = lightTryId === layer.id ? lighterFontSuggestions(family) : [];
+            const role = resolveTheme(spec.theme, spec.themeOverride).fonts[layer.font] !== undefined ? layer.font : null;
             return (
               <>
                 <p className="hint small">
@@ -570,7 +579,7 @@ export function Inspector({ layer, multiCount, spec, onChange, onReplace, onRege
                   <div className="row">
                     <span className="hint small">もっと細くするには</span>
                     {lighter.map((f) => (
-                      <button key={f.id} className="small" title={`${f.family} に変える（太さ ${f.weights.join(" / ")}）`}
+                      <button key={f.id} className="small" title={`${f.family} に変える（太さ ${f.weights.join(" / ")}）` + (role ? `。このテキストだけ変わります（テーマの ${role} から外れます）` : "")}
                         onClick={() => onChange({ font: f.family } as any)}>{f.family}</button>
                     ))}
                   </div>
