@@ -38,7 +38,7 @@ import { HOME_URL, IMPORT_NOTICE_KEY, loadInitialSpec, PENDING_BRIEF_KEY } from 
 import { modeHomeUrl, modeLibraryUrl, modeOfDeck, MODES, readModeParam, writeLastId, type AppMode } from "./mode";
 import { slideRefs } from "./slideRefs";
 import { slidePalette } from "./slidePalette";
-import { imagePromptOf, isImageRedoRequest, isImageRequest, isTransparentRequest, routeChatRequest } from "./chatRoute";
+import { imagePromptOf, isImageRedoRequest, isImageRequest, isTransparentRequest, redoPromptOf, routeChatRequest } from "./chatRoute";
 import { slashSuggestions, SlashMenu, type SlashCommand } from "./slashCommands";
 import {
   aspectOf, assetHolder, diffLayers, IMAGE_FILE_ACCEPT, IMAGE_FILE_TYPES, imageSlot, insertAfter, placeImage, replaceableByImage,
@@ -574,7 +574,14 @@ export function App() {
       case "write-notes":
         return writeNotesTurn(regen?.msg ?? { text, mode: "chat" }, restore, { targets: route.targets, request: text });
       case "image":
-        return generateImageHere(text, route.prompt, restore, { redo: route.redo, regen: regen?.msg, transparent: route.transparent });
+        // 参考資料を添付しているときは、画像生成ではなく AI の修正に回す（画像生成は添付を使えない）
+        if (refs.length && !regen) break;
+        if (route.redo && !selHolder) {
+          restore();
+          notify({ kind: "info", text: "作り直す画像を選んでから送ってください" });
+          return;
+        }
+        return generateImageHere(text, route.prompt, restore, { redo: route.redo, append: route.redo, regen: regen?.msg, transparent: route.transparent });
     }
     // 通常編集だけでなく、全スライドへの適用・スライド追加・再送信でも同じ添付を使う。
     const requestText = regen ? text : text + referenceCaption;
@@ -814,17 +821,21 @@ export function App() {
    * チャットの画像生成（/image と「海の写真を作って」）。redo なら選択中の画像を作り直し、そうでなければ新しい画像を置く
    * （選択中の画像は消さない。選択中の別の要素があればその位置、無ければ中央）。透過は依頼文から読む
    */
-  const generateImageHere = (text: string, prompt: string, restoreInput: () => void, opts: { redo: boolean; regen?: ChatMsg; transparent?: boolean }) =>
+  const generateImageHere = (text: string, prompt: string, restoreInput: () => void, opts: { redo: boolean; append?: boolean; regen?: ChatMsg; transparent?: boolean }) =>
     chatTurn(opts.regen ?? { text, scope: (opts.redo ? imageScope : selHolder ? null : imageScope) ?? "新しい画像", mode: "image" }, "画像を生成中", restoreInput, async (signal) => {
       const before = spec;
       const transparent = opts.transparent ?? isTransparentRequest(text);
       if (opts.redo && selectedLayer && selHolder) {
-        const asset = { ...selHolder.asset, prompt, transparent: transparent || !!selHolder.asset.transparent };
+        // 「この画像を水彩風に作り直して」は元のプロンプトに注文を足す（依頼文で置き換えると何の絵か分からなくなる）
+        const orig = selHolder.asset.prompt;
+        const nextPrompt = opts.append ? (prompt ? `${orig}。${prompt}` : orig) : prompt;
+        const asset = { ...selHolder.asset, prompt: nextPrompt, transparent: transparent || !!selHolder.asset.transparent };
         const patch = selHolder.rest.length ? { props: { ...(selectedLayer as any).props, asset } } : { asset };
         updateLayer(selectedLayer.id, patch as Partial<Layer>);
         const src = await generateOne({ layerId: selectedLayer.id, rest: selHolder.rest }, asset, signal);
         return { text: "画像を作り直しました", images: [src], before, posterId: posterIdRef.current };
       }
+      if (opts.append) throw new Error("作り直す画像を選んでから送ってください");
       const at = selectedLayer && selectedLayer.type !== "background" && !selHolder
         ? { x: selectedLayer.x, y: selectedLayer.y, w: selectedLayer.w, h: selectedLayer.h, rotation: selectedLayer.rotation }
         : { x: Math.round((W - 400) / 2), y: Math.round((H - 400) / 2), w: 400, h: 400 };
@@ -845,6 +856,7 @@ export function App() {
     if (busy || readingRefs || (m.hasReferences && !m.references)) return;
     if (m.mode === "image") {
       const slash = /^[/／]image\s+/.exec(m.text);
+      if (!slash && isImageRedoRequest(m.text)) return generateImageHere(m.text, redoPromptOf(m.text), () => {}, { redo: true, append: true, regen: m });
       return generateImageHere(m.text, slash ? m.text.slice(slash[0].length) : imagePromptOf(m.text), () => {}, { redo: true, regen: m });
     }
     const i = chat.messages.findIndex((x) => x.id === m.id);

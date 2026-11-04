@@ -82,11 +82,17 @@ describe("routeChatRequest", () => {
     expect(poster("猫のイラストを背景なしで作って")).toMatchObject({ kind: "image", transparent: true });
     expect(poster("透過で星のイラストを作って")).toMatchObject({ kind: "image", transparent: true });
     expect(isTransparentRequest("海の写真を作って")).toBe(false);
+    expect(poster("透明背景で猫のイラストを作って")).toMatchObject({ kind: "image", transparent: true });
+    expect(poster("背景を透過して猫のイラストを作って")).toMatchObject({ kind: "image", transparent: true });
   });
 
   it("選択中の画像を作り直す依頼", () => {
     expect(poster("この画像を水彩風に作り直して")).toMatchObject({ kind: "image", redo: true });
-    expect(poster("写真を再生成して")).toMatchObject({ kind: "image", redo: true });
+    expect(poster("写真を再生成して")).toMatchObject({ kind: "image", redo: true, prompt: "" });
+    // 元のプロンプトに足す注文だけを取り出す
+    expect(poster("この画像を水彩風に作り直して")).toMatchObject({ prompt: "水彩風" });
+    // 配置・デザインの作り直しは AI の修正
+    for (const t of ["画像の配置を作り直して", "画像を使ってデザインを作り直して"]) expect(poster(t).kind, t).toBe("edit");
   });
 
   it("既存の画像の編集・位置の指定・ほかの修正との同居は AI の修正に回す", () => {
@@ -94,6 +100,7 @@ describe("routeChatRequest", () => {
       "画像を消して", "この画像を右に動かして", "写真を大きくして", "その写真を削除して", "画像はいらない",
       "右下に海の写真を入れて", "背景に写真を入れて", "写真を入れて、タイトルを大きくして",
       "画像入りのスライドを作って", "写真付きのポスターを作って", "この写真を使ってチラシを作って",
+      "写真のキャプションを入れて", "画像の説明文を追加して", "写真の出典を載せて", "イラストレーターの名前を入れて", "写真集のタイトルを作って",
     ]) {
       expect(poster(t), t).toEqual({ kind: "edit" });
     }
