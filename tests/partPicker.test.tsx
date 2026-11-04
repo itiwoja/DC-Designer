@@ -52,3 +52,50 @@ it("見本用の props はカタログの defaults を書き換えない", () =>
   expect(thumbProps(polaroid).src).toBeTruthy();
   expect(polaroid.defaults.src).toBeUndefined();
 });
+
+const key = (k: string) => act(async () => { document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true })); });
+
+it("開くと最初のマスへフォーカスが入り、矢印キーで動き、Esc で閉じてボタンへ戻る", async () => {
+  // jsdom には配置が無いので、3 列の並びとして offsetTop を返す
+  const desc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetTop");
+  Object.defineProperty(HTMLElement.prototype, "offsetTop", {
+    configurable: true,
+    get() { const cs = [...document.querySelectorAll(".part-cell")]; return Math.floor(cs.indexOf(this) / 3) * 100; },
+  });
+  try {
+    await act(async () => root.render(<PartPicker spec={spec} onPick={() => {}} />));
+    expect(trigger().getAttribute("aria-haspopup")).toBe("dialog");
+    await act(async () => trigger().click());
+    const cells = [...container.querySelectorAll<HTMLButtonElement>(".part-cell")];
+    expect(document.activeElement).toBe(cells[0]);
+    await key("ArrowRight"); expect(document.activeElement).toBe(cells[1]);
+    await key("ArrowDown"); expect(document.activeElement).toBe(cells[4]);
+    await key("ArrowLeft"); expect(document.activeElement).toBe(cells[3]);
+    await key("ArrowUp"); expect(document.activeElement).toBe(cells[0]);
+    await key("ArrowUp"); expect(document.activeElement).toBe(cells[0]);
+    await key("End"); expect(document.activeElement).toBe(cells[cells.length - 1]);
+    await key("Home"); expect(document.activeElement).toBe(cells[0]);
+    await act(async () => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    expect(container.querySelector(".part-grid")).toBeNull();
+    expect(document.activeElement).toBe(trigger());
+  } finally {
+    if (desc) Object.defineProperty(HTMLElement.prototype, "offsetTop", desc); else delete (HTMLElement.prototype as unknown as Record<string, unknown>).offsetTop;
+  }
+});
+
+it("選ぶと追加して、ボタンへフォーカスが戻る", async () => {
+  const onPick = vi.fn();
+  await act(async () => root.render(<PartPicker spec={spec} onPick={onPick} />));
+  await act(async () => trigger().click());
+  await act(async () => container.querySelectorAll<HTMLButtonElement>(".part-cell")[2].click());
+  expect(onPick).toHaveBeenCalledWith(CATALOG[2].name);
+  expect(document.activeElement).toBe(trigger());
+});
+
+it("親が描き直されても、開いている一覧は描き直さない", async () => {
+  await act(async () => root.render(<PartPicker spec={spec} onPick={() => {}} />));
+  await act(async () => trigger().click());
+  const svg = container.querySelector(".part-cell svg")!;
+  await act(async () => root.render(<PartPicker spec={spec} onPick={() => {}} />));
+  expect(container.querySelector(".part-cell svg")).toBe(svg);
+});
