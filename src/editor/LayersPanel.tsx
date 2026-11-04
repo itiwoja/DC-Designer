@@ -1,8 +1,9 @@
 import { useState } from "react";
 import type { Layer, PosterSpec } from "../schema";
 import { findPendingAssets } from "../schema";
-import { CATALOG, CATALOG_BY_NAME } from "../components/catalog";
+import { CATALOG_BY_NAME } from "../components/catalog";
 import { Ico } from "./uiIcons";
+import { PartPicker } from "./PartPicker";
 
 export const TYPE_LABEL: Record<Layer["type"], string> = {
   background: "背景", shape: "図形", text: "テキスト", image: "画像", component: "パーツ", group: "グループ",
@@ -40,10 +41,7 @@ export function LayersPanel({ spec, selectedIds, hovered, generatingIds, onSelec
       <div className="add-row">
         <button onClick={onAddText}><Ico name="type" size={14} /> 文字</button>
         <button onClick={onAddImage}><Ico name="image" size={14} /> 画像</button>
-        <select value="" onChange={(e) => e.target.value && onAddComponent(e.target.value)} aria-label="パーツを追加">
-          <option value="">＋パーツ…</option>
-          {CATALOG.map((c) => <option key={c.name} value={c.name}>{c.label}</option>)}
-        </select>
+        <PartPicker spec={spec} onPick={onAddComponent} />
       </div>
       <ul className="layers" role="listbox" aria-label="レイヤー一覧（上が前面）" aria-multiselectable onPointerLeave={() => onHover(null)}>
         {[...spec.layers].reverse().map((l) => {
