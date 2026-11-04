@@ -139,6 +139,7 @@ export function App() {
   const {
     leftOpen, toggleLeft, rightOpen, toggleRight, leftW, setLeftW, rightW, setRightW, resizing, setResizing, leftRef, rightRef,
     deckH, setDeckH, deckHeight, deckMax, notesOpen, toggleNotes, notesH, setNotesH, notesHeight, notesMax,
+    layersOpen, toggleLayers,
   } = usePanelLayout();
 
   // ---------- 保存 ----------
@@ -1586,7 +1587,7 @@ export function App() {
         </div>}
         </div>
 
-        <div className="right-card right-layers">
+        <div className={"right-card right-layers" + (layersOpen ? "" : " collapsed")}>
         <LayersPanel
           spec={spec}
           selectedIds={selectedIds}
@@ -1600,6 +1601,8 @@ export function App() {
           onAddImage={addImage}
           onAddComponent={addComponent}
           animOrder={isSlides ? animOrder : undefined}
+          open={layersOpen}
+          onToggle={toggleLayers}
         />
         </div>
         </div>

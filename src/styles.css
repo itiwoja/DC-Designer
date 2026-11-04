@@ -230,6 +230,10 @@ button.brand:hover:not(:disabled), button.brand[aria-expanded="true"] { backgrou
 /* 編集中の要素名は、スクロールしても上に残す */
 .right .inspector .insp-head { position: sticky; top: 0; z-index: 1; margin: -12px -12px 0; padding: 12px 12px 8px; background: var(--panel); box-shadow: 0 1px 0 var(--line); }
 .right-layers > .panel.grow { flex: 1; min-height: 0; border-bottom: none; }
+/* 畳んだレイヤー欄は見出しだけの高さにして、その分インスペクターを伸ばす */
+.right-layers.collapsed { flex: 0 0 auto; min-height: 0; }
+.right-layers.collapsed > .panel.grow { flex: 0 0 auto; }
+.right-edit:has(+ .right-layers.collapsed) { flex: 1 1 auto; max-height: none; }
 .panel { padding: 12px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--line); }
 .panel.grow { flex: 1; min-height: 400px; }
 .tabs { display: flex; background: var(--surface); border-radius: var(--radius); padding: 3px; gap: 2px; }
