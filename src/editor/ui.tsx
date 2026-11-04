@@ -8,6 +8,8 @@ import { api } from "./api";
 
 /**
  * ボタンで開閉するメニュー。外側のクリック・Esc で閉じる（Esc は preventDefault して、ほかのショートカットには使わせない）。
+ * 開いたら中の最初の操作（data-autofocus か aria-current が付いたものがあればそれ）へフォーカスを移し、
+ * 閉じたら開いたボタンへ戻す（外側クリックで閉じたときは、クリックした先を優先して戻さない）。
  * レイヤー側で stopPropagation されるため、ポインタ・キーは capture で拾う。
  * fixed を付けると .menu-list を画面基準（position: fixed）で置き直し、親の overflow: hidden で切れず、画面の端からもはみ出さない
  * （CSS で決めた上下・左右の向きはそのまま使う。transform や backdrop-filter の付いた親の中では使わない）
@@ -20,6 +22,22 @@ export function Menu({ className, fixed, trigger, children }: {
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const wasOpen = useRef(false);
+  const skipRestore = useRef(false);
+  useEffect(() => {
+    const box = ref.current;
+    if (open) {
+      skipRestore.current = false;
+      const list = box?.querySelector<HTMLElement>(":scope > .menu-list");
+      const target = list?.querySelector<HTMLElement>("[data-autofocus], [aria-current='true'], button:not(:disabled), a[href], input:not(:disabled)");
+      target?.focus({ preventScroll: true });
+    } else if (wasOpen.current && !skipRestore.current) {
+      // 閉じたあとフォーカスが消えた（中から外れて body に落ちた）ときだけ、開いたボタンへ戻す
+      const a = document.activeElement;
+      if (!a || a === document.body || box?.contains(a)) (box?.firstElementChild as HTMLElement | null)?.focus?.();
+    }
+    wasOpen.current = open;
+  }, [open]);
   useLayoutEffect(() => {
     if (!open || !fixed) return;
     const place = () => {
@@ -40,13 +58,13 @@ export function Menu({ className, fixed, trigger, children }: {
   }, [open, fixed]);
   useEffect(() => {
     if (!open) return;
-    const onPointer = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const onPointer = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) { skipRestore.current = true; setOpen(false); } };
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); setOpen(false); } };
     window.addEventListener("pointerdown", onPointer, true);
     window.addEventListener("keydown", onKey, true);
     return () => { window.removeEventListener("pointerdown", onPointer, true); window.removeEventListener("keydown", onKey, true); };
   }, [open]);
-  const close = () => setOpen(false);
+  const close = useCallback(() => setOpen(false), []);
   return (
     <div className={"menu" + (className ? ` ${className}` : "")} ref={ref}>
       {trigger({ open, toggle: () => setOpen((o) => !o) })}

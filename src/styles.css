@@ -275,7 +275,6 @@ button.brand:hover:not(:disabled), button.brand[aria-expanded="true"] { backgrou
 .chip button { border: none; background: none; padding: 0 4px; font-size: 12px; }
 
 .add-row { display: flex; gap: 6px; }
-.add-row select { flex: 1; }
 .layers { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; }
 .layers li {
   display: flex; align-items: center; gap: 4px; padding: 4px 4px 4px 6px; border-radius: 8px; font-size: 13.5px; cursor: pointer; position: relative;
@@ -1021,7 +1020,7 @@ button.primary.danger, button.primary.danger:hover:not(:disabled) { background: 
 /* パーツ追加のサムネイル一覧 */
 .part-picker { flex: 1; }
 .part-picker > button { width: 100%; }
-.part-grid { display: grid; grid-template-columns: repeat(3, 108px); gap: 4px; min-width: 0; max-height: min(70vh, 520px); overflow-y: auto; }
+.part-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); box-sizing: border-box; width: min(356px, calc(100vw - 16px)); gap: 4px; min-width: 0; max-height: min(70vh, 520px); overflow-y: auto; }
 .menu-list .part-cell { flex-direction: column; align-items: center; justify-content: flex-start; gap: 4px; padding: 6px 4px; border-radius: 8px; }
 .part-cell svg { width: 100%; height: 64px; background: var(--hover); border-radius: 6px; overflow: hidden; }
-.part-cell span { font-size: 12px; line-height: 1.2; text-align: center; }
+.part-cell span { white-space: normal; overflow-wrap: anywhere; font-size: 12px; line-height: 1.2; text-align: center; }
