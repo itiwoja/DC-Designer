@@ -68,6 +68,8 @@ export async function buildFontCss(root: Element, cache?: ExportCache): Promise<
         for (const f of res.failed) console.warn("フォント埋め込みに失敗:", f.family, f.weight, f.code);
       } catch (e) {
         console.warn("フォント埋め込みに失敗:", chunk.map((f) => f.family).join(", "), e);
+        // 通信の失敗は覚えておかず、次のスライドで取り直す（一瞬切れただけでデッキ全体が代わりのフォントにならないように）
+        for (const f of chunk) fonts.delete(key(f));
       }
       return css;
     })();
