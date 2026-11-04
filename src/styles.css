@@ -1012,3 +1012,11 @@ button.primary.danger, button.primary.danger:hover:not(:disabled) { background: 
 .feedback-error p { margin: 0 0 6px; }
 .feedback-error p:last-child { margin-bottom: 0; }
 .feedback-done { margin: 8px 0 14px; font-size: 14px; }
+
+/* パーツ追加のサムネイル一覧 */
+.part-picker { flex: 1; }
+.part-picker > button { width: 100%; }
+.part-grid { display: grid; grid-template-columns: repeat(3, 108px); gap: 4px; min-width: 0; max-height: min(70vh, 520px); overflow-y: auto; }
+.menu-list .part-cell { flex-direction: column; align-items: center; justify-content: flex-start; gap: 4px; padding: 6px 4px; border-radius: 8px; }
+.part-cell svg { width: 100%; height: 64px; background: var(--hover); border-radius: 6px; overflow: hidden; }
+.part-cell span { font-size: 12px; line-height: 1.2; text-align: center; }
