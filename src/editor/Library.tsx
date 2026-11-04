@@ -26,6 +26,38 @@ function editingSpec(): PosterSpec[] {
   } catch { return []; }
 }
 
+/** パーツの props のうち、画面に文字として出るもの（catalog の props の text / label / caption / items） */
+const PART_TEXT_KEYS = ["text", "label", "caption", "items"] as const;
+
+/** レイヤーの、画面に文字として出る値（文字レイヤーの本文とパーツの文字）。パスの d・色・フォント・ID などの値には当てない */
+function layerTexts(l: PosterSpec["layers"][number]): string[] {
+  if (l.type === "text") return [l.text];
+  if (l.type !== "component") return [];
+  const props = (l.props ?? {}) as Record<string, unknown>;
+  return PART_TEXT_KEYS.flatMap((k) => {
+    const v = props[k];
+    return typeof v === "string" ? [v] : Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  });
+}
+
+/** 検索語 q（小文字にしたもの）が、スライドやポスターの本文（画面に出ている文字）に含まれるか */
+export function matchesBody(spec: PosterSpec, q: string): boolean {
+  return spec.layers.some((l) => layerTexts(l).some((t) => t.toLowerCase().includes(q)));
+}
+
+/** 単体のポスターの検索。一覧にタイトルが名前として出ているので、タイトルと本文を見る */
+export function matchesSpec(spec: PosterSpec, q: string): boolean {
+  return !q || spec.meta.title.toLowerCase().includes(q) || matchesBody(spec, q);
+}
+
+/** デッキの検索。一覧に出ているデッキ名と、スライドの本文を見る。スライド名は画面に出ないので見ない */
+export function matchesDeck(d: Deck, posterById: Map<string, SavedPoster>, q: string): boolean {
+  return !q || d.name.toLowerCase().includes(q) || d.slides.some((s) => {
+    const p = posterById.get(s.id);
+    return !!p && matchesBody(p.spec, q);
+  });
+}
+
 const initialTab = (): Tab => {
   const t = new URLSearchParams(location.search).get("tab");
   return t === "images" ? t : "items";
@@ -94,7 +126,7 @@ export function Library() {
   const posterById = useMemo(() => new Map((posters ?? []).map((p) => [p.id, p])), [posters]);
   /** スライド ID → それが入っているプロジェクト（デッキ） */
   const deckOfSlide = useMemo(() => deckBySlide(decks), [decks]);
-  /** 画像の「使用中」などに出す名前。スライドなら「デッキ名 / スライド名」 */
+  /** 画像の「使用中」などに出す名前。スライドなら「デッキ名 / スライド N」 */
   const titleOf = useMemo(() => new Map((posters ?? []).map((p) => {
     const d = deckOfSlide.get(p.id);
     // スライドには名前を付けず、デッキ内の番号で示す
@@ -103,12 +135,10 @@ export function Library() {
   })), [posters, deckOfSlide]);
 
   const q = query.trim().toLowerCase();
-  const matchesSpec = (p: SavedPoster) => !q || p.spec.meta.title.toLowerCase().includes(q) || JSON.stringify(p.spec.layers).toLowerCase().includes(q);
-
   /** プロジェクトに属さない単体のポスター */
   const standalone = useMemo(() => (posters ?? []).filter((p) => !deckOfSlide.has(p.id)), [posters, deckOfSlide]);
   const shownPosters = useMemo(() => {
-    const list = standalone.filter(matchesSpec);
+    const list = standalone.filter((p) => matchesSpec(p.spec, q));
     if (sort === "created") list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     else if (sort === "title") list.sort((a, b) => a.spec.meta.title.localeCompare(b.spec.meta.title, "ja"));
     return list;
@@ -118,7 +148,7 @@ export function Library() {
   /** デッキ自体の更新（名前・並び）とスライドの更新のうち新しい方 */
   const lastUpdated = (d: Deck) => d.slides.reduce((a, s) => (s.updatedAt > a ? s.updatedAt : a), d.updatedAt);
   const shownDecks = useMemo(() => {
-    const list = modeDecks.filter((d) => !q || d.name.toLowerCase().includes(q) || d.slides.some((s) => { const p = posterById.get(s.id); return p ? matchesSpec(p) : s.title.toLowerCase().includes(q); }));
+    const list = modeDecks.filter((d) => matchesDeck(d, posterById, q));
     if (sort === "created") list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     else if (sort === "title") list.sort((a, b) => a.name.localeCompare(b.name, "ja"));
     else list.sort((a, b) => lastUpdated(b).localeCompare(lastUpdated(a)));
