@@ -557,7 +557,7 @@ async function walkTree(tree: El, part: Part, chain: Chain, ctx: Ctx, xf: Xf, ou
 
 async function walkNode(el: El, part: Part, chain: Chain, ctx: Ctx, xf: Xf, out: Layer[], fromMaster: boolean) {
   const cNvPr = kid(kids(el).find((c) => c.localName.startsWith("nv")), "cNvPr");
-  const spid = Number(attr(cNvPr, "id"));
+  const spid = attr(cNvPr, "id") ? Number(attr(cNvPr, "id")) : NaN;
   if (el.localName === "grpSp") {
     // グループ自体を対象にしたアニメーションは、中のレイヤーすべてに付ける
     const from = out.length;

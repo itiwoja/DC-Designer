@@ -101,6 +101,18 @@ describe("PPTX のアニメーション", () => {
     expect(layers.find((l) => l.name === "y")?.animation).toBeUndefined();
   });
 
+  it("読み飛ばした効果がクリックで始まるなら、そのクリックを次の効果に引き継ぐ", async () => {
+    const eff = (id: number, cls: string, spid: number, node: string) =>
+      `<p:par><p:cTn id="${id}" presetID="10" presetClass="${cls}" presetSubtype="0" fill="hold" nodeType="${node}"><p:stCondLst><p:cond delay="0"/></p:stCondLst><p:childTnLst><p:set><p:cBhvr><p:cTn id="${id + 50}" dur="1" fill="hold"/><p:tgtEl><p:spTgt spid="${spid}"/></p:tgtEl></p:cBhvr></p:set></p:childTnLst></p:cTn></p:par>`;
+    // クリック: A が入る → クリック: B を強調 → 同時: C が入る
+    const timing = `<p:timing><p:tnLst><p:par><p:cTn id="1" nodeType="tmRoot"><p:childTnLst><p:seq><p:cTn id="2" nodeType="mainSeq"><p:childTnLst>${eff(3, "entr", 2, "clickEffect")}${eff(4, "emph", 3, "clickEffect")}${eff(5, "entr", 4, "withEffect")}</p:childTnLst></p:cTn></p:seq></p:childTnLst></p:cTn></p:par></p:tnLst></p:timing>`;
+    const result = await pptxWith(box(2, "a") + box(3, "b") + box(4, "c"), timing);
+    const layers = result.slides[0].layers;
+    expect(layers.find((l) => l.name === "a")?.animation).toMatchObject({ start: "click", order: 1 });
+    expect(layers.find((l) => l.name === "b")?.animation).toBeUndefined();
+    expect(layers.find((l) => l.name === "c")?.animation).toMatchObject({ start: "click", order: 2 });
+  });
+
   it("グループを対象にした効果は中のレイヤーすべてに付き、2 つ目以降は直前と同時", async () => {
     const grp = `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="5" name="g"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${box(6, "c1")}${box(7, "c2")}</p:grpSp>`;
     const spec = PosterSpecSchema.parse({ meta: {}, layers: [{ id: "g", type: "shape", shape: "rect", animation: a({ effect: "fly", direction: "right" }) }] });

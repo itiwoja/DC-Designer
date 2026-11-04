@@ -235,12 +235,22 @@ export function readTiming(timing: Element | null | undefined): TimingEffect[] {
   if (!main) return [];
   const out: TimingEffect[] = [];
   const seen = new Set<number>();
+  // 読み飛ばした効果（退場・強調・同じ図形の 2 つ目など）がクリックで始まるものだったら、
+  // そのクリックの区切りを次に採る効果へ引き継ぐ（後の効果が前のクリックに詰まらないように）
+  let pendingClick = false;
   for (const ctn of els(main)) {
-    if (ctn.localName !== "cTn" || ctn.getAttribute("presetClass") !== "entr") continue;
-    const start = START_OF[ctn.getAttribute("nodeType") ?? ""];
+    if (ctn.localName !== "cTn" || !ctn.hasAttribute("presetClass")) continue;
+    const nodeType = ctn.getAttribute("nodeType") ?? "";
     const target = els(ctn).find((e) => e.localName === "spTgt");
-    const spid = Number(target?.getAttribute("spid"));
-    if (!start || !Number.isFinite(spid) || seen.has(spid)) continue;
+    const spidAttr = target?.getAttribute("spid");
+    const spid = spidAttr ? Number(spidAttr) : NaN;
+    const picked = START_OF[nodeType];
+    if (ctn.getAttribute("presetClass") !== "entr" || !picked || !Number.isFinite(spid) || seen.has(spid)) {
+      if (nodeType === "clickEffect") pendingClick = true;
+      continue;
+    }
+    const start = pendingClick ? "click" : picked;
+    pendingClick = false;
     seen.add(spid);
     const preset = Number(ctn.getAttribute("presetID"));
     const effect = PRESET_TO_EFFECT[preset] ?? "fade";
