@@ -38,7 +38,7 @@ import { HOME_URL, IMPORT_NOTICE_KEY, loadInitialSpec, PENDING_BRIEF_KEY } from 
 import { modeHomeUrl, modeLibraryUrl, modeOfDeck, MODES, readModeParam, writeLastId, type AppMode } from "./mode";
 import { slideRefs } from "./slideRefs";
 import { slidePalette } from "./slidePalette";
-import { routeChatRequest } from "./chatRoute";
+import { imagePromptOf, isImageRedoRequest, isImageRequest, isTransparentRequest, redoPromptOf, routeChatRequest } from "./chatRoute";
 import { slashSuggestions, SlashMenu, type SlashCommand } from "./slashCommands";
 import {
   aspectOf, assetHolder, diffLayers, IMAGE_FILE_ACCEPT, IMAGE_FILE_TYPES, imageSlot, insertAfter, placeImage, replaceableByImage,
@@ -187,12 +187,9 @@ export function App() {
   /** 参考画像（1 枚目）を雰囲気の参考ではなく、見た目そのままに再現する */
   const [reproduce, setReproduce] = useState(false);
   const [instruction, setInstruction] = useState("");
-  const [chatMode, setChatMode] = useState<"chat" | "image">("chat");
   /** / コマンドの候補: 選択中の位置と、Esc で閉じたか（入力を変えると開き直す） */
   const [slashActive, setSlashActive] = useState(0);
   const [slashClosed, setSlashClosed] = useState(false);
-  const [imgPrompt, setImgPrompt] = useState("");
-  const [imgTransparent, setImgTransparent] = useState(false);
   /** チャットの区切りに出す名前。デッキのスライドは名前ではなく番号（useDeck の後で差し替える） */
   const chatTitle = useRef(() => spec.meta.title);
   const chat = useChat({ ready: !!aiProvider, posterId, posterTitle: () => chatTitle.current() });
@@ -232,12 +229,6 @@ export function App() {
   const startTextEdit = (id: string, at?: { x: number; y: number }) => setTextEdit({ id, at, key: `text-${id}-${Date.now()}` });
 
   const selHolder = assetHolder(selectedLayer);
-  // 画像レイヤーを選んだら、そのプロンプトをチャットの画像生成欄に読み込む
-  useEffect(() => {
-    if (selHolder) { setImgPrompt(selHolder.asset.prompt ?? ""); setImgTransparent(!!selHolder.asset.transparent); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected]);
-
   // ---------- Sign in with ChatGPT ----------
   const { welcome, closeWelcome, signOut } = useChatGPTAuth({ status, setStatus, refreshStatus, notify });
 
@@ -488,11 +479,9 @@ export function App() {
     const reply = { text: res.reply || "スライドの構成を変えました", changes: `構成: ${before} 枚 → ${after} 枚${parts.length ? `（${parts.join("・")}）` : ""}` };
     if (r.removed.length) setSelectedSlideIds([]);
     if (autoImages && r.order.some((id) => { const sp = specOf(id); return sp && (r.created.includes(id) || r.rewritten.includes(id)) && findPendingAssets(sp).length; })) {
-      chat.push({ role: "assistant", ...reply });
-      await generateAcross(r.order.filter((id) => r.created.includes(id) || r.rewritten.includes(id)), signal);
-      return { text: "画像も生成しました" };
+      return generateInReply(reply, () => generateAcross(r.order.filter((id) => r.created.includes(id) || r.rewritten.includes(id)), signal));
     }
-    return reply;
+    return pendingReply(reply, r.order.filter((id) => r.created.includes(id) || r.rewritten.includes(id)).map((id) => ({ id, spec: specOf(id) })));
   };
 
   /**
@@ -554,16 +543,12 @@ export function App() {
     const changes = [main, others.length && `スライド ${others.map((o) => o.n).join("・")} も変更`].filter(Boolean).join("・");
     const reply = { text: res.reply || "修正しました", changes, before, posterId: posterIdRef.current, ...(others.length ? { others: others.map(({ posterId, before }) => ({ posterId, before })) } : {}) };
     if (autoImages && others.some((o) => findPendingAssets(o.spec).length)) {
-      chat.push({ role: "assistant", ...reply });
-      await generateAcross([posterIdRef.current!, ...others.map((o) => o.posterId)], signal);
-      return { text: "画像も生成しました" };
+      return generateInReply(reply, () => generateAcross([posterIdRef.current!, ...others.map((o) => o.posterId)], signal));
     }
     if (autoImages && findPendingAssets(next).length) {
-      chat.push({ role: "assistant", ...reply });
-      await generatePending(next, signal);
-      return { text: "画像も生成しました" };
+      return generateInReply(reply, () => generatePending(next, signal, { quiet: true }));
     }
-    return reply;
+    return pendingReply(reply, [{ id: posterIdRef.current, spec: next }, ...others.map((o) => ({ id: o.posterId, spec: o.spec }))]);
   };
   /**
    * 入力欄の文を送る（送ったら空にし、失敗したら戻す）。
@@ -588,6 +573,15 @@ export function App() {
         return writeNotesTurn(regen?.msg ?? { text, mode: "chat" }, restore, { request: text });
       case "write-notes":
         return writeNotesTurn(regen?.msg ?? { text, mode: "chat" }, restore, { targets: route.targets, request: text });
+      case "image":
+        // 参考資料を添付しているときは、画像生成ではなく AI の修正に回す（画像生成は添付を使えない）
+        if (refs.length && !regen) break;
+        if (route.redo && !selHolder) {
+          restore();
+          notify({ kind: "info", text: "作り直す画像を選んでから送ってください" });
+          return;
+        }
+        return generateImageHere(text, route.prompt, restore, { redo: route.redo, append: route.redo, regen: regen?.msg, transparent: route.transparent });
     }
     // 通常編集だけでなく、全スライドへの適用・スライド追加・再送信でも同じ添付を使う。
     const requestText = regen ? text : text + referenceCaption;
@@ -596,23 +590,22 @@ export function App() {
     if (route.kind === "add-slide") {
       return chatTurn(user, `${aiName} がスライドを作成中`, restore, async (signal) => {
         const r = await addSlideByAI(signal, requestText, route.position, context, references);
+        const reply = { text: r.text, changes: r.changes };
         if (autoImages && r.spec && findPendingAssets(r.spec).length) {
-          chat.push({ role: "assistant", text: r.text, changes: r.changes });
-          await generatePending(r.spec, signal);
-          return { text: "画像も生成しました" };
+          const made = r.spec;
+          return generateInReply(reply, () => generatePending(made, signal, { quiet: true }));
         }
-        return { text: r.text, changes: r.changes };
+        return pendingReply(reply, [{ id: posterIdRef.current, spec: r.spec }]);
       });
     }
     if (route.kind === "edit-across") {
       return chatTurn(user, `${aiName} が全スライドを修正中`, restore, async (signal) => {
         const r = await editAcrossDeck(signal, requestText, context, references);
+        const reply = { text: r.text, changes: r.changes };
         if (autoImages && r.ids.some((id) => { const sp = specOf(id); return sp && findPendingAssets(sp).length; })) {
-          chat.push({ role: "assistant", text: r.text, changes: r.changes });
-          await generateAcross(r.ids, signal);
-          return { text: "画像も生成しました" };
+          return generateInReply(reply, () => generateAcross(r.ids, signal));
         }
-        return { text: r.text, changes: r.changes };
+        return pendingReply(reply, r.ids.map((id) => ({ id, spec: specOf(id) })));
       });
     }
     return chatTurn(user, `${aiName} が考え中`, restore, async (signal) => {
@@ -628,7 +621,7 @@ export function App() {
   const runSlash = (cmd: SlashCommand, arg: string, restore: () => void, regen?: ChatMsg) => {
     switch (cmd.name) {
       case "image":
-        return generateImageHere(arg, restore, regen);
+        return generateImageHere(arg, arg, restore, { redo: true, regen });
       case "images":
         if (!findPendingAssets(spec).length) { notify({ kind: "info", text: "未生成の画像はありません" }); return; }
         return generateAll();
@@ -732,22 +725,24 @@ export function App() {
     const queue = findPendingAssets(target).map((p) => ({ ref: toLayerRef(target, p.path), asset: p.asset }));
     const total = queue.length;
     let done = 0, failed = 0;
+    /** 生成できた画像の src（チャットの返答にサムネイルで出す） */
+    const srcs: string[] = [];
     /** 最初に失敗した理由（サーバーが返す、利用者が直し方の分かる文言） */
     let reason: string | undefined;
     setBusy((b) => b && { ...b, label: opts.label ?? "画像を生成中", progress: [0, total], step: undefined, detail: undefined, stepStartedAt: undefined });
     // 同時 2 並列で 1 点ずつ依頼する。1 点の失敗で全体を止めない
     const worker = async () => {
       for (let j = queue.shift(); j && !signal.aborted; j = queue.shift()) {
-        try { await generateOne(j.ref, j.asset, signal, target); } catch (e) { if (signal.aborted) throw e; failed++; reason ??= failureReason(e); }
+        try { srcs.push(await generateOne(j.ref, j.asset, signal, target)); } catch (e) { if (signal.aborted) throw e; failed++; reason ??= failureReason(e); }
         setBusyProgress(++done, total);
       }
     };
     await Promise.all([worker(), worker()]);
     if (signal.aborted) throw new Error("aborted");
-    if (opts.quiet) return { total, failed, reason };
+    if (opts.quiet) return { total, failed, reason, srcs };
     if (failed) notify({ kind: "error", text: `${failed} 点の画像生成に失敗しました。${reason ? `${reason}。` : ""}レイヤーを選んで「再生成」できます` });
     else notify({ kind: "success", text: `画像を ${total} 点生成しました` });
-    return { total, failed, reason };
+    return { total, failed, reason, srcs };
   };
   /**
    * デッキの ids の各スライドを順に開いて、未生成の画像素材を生成する（画像は開いているものにしか当てられないため）。
@@ -758,6 +753,7 @@ export function App() {
     const targets = ids.filter((id) => { const sp = specOf(id); return sp && findPendingAssets(sp).length; });
     let total = 0, failed = 0;
     let reason: string | undefined;
+    const srcs: string[] = [];
     for (const [i, id] of targets.entries()) {
       const opened = await openSlide(id);
       // ids はデッキの並び順（作った直後は deck の state がまだ古いので、ids から数える）
@@ -766,13 +762,51 @@ export function App() {
       total += r.total;
       failed += r.failed;
       reason ??= r.reason;
+      srcs.push(...r.srcs);
     }
     if (start && start !== posterIdRef.current && ids.includes(start)) await openSlide(start);
     if (failed) notify({ kind: "error", text: `${failed} 点の画像生成に失敗しました。${reason ? `${reason}。` : ""}そのスライドを開き、レイヤーを選んで「再生成」できます` });
     else if (total) notify({ kind: "success", text: `${targets.length} 枚のスライドに、画像素材を ${total} 点生成しました` });
+    return { total, failed, reason, srcs };
   };
   /** 未生成の画像をまとめて生成 */
   const generateAll = () => run("画像を生成中", (signal) => generatePending(spec, signal).then(() => {}), { cancelable: true });
+
+  /** 画像の生成結果をチャットの返答にする（できた画像はサムネイルで、失敗は失敗と分かる文言で） */
+  const imagesReply = (r: { total: number; failed: number; reason?: string; srcs: string[] }): Omit<ChatMsg, "id" | "role"> => {
+    if (!r.total) return { text: "未生成の画像はありませんでした" };
+    if (r.failed >= r.total) return { text: `画像の生成に失敗しました。${r.reason ?? ""}`.trim(), error: true };
+    return r.failed
+      ? { text: `画像を ${r.srcs.length} 点生成しました（${r.failed} 点は失敗${r.reason ? `: ${r.reason}` : ""}）`, images: r.srcs }
+      : { text: "画像も生成しました", images: r.srcs };
+  };
+  /** AI の返答を先にチャットへ出してから画像を生成し、その結果を続きの返答にする */
+  const generateInReply = async (reply: Omit<ChatMsg, "id" | "role">, gen: () => Promise<{ total: number; failed: number; reason?: string; srcs: string[] }>) => {
+    chat.push({ role: "assistant", ...reply });
+    chat.setPending("画像を生成中…");
+    return imagesReply(await gen());
+  };
+  /** 自動生成がオフで未生成の画像が残るなら、返答に「画像を生成する」ボタンを付ける */
+  const pendingReply = (reply: Omit<ChatMsg, "id" | "role">, entries: { id: string | null; spec?: PosterSpec }[]): Omit<ChatMsg, "id" | "role"> => {
+    const hit = entries.flatMap((e) => (e.spec ? [{ id: e.id, n: findPendingAssets(e.spec).length }] : [])).filter((e) => e.n);
+    const count = hit.reduce((a, e) => a + e.n, 0);
+    return count ? { ...reply, pendingImages: { count, posterIds: hit.flatMap((e) => (e.id ? [e.id] : [])) } } : reply;
+  };
+  /** 返答の「画像を生成する」: その返答で未生成だった画像をまとめて生成し、できた画像を新しい返答に出す */
+  const generateFromReply = (m: ChatMsg) => {
+    if (busy || !m.pendingImages) return;
+    chat.markImagesStarted(m.id);
+    return run("画像を生成中", async (signal) => {
+      chat.setPending("画像を生成中…");
+      try {
+        const ids = m.pendingImages!.posterIds.filter((id) => deck?.slides.some((s) => s.id === id));
+        const r = deck && ids.length ? await generateAcross(ids, signal) : await generatePending(spec, signal, { quiet: true });
+        chat.push({ role: "assistant", ...imagesReply(r) });
+      } catch (e: any) {
+        chat.push({ role: "assistant", text: signal.aborted ? "キャンセルしました" : e?.message ?? String(e), error: true });
+      } finally { chat.setPending(null); }
+    }, { cancelable: true });
+  };
 
   const regenerateLayer = (layerId: string) => run("画像を生成中", async (signal) => {
     const holder = assetHolder(spec.layers.find((l) => l.id === layerId) ?? null);
@@ -783,41 +817,48 @@ export function App() {
   /** チャットの画像生成の対象: 選択中の画像を作り直す／選択中の要素の位置に追加。null なら中央に新しい画像 */
   const imageScope = selectedLayer && selHolder ? `「${layerName(selectedLayer)}」を作り直す`
     : selectedLayer && selectedLayer.type !== "background" ? `「${layerName(selectedLayer)}」の位置に追加` : null;
-  const generateImageHere = (prompt: string, restoreInput: () => void, regen?: ChatMsg) =>
-    chatTurn(regen ?? { text: prompt, scope: imageScope ?? "新しい画像", mode: "image" }, "画像を生成中", restoreInput, async (signal) => {
+  /**
+   * チャットの画像生成（/image と「海の写真を作って」）。redo なら選択中の画像を作り直し、そうでなければ新しい画像を置く
+   * （選択中の画像は消さない。選択中の別の要素があればその位置、無ければ中央）。透過は依頼文から読む
+   */
+  const generateImageHere = (text: string, prompt: string, restoreInput: () => void, opts: { redo: boolean; append?: boolean; regen?: ChatMsg; transparent?: boolean }) =>
+    chatTurn(opts.regen ?? { text, scope: (opts.redo ? imageScope : selHolder ? null : imageScope) ?? "新しい画像", mode: "image" }, "画像を生成中", restoreInput, async (signal) => {
       const before = spec;
-      if (selectedLayer && selHolder) {
-        const asset = { ...selHolder.asset, prompt, transparent: imgTransparent };
+      const transparent = opts.transparent ?? isTransparentRequest(text);
+      if (opts.redo && selectedLayer && selHolder) {
+        // 「この画像を水彩風に作り直して」は元のプロンプトに注文を足す（依頼文で置き換えると何の絵か分からなくなる）
+        const orig = selHolder.asset.prompt;
+        const nextPrompt = opts.append ? (prompt ? `${orig}。${prompt}` : orig) : prompt;
+        const asset = { ...selHolder.asset, prompt: nextPrompt, transparent: transparent || !!selHolder.asset.transparent };
         const patch = selHolder.rest.length ? { props: { ...(selectedLayer as any).props, asset } } : { asset };
         updateLayer(selectedLayer.id, patch as Partial<Layer>);
         const src = await generateOne({ layerId: selectedLayer.id, rest: selHolder.rest }, asset, signal);
-        return { text: "画像を作り直しました", image: src, before, posterId: posterIdRef.current };
+        return { text: "画像を作り直しました", images: [src], before, posterId: posterIdRef.current };
       }
-      const at = selectedLayer && selectedLayer.type !== "background"
+      if (opts.append) throw new Error("作り直す画像を選んでから送ってください");
+      const at = selectedLayer && selectedLayer.type !== "background" && !selHolder
         ? { x: selectedLayer.x, y: selectedLayer.y, w: selectedLayer.w, h: selectedLayer.h, rotation: selectedLayer.rotation }
         : { x: Math.round((W - 400) / 2), y: Math.round((H - 400) / 2), w: 400, h: 400 };
-      const asset = { prompt, transparent: imgTransparent, aspect: aspectOf(at.w, at.h) };
+      const asset = { prompt, transparent, aspect: aspectOf(at.w, at.h) };
       const layer = { id: uid("image"), name: prompt.slice(0, 20) || "画像", type: "image", fit: "contain", asset, ...at } as Layer;
       // 選択中の要素の 1 つ上に重ねる
       setSpec((s) => ({ ...s, layers: insertAfter(s.layers, selectedLayer?.id, [layer]) }));
       setSelected(layer.id);
       const src = await generateOne({ layerId: layer.id, rest: [] }, asset, signal, { ...spec, layers: [...spec.layers, layer] });
-      return { text: "画像を生成して配置しました", image: src, before, posterId: posterIdRef.current };
+      return { text: "画像を生成して配置しました", images: [src], before, posterId: posterIdRef.current };
     });
-  /** 画像生成の入力欄から生成する */
-  const generateImageFromInput = () => {
-    const prompt = imgPrompt.trim();
-    setImgPrompt("");
-    return generateImageHere(prompt, () => setImgPrompt(prompt));
-  };
   /**
    * 最後の自分の発言の下の「再送信」: 発言は増やさず、その返答を作り直す（入力欄の書きかけはそのまま）。
    * チャットは、前の返答で AI が変えたポスターを変更前に戻してから考え直させる（同じ指示が重ねがけされないように）。
-   * 画像生成は今の選択に対してもう一度生成する（前の返答で置いた画像が選ばれていれば、それを作り直す）
+   * 画像の依頼は今の選択に対してもう一度生成する（前の返答で置いた画像が選ばれていれば、それを作り直す）
    */
   const resendChat = async (m: ChatMsg) => {
     if (busy || readingRefs || (m.hasReferences && !m.references)) return;
-    if (m.mode === "image") return generateImageHere(m.text, () => {}, m);
+    if (m.mode === "image") {
+      const slash = /^[/／]image\s+/.exec(m.text);
+      if (!slash && isImageRedoRequest(m.text)) return generateImageHere(m.text, redoPromptOf(m.text), () => {}, { redo: true, append: true, regen: m });
+      return generateImageHere(m.text, slash ? m.text.slice(slash[0].length) : imagePromptOf(m.text), () => {}, { redo: true, regen: m });
+    }
     const i = chat.messages.findIndex((x) => x.id === m.id);
     const prev = chat.messages.slice(i + 1).find((x) => x.role === "assistant" && x.before && !x.undone);
     let base = spec;
@@ -864,11 +905,10 @@ export function App() {
       notify({ kind: "success", text: `画像を ${added.length} 点追加しました` });
     });
   };
-  /** チャットの 📎（画像ファイル）: 選択中の画像は差し替え、ほかの要素を選んでいればその位置に、未選択なら中央に置く */
+  /** チャットの画像ファイルボタン: 選択中の画像は差し替え、ほかの要素を選んでいればその位置に、未選択なら中央に置く */
   const insertImageFilesHere = (files: FileList | null) =>
     selectedLayer && replaceableByImage(selectedLayer, W, H) ? insertImageFiles(files, { replaceId: selectedLayer.id })
       : insertImageFiles(files, { box: selectedLayer ?? undefined });
-
   /** キャンバスへのドロップ: PowerPoint なら（PPTX モードだけ）読み込み、画像の上なら差し替え、それ以外はドロップした位置に置く */
   const onStageDrop = (files: File[], e: RDragEvent) => {
     const pptx = mode === "slides" ? files.find((f) => /\.pptx$/i.test(f.name)) : undefined;
@@ -1051,11 +1091,10 @@ export function App() {
     return notes ? { ...rest, notes } : rest;
   }, coalesce);
 
-  /** 空の画像枠を置き、チャットの画像生成欄でプロンプトを入れてもらう */
+  /** 空の画像枠を置き、チャットの /image でプロンプトを入れてもらう */
   const addImage = () => {
     addLayer({ id: uid("image"), name: "画像", type: "image", fit: "contain", asset: { prompt: "", transparent: false, aspect: "square" }, ...centered(300, 300) });
-    setImgPrompt("");
-    setChatMode("image");
+    setInstruction("/image ");
     setAiTab("chat");
   };
 
@@ -1152,7 +1191,7 @@ export function App() {
   const reproduceOn = reproduce && refs.length > 0 && mode === "poster";
   const canPlan = canMake && !busy && !readingRefs && (!!brief.trim() || reproduceOn) && aiReady;
   // / コマンドは AI を使わないので、サインインしていなくても送れる
-  const canChat = !busy && !readingRefs && !!instruction.trim() && (aiReady || /^[/／]/.test(instruction.trim()));
+  const canChat = !busy && !readingRefs && !!instruction.trim() && (aiReady || /^[/／]/.test(instruction.trim()) || isImageRequest(instruction) || isImageRedoRequest(instruction));
   const slashItems = slashClosed ? [] : slashSuggestions(instruction, isSlides, mode === "poster");
   const slashSel = Math.min(slashActive, Math.max(slashItems.length - 1, 0));
   /** 候補を選ぶ: 内容を書くコマンドは入力欄に入れて続きを待ち、それ以外はその場で実行する */
@@ -1176,7 +1215,6 @@ export function App() {
     }
     submitOnEnter(() => sendChat(), canChat)(e);
   };
-  const canGenImage = !busy && !!imgPrompt.trim();
   // 未サインインで AI ボタンが押せない理由をボタンのそばに出す
   // OpenRouter のキーがあるのに使えない = AI の設定で ChatGPT を選んでいる
   // 製品版の AI は ChatGPT プランだけなので、OpenRouter の案内は出さない
@@ -1196,8 +1234,6 @@ export function App() {
   const targetChip = (label: string | null, fallback: string) => label
     ? <span className="chip">{label}<button aria-label="対象を解除" onClick={() => setSelected(null)}>×</button></span>
     : <span className="chip muted">{fallback}</span>;
-  const canReplaceImage = !!(selectedLayer && imageSlot(selectedLayer));
-  const hasImage = !!(selHolder && selectedLayer && ((selectedLayer as any).src || (selectedLayer as any).props?.src));
   const serverSave = save.serverSave, browserSave = save.browserSave;
 
   return (
@@ -1333,68 +1369,69 @@ export function App() {
               messages={chat.messages}
               pending={chat.pending}
               examples={CHAT_EXAMPLES}
-              onExample={(t) => { setChatMode("chat"); setInstruction(t); }}
+              onExample={(t) => setInstruction(t)}
               onUndo={undoChat}
               onResend={resendChat}
+              onGenerateImages={generateFromReply}
+              busy={!!busy}
               canResend={(m) => !busy && !readingRefs && (!m.hasReferences || !!m.references) && (aiReady || m.mode === "image" || /^[/／]/.test(m.text))}
             />
             <div className="composer">
               <div className="composer-top">
-                <div className="seg" role="radiogroup" aria-label="送信モード">
-                  <button role="radio" aria-checked={chatMode === "chat"} className={chatMode === "chat" ? "on" : ""} onClick={() => setChatMode("chat")}><Ico name="message" size={14} /> チャット</button>
-                  <button role="radio" aria-checked={chatMode === "image"} className={chatMode === "image" ? "on" : ""} onClick={() => setChatMode("image")}><Ico name="image" size={14} /> 画像生成</button>
-                </div>
-                {chatMode === "chat" ? targetChip(chatScope, chatFallback) : targetChip(imageScope, "新しい画像（中央）")}
+                {targetChip(chatScope, chatFallback)}
               </div>
-              {chatMode === "chat" && slashItems.length > 0 && (
+              {slashItems.length > 0 && (
                 <SlashMenu items={slashItems} active={slashSel} onPick={pickSlash} onHover={setSlashActive} />
               )}
-              {chatMode === "chat"
-                ? <textarea
-                    rows={3}
-                    aria-label="AI へのメッセージ"
-                    placeholder={multi ? `選んだ ${selLayers.length} 件をどう変えますか？` : selectedLayer ? `「${layerName(selectedLayer)}」をどう変えますか？` : "メッセージを入力（/ でコマンド）"}
-                    value={instruction}
-                    onChange={(e) => { setInstruction(e.target.value); setSlashClosed(false); setSlashActive(0); }}
-                    onKeyDown={onChatKey}
-                  />
-                : <textarea
-                    rows={3}
-                    aria-label="画像生成プロンプト"
-                    placeholder="どんな画像？（例: 夕焼けの沖縄の海、水彩風）"
-                    value={imgPrompt}
-                    onChange={(e) => setImgPrompt(e.target.value)}
-                    onKeyDown={submitOnEnter(generateImageFromInput, canGenImage)}
-                  />}
-              {chatMode === "chat" && <ReferenceAttachments files={refs} disabled={readingRefs || !!busy} onRemove={(i) => setRefs((x) => x.filter((_, j) => j !== i))} />}
-              {chatMode === "chat" && readingRefs && <p className="hint small" role="status">参考資料を読み込み中…</p>}
+              <textarea
+                rows={3}
+                aria-label="AI へのメッセージ"
+                placeholder={multi ? `選んだ ${selLayers.length} 件をどう変えますか？` : selectedLayer ? `「${layerName(selectedLayer)}」をどう変えますか？` : "メッセージを入力（/ でコマンド。「海の写真を作って」で画像も作れます）"}
+                value={instruction}
+                onChange={(e) => { setInstruction(e.target.value); setSlashClosed(false); setSlashActive(0); }}
+                onKeyDown={onChatKey}
+              />
+              <ReferenceAttachments files={refs} disabled={readingRefs || !!busy} onRemove={(i) => setRefs((x) => x.filter((_, j) => j !== i))} />
+              {readingRefs && <p className="hint small" role="status">参考資料を読み込み中…</p>}
               <div className="composer-bar">
                 <label
-                  className={"as-button small icon" + (busy || (chatMode === "chat" && readingRefs) ? " disabled" : "")}
-                  title={chatMode === "chat" ? "参考資料として画像・PDFを添付（合計20ページまで、1ファイル20MB）" : canReplaceImage ? "画像ファイルで差し替え" : "画像ファイルから挿入（キャンバスへのドロップ・貼り付けでも可）"}
-                  aria-label={chatMode === "chat" ? "参考資料を添付" : "画像ファイルを入れる"}
+                  className={"as-button small icon" + (busy || readingRefs ? " disabled" : "")}
+                  title="参考資料として画像・PDFを添付（合計20ページまで、1ファイル20MB）"
+                  aria-label="参考資料を添付"
                 >
                   <Ico name="paperclip" />
                   <input
                     type="file"
-                    accept={chatMode === "chat" ? REFERENCE_FILE_ACCEPT : IMAGE_FILE_ACCEPT}
-                    multiple={chatMode === "chat" || !canReplaceImage}
+                    accept={REFERENCE_FILE_ACCEPT}
+                    multiple
                     hidden
-                    disabled={!!busy || (chatMode === "chat" && readingRefs)}
-                    onChange={(e) => { if (chatMode === "chat") onRefFiles(e.target.files); else insertImageFilesHere(e.target.files); e.target.value = ""; }}
+                    disabled={!!busy || readingRefs}
+                    onChange={(e) => { onRefFiles(e.target.files); e.target.value = ""; }}
                   />
                 </label>
-                {chatMode === "image" && <label className="check"><input type="checkbox" checked={imgTransparent} onChange={(e) => setImgTransparent(e.target.checked)} /> 透過</label>}
-                {chatMode === "chat" && aiProvider === "chatgpt" && gpt?.signedIn && gpt.models?.length ? (
+                <label
+                  className={"as-button small icon" + (busy ? " disabled" : "")}
+                  title={selectedLayer && replaceableByImage(selectedLayer, W, H) ? "画像ファイルで差し替え" : "画像ファイルから挿入（キャンバスへのドロップ・貼り付けでも可）"}
+                  aria-label="画像ファイルを置く"
+                >
+                  <Ico name="image" />
+                  <input
+                    type="file"
+                    accept={IMAGE_FILE_ACCEPT}
+                    multiple={!(selectedLayer && replaceableByImage(selectedLayer, W, H))}
+                    hidden
+                    disabled={!!busy}
+                    onChange={(e) => { insertImageFilesHere(e.target.files); e.target.value = ""; }}
+                  />
+                </label>
+                {aiProvider === "chatgpt" && gpt?.signedIn && gpt.models?.length ? (
                   <ModelSelect className="composer-model" label="ChatGPT のモデル" models={gpt.models} choice={gpt.modelChoice ?? ""} autoModel={gpt.autoModel} disabled={!!busy} onChange={chooseChatGPTModel} />
-                ) : chatMode === "chat" && aiProvider === "openrouter" && openrouter?.models?.length ? (
+                ) : aiProvider === "openrouter" && openrouter?.models?.length ? (
                   <ModelSelect className="composer-model" label="OpenRouter のモデル" models={openrouter.models} choice={openrouter.modelChoice} autoModel={openrouter.autoModel} disabled={!!busy} onChange={chooseOpenRouterModel} />
                 ) : null}
-                {chatMode === "chat"
-                  ? <button className="primary send" disabled={!canChat} onClick={() => sendChat()} aria-label="送信">送信</button>
-                  : <button className="primary send" disabled={!canGenImage} onClick={generateImageFromInput}>{hasImage ? "再生成" : "生成"}</button>}
+                <button className="primary send" disabled={!canChat} onClick={() => sendChat()} aria-label="送信">送信</button>
               </div>
-              {chatMode === "chat" && signinNote}
+              {signinNote}
             </div>
           </>}
         </section>

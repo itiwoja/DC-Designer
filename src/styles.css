@@ -719,6 +719,9 @@ button.primary.danger, button.primary.danger:hover:not(:disabled) { background: 
 .chat-msg.pending .chat-bubble { flex-direction: row; align-items: center; gap: 8px; color: var(--muted); }
 .chat-changes { font-size: 11.5px; color: var(--muted); }
 .chat-image { max-width: 100%; max-height: 160px; border-radius: 8px; align-self: flex-start; background: repeating-conic-gradient(var(--line) 0 25%, transparent 0 50%) 0 0 / 12px 12px; }
+.chat-images { display: flex; flex-wrap: wrap; gap: 6px; }
+.chat-images .chat-image { max-height: 96px; max-width: 48%; }
+.chat-gen { align-self: flex-start; }
 .chat-undo { align-self: flex-start; }
 /* 再送信: 最後の自分の発言の下に 1 つだけ出す */
 .chat-resend { margin-top: 2px; }
@@ -735,8 +738,6 @@ button.primary.danger, button.primary.danger:hover:not(:disabled) { background: 
 /* 枠全体が紫になるので、中のボタンのフォーカス枠は内側の細い線に抑えて二重にしない */
 .composer button:focus-visible { outline: 1.5px solid var(--accent); outline-offset: -1.5px; }
 .composer-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; }
-.composer .seg { gap: 0; }
-.composer .seg button { flex: none; font-size: 12px; padding: 3px 8px; }
 .composer textarea { border: none; padding: 2px; resize: none; background: transparent; }
 /* 添付画像・PDF はファイル表示にして、長い名前や複数の添付も入力欄からはみ出させない */
 .reference-files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; max-height: 160px; overflow-y: auto; }
