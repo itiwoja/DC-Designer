@@ -10,7 +10,7 @@ import { TYPE_LABEL } from "./LayersPanel";
 import { CROP_MAX_SCALE, clampCrop, cropLimits, cropTarget, roundPhotoRadius, withCrop } from "../render/ImageBox";
 import { Ico } from "./uiIcons";
 import { withText } from "../textRuns";
-import { ANIM_DIRECTIONS, ANIM_EFFECTS, ANIM_STARTS, defaultAnimation, isDirectional, soundKey } from "../animation";
+import { ANIM_DIAGONALS, ANIM_DIRECTIONS, ANIM_EFFECTS, ANIM_STARTS, SCROLL_DIRECTIONS, defaultAnimation, isDiagonalOk, isDirectional, normalizeDirection, soundKey } from "../animation";
 import { decodeSound, playSound, SOUND_FILE_MAX_BYTES, SOUND_FILE_MAX_SEC, SOUND_FILE_TYPES, SOUNDS, type SoundId } from "../sounds";
 import { api } from "./api";
 import { useFileDrop } from "./useFileDrop";
@@ -163,6 +163,11 @@ function AnimationBox({ layers, order, total, onSet, onMove, onPreview }: Animat
   const start = common(anims.map((a) => a.start));
   const dirAnims = anims.filter((a) => isDirectional(a.effect));
   const direction = common(dirAnims.map((a) => a.direction ?? "bottom"));
+  // 向きの選択肢は効果で変わる（スライドインは斜めも、スクロールは流す向き）
+  const dirButtons = dirAnims.every((a) => a.effect === "scroll") ? SCROLL_DIRECTIONS
+    : dirAnims.every((a) => isDiagonalOk(a.effect)) ? [...ANIM_DIRECTIONS, ...ANIM_DIAGONALS] : ANIM_DIRECTIONS;
+  // スクロールは画像にしか付けられない
+  const effects = ANIM_EFFECTS.filter((e) => !e.imageOnly || layers.every((l) => l.type === "image"));
   // 同じ音かはファイルなら保存先で比べる
   const soundKeys = common(anims.map((a) => (a.sound ? soundKey(a.sound) : "")));
   const sound = soundKeys === undefined ? undefined : anims[0]?.sound ?? "";
@@ -188,14 +193,14 @@ function AnimationBox({ layers, order, total, onSet, onMove, onPreview }: Animat
             const fresh = layers.filter((l) => !l.animation).map((l) => l.id);
             onSet((a, i) => {
               const next = a ? { ...a, effect: v } : { ...defaultAnimation(v), start: fresh.indexOf(layers[i].id) > 0 ? "with" as const : "click" as const };
-              // 向きのある効果に変えたら向きを補い、無い効果では外す
-              return isDirectional(v) ? { ...next, direction: next.direction ?? "bottom" } : { ...next, direction: undefined };
+              // 向きのある効果に変えたら向きを補い（斜めを選べない効果では上下左右にし）、無い効果では外す
+              return { ...next, direction: normalizeDirection(v, next.direction), scrollTo: v === "scroll" ? next.scrollTo : undefined };
             });
           }}
         >
           {effect === undefined && <option value="mixed" disabled>{anims.length < layers.length ? "一部だけ付いている" : "混在"}</option>}
           <option value="">なし</option>
-          {ANIM_EFFECTS.map((e) => <option key={e.value} value={e.value}>{e.label}</option>)}
+          {effects.map((e) => <option key={e.value} value={e.value}>{e.label}</option>)}
         </select>
         {anims.length > 0 && (
           <select value={start ?? "mixed"} aria-label="開始" title="いつ動き始めるか" onChange={(e) => e.target.value !== "mixed" && patch({ start: e.target.value as LayerAnimation["start"] })}>
@@ -204,16 +209,16 @@ function AnimationBox({ layers, order, total, onSet, onMove, onPreview }: Animat
           </select>
         )}
       </div>
-      {dirAnims.length > 0 && (
-        <div className="seg">
-          {ANIM_DIRECTIONS.map((d) => (
+      {dirAnims.length > 0 && [dirButtons.slice(0, 4), dirButtons.slice(4)].filter((row) => row.length).map((row, ri) => (
+        <div className="seg" key={ri}>
+          {row.map((d) => (
             <button
               key={d.value} className={direction === d.value ? "on" : ""} aria-pressed={direction === d.value}
-              onClick={() => onSet((a) => a && (isDirectional(a.effect) ? { ...a, direction: d.value } : a))}
+              onClick={() => onSet((a) => a && (isDirectional(a.effect) ? { ...a, direction: normalizeDirection(a.effect, d.value) } : a))}
             >{d.label}</button>
           ))}
         </div>
-      )}
+      ))}
       {anims.length > 0 && (
         <>
           <div className="grid4">

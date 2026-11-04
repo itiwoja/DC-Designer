@@ -8,7 +8,8 @@ import { aabb } from "../editor/canvas";
 import { cropTarget } from "./ImageBox";
 import { FALLBACK_FONT, FONT_BY_FAMILY, FONT_CATALOG } from "../fonts";
 import JSZip from "jszip";
-import { animationGroups, animationSequence, buildTimingXml, insertTiming, SOUND_REL_RE, soundKey } from "../animation";
+import { animationGroups, animationSequence, buildTimingXml, insertTiming, planScroll, SOUND_REL_RE, soundKey, type ScrollMove } from "../animation";
+import { loadImageRatio } from "./imageRatio";
 import { addSlideSounds, specSounds } from "../sounds";
 import { buildTransitionXml } from "../transition";
 import { api } from "../editor/api";
@@ -166,25 +167,61 @@ async function addPosterSlide(pptx: PptxGenJS, svg: SVGSVGElement, spec: PosterS
   const inch = (v: number) => v / PX_PER_IN;
   const visible = spec.layers.filter((l) => l.visible !== false && (!l.themes || l.themes.includes(spec.theme)));
 
-  // 画像化が必要なレイヤーは並列でラスタライズしておく
-  const rasters = await Promise.all(visible.map(async (l) => {
-    if (isPlainText(l, theme)) return null;
-    const box = l.type === "background" ? { x: 0, y: 0, w: width, h: height } : layerBox(svg, spec, l.id);
-    if (!box) return null;
-    // 対象レイヤー以外を消した SVG を作り、viewBox で box だけを描画する
+  /** doc から keep に当てはまるトップレベルのレイヤーだけ残し、viewBox の範囲を画像にする */
+  const rasterize = async (box: { x: number; y: number; w: number; h: number }, keep: (id: string) => boolean, edit?: (d: Document) => void, scale = 2) => {
     const d = doc.cloneNode(true) as Document;
     d.querySelectorAll("[data-layer-id]").forEach((g) => {
       if (g.parentElement?.closest("[data-layer-id]")) return; // ネストは親に従う
-      if (g.getAttribute("data-layer-id") !== l.id) g.remove();
+      if (!keep(g.getAttribute("data-layer-id") ?? "")) g.remove();
     });
+    edit?.(d);
     const root = d.documentElement;
     root.setAttribute("viewBox", `${box.x} ${box.y} ${box.w} ${box.h}`);
     root.setAttribute("width", String(box.w));
     root.setAttribute("height", String(box.h));
     // 文字を含まないレイヤーはフォント埋め込みを外して軽くする
     if (!root.querySelector("text")) root.querySelectorAll(":scope > style").forEach((st) => st.remove());
-    const png = await svgToPngBlob(new XMLSerializer().serializeToString(d), box.w, box.h, 2);
+    const png = await svgToPngBlob(new XMLSerializer().serializeToString(d), box.w, box.h, scale);
     return { box, data: await toDataUrl(png) };
+  };
+
+  // スクロール: 画像全体を 1 枚で置き、はみ出す部分は「このレイヤーより下のもの」の帯で隠す
+  const scrollPlans = new Map<string, NonNullable<ReturnType<typeof planScroll>>>();
+  await Promise.all(visible.map(async (l) => {
+    if (l.type !== "image" || !l.src || l.animation?.effect !== "scroll") return;
+    const ratio = (await loadImageRatio(l.src)) ?? l.crop?.ratio;
+    const plan = ratio ? planScroll(l, ratio, l.animation, spec.meta) : null;
+    if (plan) scrollPlans.set(l.id, plan);
+  }));
+  const scrollRasters = new Map<string, { picture: Awaited<ReturnType<typeof rasterize>>; bands: Awaited<ReturnType<typeof rasterize>>[] }>();
+  await Promise.all([...scrollPlans].map(async ([id, plan]) => {
+    const under = new Set(spec.layers.slice(0, spec.layers.findIndex((x) => x.id === id)).map((x) => x.id));
+    const { picture } = plan;
+    const picture1 = await rasterize(picture, (lid) => lid === id, (d) => {
+      const img = d.querySelector(`[data-layer-id="${CSS.escape(id)}"] [data-scroll-image]`);
+      if (!img) return;
+      // 枠の clip と影を外し、画像全体の大きさで描く
+      // 位置はレイヤーの枠からの相対（流し始めの端に置く）
+      const l = spec.layers.find((x) => x.id === id)!;
+      img.setAttribute("x", String(picture.x - l.x));
+      img.setAttribute("y", String(picture.y - l.y));
+      img.setAttribute("width", String(picture.w));
+      img.setAttribute("height", String(picture.h));
+      img.setAttribute("preserveAspectRatio", "none");
+      img.parentElement?.removeAttribute("clip-path");
+      img.closest("[data-layer-id]")?.removeAttribute("filter");
+    }, Math.min(2, 8192 / Math.max(picture.w, picture.h)));
+    const bands = await Promise.all(plan.bands.map((b) => rasterize(b, (lid) => under.has(lid))));
+    scrollRasters.set(id, { picture: picture1, bands });
+  }));
+
+  // 画像化が必要なレイヤーは並列でラスタライズしておく
+  const rasters = await Promise.all(visible.map(async (l) => {
+    if (isPlainText(l, theme) || scrollPlans.has(l.id)) return null;
+    const box = l.type === "background" ? { x: 0, y: 0, w: width, h: height } : layerBox(svg, spec, l.id);
+    if (!box) return null;
+    // 対象レイヤー以外を消した SVG を作り、viewBox で box だけを描画する
+    return rasterize(box, (id) => id === l.id);
   }));
 
   // pptxgenjs は図形に「追加した順番 + 2」の id を振る。アニメーションの対象指定に使う
@@ -240,10 +277,26 @@ async function addPosterSlide(pptx: PptxGenJS, svg: SVGSVGElement, spec: PosterS
       textIds.add(l.id);
       return;
     }
+    const sc = scrollRasters.get(l.id);
+    if (sc) {
+      // 画像全体 → すぐ上に帯（帯は動かさない）の順に置く
+      for (const [k, r] of [sc.picture, ...sc.bands].entries()) {
+        slide.addImage({ data: r.data, x: inch(r.box.x), y: inch(r.box.y), w: inch(r.box.w), h: inch(r.box.h), altText: k ? `${l.name ?? l.id}（スクロールの帯）` : l.name ?? l.id });
+        if (!k) spids.set(l.id, added + 2);
+        added++;
+      }
+      return;
+    }
     const r = rasters[i];
     if (!r) return;
     slide.addImage({ data: r.data, x: inch(r.box.x), y: inch(r.box.y), w: inch(r.box.w), h: inch(r.box.h), altText: l.name ?? l.id });
     spids.set(l.id, added++ + 2);
   });
-  return buildTimingXml(animationGroups(animationSequence(spec)), spids, textIds);
+  // 流せなかったスクロール（回転・はみ出しなし・画像が読めない）は、フェードで代わりにする
+  const timed: PosterSpec = {
+    ...spec,
+    layers: spec.layers.map((l) => (l.animation?.effect === "scroll" && !scrollPlans.has(l.id) ? { ...l, animation: { ...l.animation, effect: "fade" as const, direction: undefined, scrollTo: undefined } } : l)),
+  };
+  const moves = new Map<string, ScrollMove>([...scrollPlans].map(([id, p]) => [id, p.move]));
+  return buildTimingXml(animationGroups(animationSequence(timed)), spids, textIds, moves);
 }

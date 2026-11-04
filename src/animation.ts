@@ -8,23 +8,54 @@ import type { Layer, LayerAnimation, PosterSpec, SoundRef } from "./schema";
 
 export type AnimEffect = LayerAnimation["effect"];
 export type AnimDirection = NonNullable<LayerAnimation["direction"]>;
+/** 上下左右の 4 方向（ワイプ・画面切り替え・スクロールで使える向き） */
+export type CardinalDirection = "bottom" | "top" | "left" | "right";
 
-export const ANIM_EFFECTS: { value: AnimEffect; label: string; directional?: boolean }[] = [
+export const ANIM_EFFECTS: { value: AnimEffect; label: string; directional?: boolean; diagonal?: boolean; imageOnly?: boolean }[] = [
   { value: "appear", label: "表示" },
   { value: "fade", label: "フェード" },
   { value: "float", label: "浮き上がり" },
-  { value: "fly", label: "スライドイン", directional: true },
+  { value: "fly", label: "画面外から（スライドイン）", directional: true, diagonal: true },
   { value: "wipe", label: "ワイプ", directional: true },
   { value: "zoom", label: "ズーム" },
+  { value: "scroll", label: "スクロール", directional: true, imageOnly: true },
 ];
 export const isDirectional = (e: AnimEffect) => !!ANIM_EFFECTS.find((x) => x.value === e)?.directional;
+/** 斜めの向きも選べる効果か */
+export const isDiagonalOk = (e: AnimEffect) => !!ANIM_EFFECTS.find((x) => x.value === e)?.diagonal;
+/** 画像にしか付けられない効果か */
+export const isImageOnly = (e: AnimEffect) => !!ANIM_EFFECTS.find((x) => x.value === e)?.imageOnly;
 
-export const ANIM_DIRECTIONS: { value: AnimDirection; label: string }[] = [
+export const ANIM_DIRECTIONS: { value: CardinalDirection; label: string }[] = [
   { value: "bottom", label: "下から" }, { value: "left", label: "左から" }, { value: "right", label: "右から" }, { value: "top", label: "上から" },
+];
+/** スライドインの斜めの向き */
+export const ANIM_DIAGONALS: { value: AnimDirection; label: string }[] = [
+  { value: "topleft", label: "左上から" }, { value: "topright", label: "右上から" }, { value: "bottomleft", label: "左下から" }, { value: "bottomright", label: "右下から" },
+];
+/** スクロールの向き（画像のどちらからどちらへ流すか） */
+export const SCROLL_DIRECTIONS: { value: CardinalDirection; label: string }[] = [
+  { value: "bottom", label: "上→下" }, { value: "top", label: "下→上" }, { value: "right", label: "左→右" }, { value: "left", label: "右→左" },
 ];
 export const ANIM_STARTS: { value: LayerAnimation["start"]; label: string }[] = [
   { value: "click", label: "クリック時" }, { value: "with", label: "直前と同時" }, { value: "after", label: "直前の動作の後" },
 ];
+
+/** 向きの横・縦の成分（-1 = 左／上から、1 = 右／下から） */
+export function dirParts(d: AnimDirection): { h: -1 | 0 | 1; v: -1 | 0 | 1 } {
+  return { h: d.endsWith("left") ? -1 : d.endsWith("right") ? 1 : 0, v: d.startsWith("top") ? -1 : d.startsWith("bottom") ? 1 : 0 };
+}
+/** 斜めを上下左右のどれかにする（縦の成分を優先） */
+export function toCardinal(d: AnimDirection): CardinalDirection {
+  const { h, v } = dirParts(d);
+  return v < 0 ? "top" : v > 0 ? "bottom" : h < 0 ? "left" : "right";
+}
+/** 効果に合う向きにそろえる。向きの無い効果は undefined、斜めを選べない効果の斜めは上下左右にする */
+export function normalizeDirection(effect: AnimEffect, d: AnimDirection | undefined): AnimDirection | undefined {
+  if (!isDirectional(effect)) return undefined;
+  const dir = d ?? "bottom";
+  return isDiagonalOk(effect) ? dir : toCardinal(dir);
+}
 
 /** 新しく付けるときの既定値 */
 export const defaultAnimation = (effect: AnimEffect = "fade"): LayerAnimation => ({
@@ -97,15 +128,78 @@ export function animationGroups(seq: { layer: Layer; anim: LayerAnimation }[]): 
   return groups;
 }
 
+// ---------- スクロール（画像を枠の中で流す） ----------
+
+/**
+ * スクロールの配置。枠 (0,0,w,h) の左上を基準に、画像全体の矩形（img）と、動かす量（move）。
+ * 縦（bottom / top）は画像の幅を枠に合わせ、横（right / left）は高さを枠に合わせて、はみ出した分を流す。
+ * travel が 0 なら、その向きにははみ出していない（流せない）
+ */
+export function scrollLayout(frame: { w: number; h: number }, ratio: number, direction: AnimDirection | undefined, to = 1) {
+  const dir = toCardinal(direction ?? "bottom");
+  const vertical = dir === "bottom" || dir === "top";
+  const iw = vertical ? frame.w : frame.h * ratio;
+  const ih = vertical ? frame.w / ratio : frame.h;
+  const travel = Math.max(0, vertical ? ih - frame.h : iw - frame.w);
+  const amount = travel * Math.max(0, Math.min(1, to));
+  // bottom / right は端から始めて逆の端へ、top / left は逆の端から始める
+  const reverse = dir === "top" || dir === "left";
+  const start = reverse ? -travel : 0;
+  const sign = reverse ? 1 : -1;
+  return {
+    vertical, travel,
+    img: { x: vertical ? 0 : start, y: vertical ? start : 0, w: iw, h: ih },
+    move: { dx: vertical ? 0 : sign * amount, dy: vertical ? sign * amount : 0 },
+  };
+}
+
+type Rect = { x: number; y: number; w: number; h: number };
+
+/**
+ * PPTX 書き出しでのスクロールの置き方。
+ * - picture: 画像全体の矩形（スライド座標。枠からはみ出す）
+ * - move: 動かす量（スライドの幅・高さに対する比。animMotion の path に使う）
+ * - bands: はみ出した部分を隠す帯（スライド内に入る部分だけ。このレイヤーより下のものを画像にして置く）
+ * 回転している・はみ出していない（流せない）ときは null
+ */
+export function planScroll(
+  l: { x: number; y: number; w: number; h: number; rotation?: number }, ratio: number, a: LayerAnimation, slide: { width: number; height: number },
+): { picture: Rect; move: { x: number; y: number }; bands: Rect[] } | null {
+  if (l.rotation || !(ratio > 0) || !(l.w > 0) || !(l.h > 0)) return null;
+  const lay = scrollLayout(l, ratio, a.direction, a.scrollTo ?? 1);
+  if (lay.travel < 1) return null;
+  const picture = { x: l.x + lay.img.x, y: l.y + lay.img.y, w: lay.img.w, h: lay.img.h };
+  const end = { x: picture.x + lay.move.dx, y: picture.y + lay.move.dy };
+  const bands: Rect[] = [];
+  if (lay.vertical) {
+    const x0 = Math.max(0, l.x), x1 = Math.min(slide.width, l.x + l.w);
+    const top = Math.max(0, Math.min(picture.y, end.y)), bottom = Math.min(slide.height, Math.max(picture.y, end.y) + picture.h);
+    if (x1 - x0 >= 1 && l.y - top >= 1) bands.push({ x: x0, y: top, w: x1 - x0, h: l.y - top });
+    if (x1 - x0 >= 1 && bottom - (l.y + l.h) >= 1) bands.push({ x: x0, y: l.y + l.h, w: x1 - x0, h: bottom - (l.y + l.h) });
+  } else {
+    const y0 = Math.max(0, l.y), y1 = Math.min(slide.height, l.y + l.h);
+    const left = Math.max(0, Math.min(picture.x, end.x)), right = Math.min(slide.width, Math.max(picture.x, end.x) + picture.w);
+    if (y1 - y0 >= 1 && l.x - left >= 1) bands.push({ x: left, y: y0, w: l.x - left, h: y1 - y0 });
+    if (y1 - y0 >= 1 && right - (l.x + l.w) >= 1) bands.push({ x: l.x + l.w, y: y0, w: right - (l.x + l.w), h: y1 - y0 });
+  }
+  return { picture, move: { x: lay.move.dx / slide.width, y: lay.move.dy / slide.height }, bands };
+}
+
 // ---------- PowerPoint の <p:timing> ----------
 
-/** 方向 → PowerPoint の presetSubtype（スライドイン・ワイプ共通） */
-const SUBTYPE: Record<AnimDirection, number> = { top: 1, right: 2, bottom: 4, left: 8 };
-const PRESET: Record<AnimEffect, number> = { appear: 1, fly: 2, fade: 10, wipe: 22, float: 42, zoom: 53 };
+/** 方向 → PowerPoint の presetSubtype（スライドイン・ワイプ共通。上 1・右 2・下 4・左 8 の足し算で、斜めは 3・6・12・9） */
+const subtype = (d: AnimDirection) => {
+  const { h, v } = dirParts(d);
+  return (v < 0 ? 1 : 0) + (h > 0 ? 2 : 0) + (v > 0 ? 4 : 0) + (h < 0 ? 8 : 0);
+};
+/** scroll は移動のパス（presetClass="path"）で、ID は 0（ユーザー設定のパス） */
+const PRESET: Record<AnimEffect, number> = { appear: 1, fly: 2, fade: 10, wipe: 22, float: 42, zoom: 53, scroll: 0 };
 /** ワイプは「どちらへ広がるか」で書く（下から = 上へ広がる） */
-const WIPE_FILTER: Record<AnimDirection, string> = { bottom: "wipe(up)", top: "wipe(down)", left: "wipe(right)", right: "wipe(left)" };
+const WIPE_FILTER: Record<CardinalDirection, string> = { bottom: "wipe(up)", top: "wipe(down)", left: "wipe(right)", right: "wipe(left)" };
 
 type Ids = { next: () => number };
+/** スクロールの動き（スライドの幅・高さに対する比） */
+export type ScrollMove = { x: number; y: number };
 
 function anim(ids: Ids, spid: number, dur: number, attr: string, from: string, to: string) {
   return `<p:anim calcmode="lin" valueType="num"><p:cBhvr additive="base"><p:cTn id="${ids.next()}" dur="${dur}" fill="hold"/><p:tgtEl><p:spTgt spid="${spid}"/></p:tgtEl><p:attrNameLst><p:attrName>${attr}</p:attrName></p:attrNameLst></p:cBhvr>`
@@ -115,19 +209,26 @@ const animEffect = (ids: Ids, spid: number, dur: number, filter: string) =>
   `<p:animEffect transition="in" filter="${filter}"><p:cBhvr><p:cTn id="${ids.next()}" dur="${dur}"/><p:tgtEl><p:spTgt spid="${spid}"/></p:tgtEl></p:cBhvr></p:animEffect>`;
 
 /** 効果の中身（表示に切り替える set ＋ 効果ごとの動き） */
-function behaviors(ids: Ids, spid: number, a: LayerAnimation): string {
+function behaviors(ids: Ids, spid: number, a: LayerAnimation, motion?: ScrollMove): string {
   const dur = Math.max(1, Math.round(a.duration));
   const set = `<p:set><p:cBhvr><p:cTn id="${ids.next()}" dur="1" fill="hold"><p:stCondLst><p:cond delay="0"/></p:stCondLst></p:cTn><p:tgtEl><p:spTgt spid="${spid}"/></p:tgtEl><p:attrNameLst><p:attrName>style.visibility</p:attrName></p:attrNameLst></p:cBhvr><p:to><p:strVal val="visible"/></p:to></p:set>`;
-  const dir = a.direction ?? "bottom";
+  const dir = normalizeDirection(a.effect, a.direction) ?? "bottom";
   switch (a.effect) {
     case "appear": return set;
     case "fade": return set + animEffect(ids, spid, dur, "fade");
     case "fly": {
-      const x = dir === "left" ? "0-#ppt_w/2" : dir === "right" ? "1+#ppt_w/2" : "#ppt_x";
-      const y = dir === "top" ? "0-#ppt_h/2" : dir === "bottom" ? "1+#ppt_h/2" : "#ppt_y";
+      const { h, v } = dirParts(dir);
+      const x = h < 0 ? "0-#ppt_w/2" : h > 0 ? "1+#ppt_w/2" : "#ppt_x";
+      const y = v < 0 ? "0-#ppt_h/2" : v > 0 ? "1+#ppt_h/2" : "#ppt_y";
       return set + anim(ids, spid, dur, "ppt_x", x, "#ppt_x") + anim(ids, spid, dur, "ppt_y", y, "#ppt_y");
     }
-    case "wipe": return set + animEffect(ids, spid, dur, WIPE_FILTER[dir]);
+    case "wipe": return set + animEffect(ids, spid, dur, WIPE_FILTER[toCardinal(dir)]);
+    case "scroll": {
+      // 表示のまま、今の位置から path の終点へ動かす。値はスライドの幅・高さに対する比（rCtr は 1/100000）
+      const m = motion ?? { x: 0, y: 0 };
+      const f = (v: number) => String(Math.round(v * 1e5) / 1e5);
+      return `<p:animMotion origin="layout" path="M 0 0 L ${f(m.x)} ${f(m.y)} E" pathEditMode="relative" rAng="0" ptsTypes="AA"><p:cBhvr><p:cTn id="${ids.next()}" dur="${dur}" fill="hold"/><p:tgtEl><p:spTgt spid="${spid}"/></p:tgtEl><p:attrNameLst><p:attrName>ppt_x</p:attrName><p:attrName>ppt_y</p:attrName></p:attrNameLst></p:cBhvr><p:rCtr x="${Math.round(m.x * 5e4)}" y="${Math.round(m.y * 5e4)}"/></p:animMotion>`;
+    }
     case "float":
       return set + animEffect(ids, spid, dur, "fade") + anim(ids, spid, dur, "ppt_x", "#ppt_x", "#ppt_x") + anim(ids, spid, dur, "ppt_y", "#ppt_y+.1", "#ppt_y");
     case "zoom":
@@ -154,9 +255,9 @@ const soundXml = (ids: Ids, sound: SoundRef) =>
 
 /**
  * スライドの <p:timing> を作る。spids はレイヤー id → スライド内の図形 id（cNvPr id）。
- * textIds はテキストボックスとして書き出したレイヤー（bldP が要る）
+ * textIds はテキストボックスとして書き出したレイヤー（bldP が要る）。scrolls はスクロールのレイヤー id → 動き（無いスクロールは書かない）
  */
-export function buildTimingXml(groups: AnimGroup[], spids: Map<string, number>, textIds: Set<string> = new Set()): string {
+export function buildTimingXml(groups: AnimGroup[], spids: Map<string, number>, textIds: Set<string> = new Set(), scrolls: Map<string, ScrollMove> = new Map()): string {
   let n = 2; // 1 = tmRoot, 2 = mainSeq
   const ids: Ids = { next: () => ++n };
   const used: { spid: number; grpId: number; text: boolean }[] = [];
@@ -164,12 +265,13 @@ export function buildTimingXml(groups: AnimGroup[], spids: Map<string, number>, 
     const steps = g.steps.map((st) => {
       const items = st.items.flatMap((it) => {
         const spid = spids.get(it.id);
-        if (spid == null) return [];
+        if (spid == null || (it.anim.effect === "scroll" && !scrolls.has(it.id))) return [];
         used.push({ spid, grpId: 0, text: textIds.has(it.id) });
         const effId = ids.next();
-        const sub = isDirectional(it.anim.effect) ? SUBTYPE[it.anim.direction ?? "bottom"] : it.anim.effect === "zoom" ? 16 : 0;
-        return [`<p:par><p:cTn id="${effId}" presetID="${PRESET[it.anim.effect]}" presetClass="entr" presetSubtype="${sub}" fill="hold" grpId="0" nodeType="${NODE_TYPE[it.anim.start]}">`
-          + `<p:stCondLst><p:cond delay="${Math.round(it.offset)}"/></p:stCondLst><p:childTnLst>${behaviors(ids, spid, it.anim)}</p:childTnLst>${it.anim.sound ? soundXml(ids, it.anim.sound) : ""}</p:cTn></p:par>`];
+        const scroll = it.anim.effect === "scroll";
+        const sub = scroll ? 0 : isDirectional(it.anim.effect) ? subtype(normalizeDirection(it.anim.effect, it.anim.direction) ?? "bottom") : it.anim.effect === "zoom" ? 16 : 0;
+        return [`<p:par><p:cTn id="${effId}" presetID="${PRESET[it.anim.effect]}" presetClass="${scroll ? "path" : "entr"}" presetSubtype="${sub}"${scroll ? ' accel="50000" decel="50000"' : ""} fill="hold" grpId="0" nodeType="${NODE_TYPE[it.anim.start]}">`
+          + `<p:stCondLst><p:cond delay="${Math.round(it.offset)}"/></p:stCondLst><p:childTnLst>${behaviors(ids, spid, it.anim, scrolls.get(it.id))}</p:childTnLst>${it.anim.sound ? soundXml(ids, it.anim.sound) : ""}</p:cTn></p:par>`];
       });
       return items.length ? { offset: st.offset, xml: items.join("") } : null;
     }).filter((s) => s !== null);

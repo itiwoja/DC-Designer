@@ -45,7 +45,7 @@ const SYSTEM = `あなたは日本の学校・イベント告知ポスターを�
   id(一意, 英数字とハイフン), name(日本語の分かりやすいレイヤー名), type,
   x, y, w, h（左上座標とサイズ）, rotation?(度, 中心回転), opacity?, blend?,
   shadow?: { color, dx, dy, blur }, themes?: string[]（特定テーマでのみ表示）, visible?,
-  animation?: { effect: "appear"(表示)|"fade"(フェード)|"float"(浮き上がり)|"fly"(スライドイン)|"wipe"(ワイプ)|"zoom"(ズーム), direction?: "bottom"|"top"|"left"|"right"(fly・wipe の入ってくる向き),
+  animation?: { effect: "appear"(表示)|"fade"(フェード)|"float"(浮き上がり)|"fly"(画面外からスライドイン)|"wipe"(ワイプ)|"zoom"(ズーム)|"scroll"(スクロール。画像レイヤーだけ), direction?: "bottom"|"top"|"left"|"right"(fly・wipe の入ってくる向き。fly だけ "topleft"|"topright"|"bottomleft"|"bottomright" の斜めも可。scroll は画像を流す向きで bottom = 上端から下端へ・top = 下端から上端へ・right = 左端から右端へ・left = 右端から左端へ), scrollTo?: 0〜1(scroll でどこまで流すか。無ければ最後まで),
                start: "click"(クリック時)|"with"(直前と同時)|"after"(直前の動作の後), duration(ms), delay(ms), order(再生順 1〜),
                sound?: "pop"(ポン)|"click"(カチッ)|"whoosh"(シュッ)|"pico"(ピコン)|"chime"(ピンポン)|"sparkle"(キラーン)|"drum"(ドン)|"fanfare"(ジャジャーン)(動き始めと同時に鳴らす効果音。{ src, name } はユーザーが取り込んだ音声ファイルなので、そのまま残す) }
     ※ PowerPoint のスライド（デッキ）のアニメーション。ユーザーが動き・アニメーションを頼んだときだけ付け、頼まれていなければ既存の値をそのまま残す。

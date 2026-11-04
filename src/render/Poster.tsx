@@ -4,6 +4,7 @@ import { resolveColor, resolveTheme, type Theme } from "../themes";
 import { RENDERERS } from "../components";
 import { TextBlock } from "./TextBlock";
 import { ImageBox } from "./ImageBox";
+import { toCardinal } from "../animation";
 import { blobPath, paintToSvg } from "./paint";
 
 export interface PosterProps {
@@ -67,7 +68,7 @@ function renderLayerBody(layer: Layer, theme: Theme, spec: PosterSpec, props: Po
         />
       );
     case "image":
-      return <ImageBox id={id} src={layer.src} asset={layer.asset} w={w} h={h} fit={layer.fit} crop={layer.crop} radius={layer.radius} blur={layer.blur} />;
+      return <ImageBox id={id} src={layer.src} asset={layer.asset} w={w} h={h} fit={layer.fit} crop={layer.crop} radius={layer.radius} blur={layer.blur} scroll={layer.animation?.effect === "scroll" ? toCardinal(layer.animation.direction ?? "bottom") : undefined} />;
     case "component": {
       const r = RENDERERS[layer.component];
       if (!r) return <rect width={w} height={h} fill="none" stroke="red" strokeDasharray="6 4" />;
