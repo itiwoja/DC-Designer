@@ -51,8 +51,28 @@ export function redoPromptOf(text: string): string {
     .replace(/(を|に)?(もう一度|もう1回|もう一回)?(作り直|描き直|生成し直|再生成|撮り直)(して|す)?(ください|下さい|くれる|ほしい|欲しい|もらえる)?[?？!！。\s]*$/, "")
     .trim();
 }
-/** 「透過で」「背景なしで」など、背景を透明にしたい依頼か */
-export const isTransparentRequest = (text: string) => TRANSPARENT.test(text);
+/** 「背景ありで」「透過をやめて」など、透過を解いて背景をつけたい依頼（「背景を付けずに」「背景をつけないで」は含めない） */
+const OPAQUE = /透過(を|は)?(やめ|止め|解除|外し|はずし|なし|無し|しない|せず|不要|いらない)|透過(で|では|じゃ)?(なく|ない)|透明(に)?(しない|せず)|透明(で|では|じゃ)(なく|ない)|不透明|(?<!透明な?)背景(を)?(あり|有り|付き|つき|つけ|付け)(?![ずな])/;
+/** 「白背景で」「白地に」。透過の依頼と一緒なら（「白い背景を透過にして」）透過を解く意味にはしない */
+const WHITE_BG = /白(い)?(背景|地)/;
+/** 透過を解く依頼か（作り直しで、元の透過の設定を外す） */
+export const isOpaqueRequest = (text: string) => OPAQUE.test(text) || (WHITE_BG.test(text) && !TRANSPARENT.test(text));
+/** 「透過で」「背景なしで」など、背景を透明にしたい依頼か（「透過をやめて」は透過にしない） */
+export const isTransparentRequest = (text: string) => TRANSPARENT.test(text) && !OPAQUE.test(text);
+/** 作り直しの透過の設定。依頼文で透過を解いていれば false、透過を頼んでいれば true、何も言っていなければ元の設定のまま */
+export const redoTransparent = (text: string, original: boolean | undefined) => !isOpaqueRequest(text) && (isTransparentRequest(text) || !!original);
+
+/** この振り分け先が AI（サインイン済みの ChatGPT など）を必要とするか。hasRefs は参考資料を添付しているか（添付があると画像の依頼も AI の修正に回る） */
+export function routeNeedsAI(route: ChatRoute, hasRefs: boolean): boolean {
+  switch (route.kind) {
+    case "slash-error": case "renumber": return false;
+    // / コマンドで AI を使うのは台本（/notes）だけ。/a4 は AI が無ければ手元で整える
+    case "slash": return route.cmd.name === "notes";
+    // 添付があると、作り直しも含めて AI の修正に回る（App.tsx の sendChat）
+    case "image": return hasRefs;
+    default: return true;
+  }
+}
 /** 依頼文から末尾の「を作って」などを取った、画像生成に渡す説明（空になるなら依頼文のまま） */
 export function imagePromptOf(text: string): string {
   const t = text.trim().replace(/(を|も)?(お願い|作って|作成して|生成して|描いて|入れて|足して|追加して|挿入して|載せて|のせて|貼って|用意して|出して)(ください|下さい|くれる|ほしい|欲しい|もらえる)?[?？!！。\s]*$/, "").trim();

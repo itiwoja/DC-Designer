@@ -23,9 +23,11 @@ export type ChatMsg = {
   image?: string;
   /** この返答で生成した画像（サムネイルで出す） */
   images?: string[];
+  /** images の各画像の説明（プロンプトなど。alt に使う） */
+  imageAlts?: string[];
   /** 自動生成がオフで、未生成のまま残った画像。posterIds はデッキで未生成を含むスライド */
   pendingImages?: { count: number; posterIds: string[] };
-  /** 「画像を生成する」を押した */
+  /** 「画像を生成する」で画像を作り終えた（失敗・キャンセルなら立てない） */
   imagesStarted?: boolean;
   /** 添付はタブ内だけ保持し、再送信でも同じ資料を使う。 */
   references?: RefImage[];
@@ -71,6 +73,22 @@ const KEEP_RECENT = 10;
 /** 直近の原文として渡す量の上限（文字数）。超えた分は古い方から落とす（要約待ちの間の保険） */
 const RECENT_BUDGET = 12000;
 
+/** 返答の「画像を生成する」を、どこに向けて実行するか（返答が対象にしていたデッキ/ポスターと今開いているものを突き合わせる） */
+export type ReplyImageTarget = { kind: "across"; ids: string[] } | { kind: "here" } | { kind: "mismatch" };
+export function replyImageTarget(posterIds: string[], deckSlideIds: string[] | null, currentId: string | null): ReplyImageTarget {
+  if (deckSlideIds) {
+    const ids = posterIds.filter((id) => deckSlideIds.includes(id));
+    if (ids.length) return { kind: "across", ids };
+  }
+  // 保存前のポスターなど、対象の id が無い返答は今開いているものに生成する
+  if (!posterIds.length) return { kind: "here" };
+  return !deckSlideIds && currentId && posterIds.includes(currentId) ? { kind: "here" } : { kind: "mismatch" };
+}
+/** 画像の alt。生成のプロンプトなど中身が分かる文にする（長ければ切る。無ければ汎用の文） */
+export const imageAltOf = (m: Pick<ChatMsg, "imageAlts">, i: number): string => {
+  const t = (m.imageAlts?.[i] ?? "").replace(/\s+/g, " ").trim();
+  return t ? (t.length > 60 ? `${t.slice(0, 60)}…` : t) : "生成した画像";
+};
 /** 返答に出す画像（古いログの image も含む） */
 export const imagesOf = (m: Pick<ChatMsg, "image" | "images">): string[] => [...(m.images ?? []), ...(m.image ? [m.image] : [])];
 
@@ -212,7 +230,7 @@ export function ChatLog(props: {
               {m.text}
               {imagesOf(m).length > 0 && (
                 <div className="chat-images">
-                  {imagesOf(m).map((src, i) => <img key={i} className="chat-image" src={src} alt="生成した画像" />)}
+                  {imagesOf(m).map((src, i) => <img key={i} className="chat-image" src={src} alt={imageAltOf(m, i)} />)}
                 </div>
               )}
               {m.changes && <div className="chat-changes">{m.changes}</div>}
