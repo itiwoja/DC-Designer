@@ -86,6 +86,8 @@ function WeightInput({ spec, layer, onChange, onTooLight }: { spec: PosterSpec; 
   const commit = () => {
     const v = Number(text);
     if (text.trim() === "" || !Number.isFinite(v)) return setText(String(shown));
+    // 打ち直していない（見ているだけでフォーカスを外した）なら、保存済みの間の値も書き換えない
+    if (v === shown) return;
     if (v < min && weightRange(family)) onTooLight();
     const w = snapWeightToChoice(family, Math.max(min, v));
     setText(String(w));
