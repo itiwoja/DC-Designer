@@ -150,7 +150,7 @@ export function useChat({ ready, posterId, posterTitle }: { ready: boolean; post
     return i < 0 ? c : [...c.slice(0, i + 1), ...c.slice(i + 1).filter((x) => x.role !== "assistant")];
   });
   const markUndone = (id: string) => setMessages((c) => c.map((x) => (x.id === id ? { ...x, undone: true } : x)));
-  const markImagesStarted = (id: string, started = true) => setMessages((c) => c.map((x) => (x.id === id ? { ...x, imagesStarted: started } : x)));
+  const markImagesStarted = (id: string) => setMessages((c) => c.map((x) => (x.id === id ? { ...x, imagesStarted: true } : x)));
   const clear = () => {
     epoch.current++;
     setMessages([]);

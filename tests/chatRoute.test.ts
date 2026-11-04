@@ -133,6 +133,15 @@ describe("routeChatRequest", () => {
     expect(poster("この画像を背景ありで作り直して")).toMatchObject({ kind: "image", redo: true, transparent: false });
   });
 
+  it("背景を付けない・白い背景を抜く言い方は、透過を解く依頼にしない", () => {
+    for (const t of ["この画像を背景を付けずに作り直して", "この画像を背景をつけないで作り直して", "白い背景を透過にしてこの画像を作り直して", "白背景を抜いて透過で画像を作り直して"]) {
+      expect(isOpaqueRequest(t)).toBe(false);
+      expect(redoTransparent(t, true)).toBe(true);
+    }
+    expect(redoTransparent("この画像を背景を付けずに作り直して", false)).toBe(false);
+    expect(redoTransparent("白い背景を透過にしてこの画像を作り直して", false)).toBe(true);
+  });
+
   it("AI が要る振り分けかを返す（画像生成だけなら AI 無しで送れる）", () => {
     expect(routeNeedsAI(slides("全スライドに写真を入れて"), false)).toBe(true);
     expect(slides("全スライドに写真を入れて").kind).toBe("edit-across");
@@ -141,6 +150,10 @@ describe("routeChatRequest", () => {
     expect(routeNeedsAI(poster("この画像を水彩風に作り直して"), false)).toBe(false);
     expect(routeNeedsAI(slides("全スライドのページ番号を振り直して"), false)).toBe(false);
     expect(routeNeedsAI(slides("/image 猫"), false)).toBe(false);
+    // 添付があると作り直しも AI の修正に回る。/notes は AI で台本を書く。/a4 は AI 無しでも手元で整える
+    expect(routeNeedsAI(poster("この画像を水彩風に作り直して"), true)).toBe(true);
+    expect(routeNeedsAI(slides("/notes"), false)).toBe(true);
+    expect(routeNeedsAI(poster("/a4"), false)).toBe(false);
     expect(routeNeedsAI(slides("タイトルを大きくして"), false)).toBe(true);
   });
 });

@@ -233,7 +233,12 @@ export function App() {
   const { welcome, closeWelcome, signOut } = useChatGPTAuth({ status, setStatus, refreshStatus, notify });
 
   /** AI エラーの表示。ChatGPT の利用上限なら使用状況ページへの導線を付ける */
-  const AI_REQUIRED_NOTE = "この依頼は AI を使うため、先に AI にサインインしてください（画像を作るだけの依頼や / コマンドはサインインなしで送れます）";
+  const AI_REQUIRED_NOTE = "この依頼は AI を使うため、先に AI にサインインしてください（画像を作るだけの依頼や、/notes 以外の / コマンドはサインインなしで送れます）";
+  /** チャットの依頼の振り分け（送信ボタンの有効・無効と、実際の送信で同じものを使う） */
+  const chatRouteOf = (text: string) => {
+    const current = deck ? deck.slides.findIndex((s) => s.id === posterIdRef.current) + 1 : 0;
+    return routeChatRequest(text, { deck: deck ? { current, total: deck.slides.length } : undefined, poster: mode === "poster" });
+  };
   const notifyAIError = (e: any) => {
     if (e?.code === "subscription_sharing_usage_limit_exceeded" && status) {
       notify({ kind: "error", text: "ChatGPT の利用上限に達しました。プランまたはこのアプリの上限を ChatGPT の設定で確認してください", action: { label: "使用状況を管理", run: () => window.open(status.chatgpt.usageUrl, "_blank", "noopener") } });
@@ -560,8 +565,7 @@ export function App() {
     const cur = regen?.base ?? spec;
     const ids = selLayers.length ? selLayers.map((l) => l.id) : undefined;
     const context = chat.context(regen?.msg.id);
-    const current = deck ? deck.slides.findIndex((s) => s.id === posterIdRef.current) + 1 : 0;
-    const route = routeChatRequest(text, { deck: deck ? { current, total: deck.slides.length } : undefined, poster: mode === "poster" });
+    const route = chatRouteOf(text);
     if (route.kind === "slash-error") { notify({ kind: "error", text: route.error }); return; }
     if (!aiReady && routeNeedsAI(route, refs.length > 0 && !regen)) { notify({ kind: "info", text: AI_REQUIRED_NOTE }); return; }
     const restore = regen ? () => {} : () => setInstruction(text);
@@ -1204,7 +1208,7 @@ export function App() {
   const canPlan = canMake && !busy && !readingRefs && (!!brief.trim() || reproduceOn) && aiReady;
   // / コマンドは AI を使わないので、サインインしていなくても送れる
   // 画像の依頼でも、全スライドへの適用や参考資料つきのように AI の修正に回るものは AI が要る
-  const chatNeedsAI = !aiReady && !!instruction.trim() && routeNeedsAI(routeChatRequest(instruction.trim(), { deck: deck ? { current: deck.slides.findIndex((s) => s.id === posterIdRef.current) + 1, total: deck.slides.length } : undefined, poster: mode === "poster" }), refs.length > 0);
+  const chatNeedsAI = !aiReady && !!instruction.trim() && routeNeedsAI(chatRouteOf(instruction.trim()), refs.length > 0);
   const canChat = !busy && !readingRefs && !!instruction.trim() && !chatNeedsAI;
   const slashItems = slashClosed ? [] : slashSuggestions(instruction, isSlides, mode === "poster");
   const slashSel = Math.min(slashActive, Math.max(slashItems.length - 1, 0));
