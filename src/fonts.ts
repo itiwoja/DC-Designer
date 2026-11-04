@@ -265,6 +265,17 @@ export function weightChoicesFor(family: string): number[] {
   return [...new Set([...have, ...above])].sort((a, b) => a - b);
 }
 
+/**
+ * 太さの入力を、そのフォントで選べる太さ（weightChoicesFor）のうち最も近い値にする。
+ * 等距離なら細い側（syntheticWeight が指定以下の face を選ぶのと揃える）。最小より細い値は最小、最大より上は最大。
+ * カタログに無いフォントは任意の整数のまま（1〜1000 に収めるだけ）
+ */
+export function snapWeightToChoice(family: string, weight: number): number {
+  const w = Math.round(weight);
+  if (!FONT_BY_FAMILY.get(family)?.weights.length) return Math.min(1000, Math.max(1, w));
+  return weightChoicesFor(family).reduce((best, c) => (Math.abs(c - w) < Math.abs(best - w) ? c : best));
+}
+
 /** 太さをそのフォントの最小値以上にする（細い側は字形が無く効かない）。カタログに無いフォントはそのまま */
 export function clampWeightToFont(family: string, weight: number): number {
   const r = weightRange(family);

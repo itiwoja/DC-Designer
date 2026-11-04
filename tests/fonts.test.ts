@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installFonts, parseExpect, parseFaces } from "../server/fonts";
-import { FONT_BY_ID, FONT_CATALOG, clampWeightToFont, fontCovers, lighterFontSuggestions, scriptsFor, weightChoicesFor, weightRange } from "../src/fonts";
+import { FONT_BY_ID, FONT_CATALOG, clampWeightToFont, fontCovers, lighterFontSuggestions, scriptsFor, snapWeightToChoice, weightChoicesFor, weightRange } from "../src/fonts";
 
 const execFileMock = vi.hoisted(() => vi.fn((...args: unknown[]) => (args.at(-1) as (e: null, r: { stdout: string; stderr: string }) => void)(null, { stdout: "", stderr: "" })));
 vi.mock("node:child_process", () => ({ execFile: execFileMock }));
@@ -99,5 +99,22 @@ describe("太さの選択肢", () => {
   it("すでに 300 以下を持つフォント・カタログに無いフォントには出さない", () => {
     expect(lighterFontSuggestions("Noto Sans JP")).toEqual([]);
     expect(lighterFontSuggestions("Unknown Font")).toEqual([]);
+  });
+});
+
+describe("snapWeightToChoice", () => {
+  it("間の値は最も近い選択肢に丸める（等距離は細い側）", () => {
+    expect(snapWeightToChoice("BIZ UDPGothic", 550)).toBe(400);
+    expect(snapWeightToChoice("BIZ UDPGothic", 450)).toBe(400);
+    expect(snapWeightToChoice("BIZ UDPGothic", 650)).toBe(700);
+    expect(snapWeightToChoice("BIZ UDPGothic", 700)).toBe(700);
+  });
+  it("最小より細い値は最小、最大より上は最大の選択肢", () => {
+    expect(snapWeightToChoice("BIZ UDPGothic", 100)).toBe(400);
+    expect(snapWeightToChoice("BIZ UDPGothic", 1000)).toBe(900);
+  });
+  it("カタログに無いフォントは任意の整数のまま", () => {
+    expect(snapWeightToChoice("Unknown Font", 550)).toBe(550);
+    expect(snapWeightToChoice("Unknown Font", 1500)).toBe(1000);
   });
 });
