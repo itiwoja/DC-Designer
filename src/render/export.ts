@@ -1,6 +1,6 @@
 import type PptxGenJS from "pptxgenjs";
 import { withOffscreenPoster } from "./offscreen";
-import { buildExportSvg, svgToPngBlob, toDataUrl } from "./svg";
+import { buildExportSvg, newExportCache, svgToPngBlob, toDataUrl, type ExportCache } from "./svg";
 import type { Layer, PosterSpec, TextLayerT } from "../schema";
 import { resolveColor, resolvePaint, resolveTheme } from "../themes";
 import { lineSegments } from "../textRuns";
@@ -61,7 +61,7 @@ export function textTransparency(opacity: number | undefined): number {
 export async function buildPptx(svg: SVGSVGElement, spec: PosterSpec): Promise<Blob> {
   const pptx = await newPptx(spec);
   const fonts: FontUsage = new Map();
-  const timing = buildTransitionXml(spec.transition) + await addPosterSlide(pptx, svg, spec, fonts);
+  const timing = buildTransitionXml(spec.transition) + placePosterSlide(pptx, spec, await prepareSlide(svg, spec, newExportCache()), fonts);
   return finishPptx((await pptx.write({ outputType: "blob" })) as Blob, [timing], fonts, [spec]);
 }
 
@@ -144,27 +144,49 @@ async function newPptx(spec: PosterSpec) {
  */
 export async function buildDeckPptx(specs: PosterSpec[], onProgress?: (done: number, total: number) => void): Promise<Blob> {
   const pptx = await newPptx(specs[0]);
-  const timings: string[] = [];
   const fonts: FontUsage = new Map();
-  for (const [i, spec] of specs.entries()) {
-    onProgress?.(i, specs.length);
-    timings.push(buildTransitionXml(spec.transition) + await withOffscreenPoster(spec, (svg) => addPosterSlide(pptx, svg, spec, fonts)));
-  }
-  onProgress?.(specs.length, specs.length);
+  const cache = newExportCache(); // 同じロゴ・背景・フォントをスライドごとに取り直さない（この書き出しの間だけ）
+  const prepared: (PreparedSlide | undefined)[] = new Array(specs.length);
+  let next = 0, done = 0, failed = false;
+  onProgress?.(0, specs.length);
+  // 描画と画像化は同時に数枚ずつ進める。スライドへの配置は下で順番どおりに行う
+  const worker = async () => {
+    while (!failed && next < specs.length) {
+      const i = next++;
+      try {
+        prepared[i] = await withOffscreenPoster(specs[i], (svg) => prepareSlide(svg, specs[i], cache));
+      } catch (e) { failed = true; throw e; }
+      onProgress?.(++done, specs.length);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(DECK_CONCURRENCY, specs.length) }, worker));
+  const timings = specs.map((spec, i) => buildTransitionXml(spec.transition) + placePosterSlide(pptx, spec, prepared[i]!, fonts));
   return finishPptx((await pptx.write({ outputType: "blob" })) as Blob, timings, fonts, specs);
 }
 
-/** スライドを 1 枚足し、そのスライドのアニメーション（<p:timing>。無ければ空文字）を返す。使ったフォントは fonts に足す */
-async function addPosterSlide(pptx: PptxGenJS, svg: SVGSVGElement, spec: PosterSpec, fonts: FontUsage): Promise<string> {
+/** デッキ書き出しで同時に描画・画像化するスライドの数 */
+const DECK_CONCURRENCY = 3;
+
+/** 画面外の SVG から先に取り出しておくもの（配置は SVG が無くてもできる） */
+type PreparedSlide = {
+  rasters: ({ box: { x: number; y: number; w: number; h: number }; data: string } | null)[];
+  /** text レイヤー id → 縮小倍率（fit: "shrink"） */
+  fitScales: Map<string, number>;
+};
+
+/** visible（表示するレイヤー）の画像化と、文字の縮小倍率の読み取り。ここまでは SVG が要るので並列にできる */
+async function prepareSlide(svg: SVGSVGElement, spec: PosterSpec, cache: ExportCache): Promise<PreparedSlide> {
   const theme = resolveTheme(spec.theme, spec.themeOverride);
   const { width, height } = spec.meta;
-  const slide = pptx.addSlide();
-  // 台本は PowerPoint のノートにする（発表者ツールで見られる）
-  if (spec.notes?.trim()) slide.addNotes(spec.notes);
-  const full = await buildExportSvg(svg, spec);
-  const doc = new DOMParser().parseFromString(full, "image/svg+xml");
-  const inch = (v: number) => v / PX_PER_IN;
   const visible = spec.layers.filter((l) => l.visible !== false && (!l.themes || l.themes.includes(spec.theme)));
+  const fitScales = new Map<string, number>();
+  for (const l of visible) {
+    if (isPlainText(l, theme)) fitScales.set(l.id, Number(svg.querySelector(`[data-layer-id="${CSS.escape(l.id)}"] [data-text-block]`)?.getAttribute("data-fit-scale")) || 1);
+  }
+  // 全レイヤーがテキストボックスになるスライドは、画像化に使う SVG（画像・フォントの埋め込み）を作らない
+  if (visible.every((l) => isPlainText(l, theme))) return { rasters: visible.map(() => null), fitScales };
+  const full = await buildExportSvg(svg, spec, { cache });
+  const doc = new DOMParser().parseFromString(full, "image/svg+xml");
 
   // 画像化が必要なレイヤーは並列でラスタライズしておく
   const rasters = await Promise.all(visible.map(async (l) => {
@@ -186,6 +208,18 @@ async function addPosterSlide(pptx: PptxGenJS, svg: SVGSVGElement, spec: PosterS
     const png = await svgToPngBlob(new XMLSerializer().serializeToString(d), box.w, box.h, 2);
     return { box, data: await toDataUrl(png) };
   }));
+
+  return { rasters, fitScales };
+}
+
+/** スライドを 1 枚足し、そのスライドのアニメーション（<p:timing>。無ければ空文字）を返す。使ったフォントは fonts に足す。呼んだ順がスライドの順 */
+function placePosterSlide(pptx: PptxGenJS, spec: PosterSpec, { rasters, fitScales }: PreparedSlide, fonts: FontUsage): string {
+  const theme = resolveTheme(spec.theme, spec.themeOverride);
+  const slide = pptx.addSlide();
+  // 台本は PowerPoint のノートにする（発表者ツールで見られる）
+  if (spec.notes?.trim()) slide.addNotes(spec.notes);
+  const inch = (v: number) => v / PX_PER_IN;
+  const visible = spec.layers.filter((l) => l.visible !== false && (!l.themes || l.themes.includes(spec.theme)));
 
   // pptxgenjs は図形に「追加した順番 + 2」の id を振る。アニメーションの対象指定に使う
   const spids = new Map<string, number>();
@@ -209,7 +243,7 @@ async function addPosterSlide(pptx: PptxGenJS, svg: SVGSVGElement, spec: PosterS
       // 英数字だけのフォントは、日本語の文字（東アジアのフォント）を Noto Sans JP にする（finishPptx で差し替える）
       if (FONT_BY_FAMILY.get(face)?.script === "latin") addUsage(FALLBACK_FONT);
       // 枠に収めるため縮小した文字（fit: "shrink"）は、縮小後の大きさで書く
-      const scale = Number(svg.querySelector(`[data-layer-id="${CSS.escape(l.id)}"] [data-text-block]`)?.getAttribute("data-fit-scale")) || 1;
+      const scale = fitScales.get(l.id) ?? 1;
       const pt = l.size * 0.72 * scale;
       // 部分色は行ごと・色の切れ目ごとの断片にして渡す
       const transparency = textTransparency(l.opacity);
