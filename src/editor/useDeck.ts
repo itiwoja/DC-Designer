@@ -200,7 +200,7 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
   const removeSlide = async () => {
     if (!deck || !posterIdRef.current) return;
     const i = deck.slides.findIndex((s) => s.id === posterIdRef.current);
-    if (!await ask({ title: `${unit} ${i + 1} を削除しますか？`, message: `「${spec.meta.title}」を削除します。この操作は取り消せません。`, ok: "削除", danger: true })) return;
+    if (!await ask({ title: `${unit} ${i + 1} を削除しますか？`, message: "このスライドを削除します。この操作は取り消せません。", ok: "削除", danger: true })) return;
     deckAction(`${unit}を削除中`, async (d) => {
       const id = posterIdRef.current!;
       const next = d.slides[i + 1]?.id ?? d.slides[i - 1]?.id;

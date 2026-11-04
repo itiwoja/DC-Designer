@@ -104,7 +104,7 @@ const compactionCandidate = (msgs: ChatMsg[], memory: ChatMemory | null) => {
  * チャットの状態（発言・記憶・返答待ち）とブラウザへの保存。
  * 会話は 1 本で続け、要約していない発言が溜まったら古い方を記憶に畳み込む
  */
-export function useChat({ ready, posterId, posterTitle }: { ready: boolean; posterId: string | null; posterTitle: string }) {
+export function useChat({ ready, posterId, posterTitle }: { ready: boolean; posterId: string | null; posterTitle: () => string }) {
   const [messages, setMessages] = useState<ChatMsg[]>(loadChat);
   useEffect(() => { saveChat(messages); }, [messages]);
   const [memory, setMemory] = useState<ChatMemory | null>(loadMemory);
@@ -150,7 +150,7 @@ export function useChat({ ready, posterId, posterTitle }: { ready: boolean; post
     const prev = lastPoster.current;
     lastPoster.current = posterId;
     if (!prev || pending) return;
-    setMessages((c) => (c.length && c[c.length - 1].role !== "divider" ? [...c, { id: uid("msg"), role: "divider", text: `「${posterTitle || "無題"}」を開きました` }] : c));
+    setMessages((c) => (c.length && c[c.length - 1].role !== "divider" ? [...c, { id: uid("msg"), role: "divider", text: `「${posterTitle() || "無題"}」を開きました` }] : c));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [posterId]);
 

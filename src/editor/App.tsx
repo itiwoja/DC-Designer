@@ -192,7 +192,9 @@ export function App() {
   const [slashClosed, setSlashClosed] = useState(false);
   const [imgPrompt, setImgPrompt] = useState("");
   const [imgTransparent, setImgTransparent] = useState(false);
-  const chat = useChat({ ready: !!aiProvider, posterId, posterTitle: spec.meta.title });
+  /** チャットの区切りに出す名前。デッキのスライドは名前ではなく番号（useDeck の後で差し替える） */
+  const chatTitle = useRef(() => spec.meta.title);
+  const chat = useChat({ ready: !!aiProvider, posterId, posterTitle: () => chatTitle.current() });
 
   // ---------- キャンバス ----------
   const svgRef = useRef<SVGSVGElement>(null);
@@ -472,10 +474,9 @@ export function App() {
     const reordered = plan.slots.some((s, i) => s.type !== "keep" || s.id !== oldIds[i]) || before !== after;
     if (!reordered && !plan.rewrites.length) return { text: res.reply || "変更はありませんでした" };
     if (removedNums.length) {
-      const titles = plan.removed.map((id) => `「${d.slides[oldIds.indexOf(id)].title}」`).join("");
       const ok = await ask({
         title: `スライドを ${before} 枚 → ${after} 枚に組み直しますか？`,
-        message: `デッキを ${before} 枚から ${after} 枚に組み直します。${added ? `${added} 枚を追加し、` : ""}スライド ${nums(removedNums)}（${titles}）を削除します。削除は取り消せません。`,
+        message: `デッキを ${before} 枚から ${after} 枚に組み直します。${added ? `${added} 枚を追加し、` : ""}スライド ${nums(removedNums)} を削除します。削除は取り消せません。`,
         ok: "組み直す", danger: true,
       });
       if (!ok) return { text: "変更は当てませんでした" };
@@ -915,6 +916,10 @@ export function App() {
     fontDialog, setFontDialog, openFontDialog, applyDeckFonts, applyTransitionToAll, renumberDeckPages, writeNotes, addSlideByAI, editAcrossDeck, importPptxFile,
     deckReady, renameDeck,
   } = useDeck({ spec, theme, save, apiUp, busy, run, notify, exported, setBusyProgress, setSpec, resetSpec, stashHistory, setSelected, fitView });
+  chatTitle.current = () => {
+    const i = deck?.slides.findIndex((s) => s.id === posterId) ?? -1;
+    return i >= 0 ? `スライド ${i + 1}` : spec.meta.title;
+  };
   /** スライド一覧で複数選択中のスライド id（空 = 複数選択なし）。デッキが変わったら・スライドが消えたら外す */
   const [selectedSlideIds, setSelectedSlideIds] = useState<string[]>([]);
   useEffect(() => {
