@@ -31,6 +31,13 @@ async function fillTitle(text: string) {
 }
 const err = (message: string, extra: object) => Object.assign(new Error(message), extra);
 
+it("種類の選択肢は「要望」「不具合」だけ（質問は出さない）", async () => {
+  await act(async () => root.render(<FeedbackDialog onClose={() => {}} />));
+  const radios = [...container.querySelectorAll<HTMLInputElement>('input[name="feedback-kind"]')];
+  expect(radios.map((r) => r.parentElement!.textContent?.trim())).toEqual(["要望", "不具合"]);
+  expect(container.textContent).not.toContain("質問");
+});
+
 it("成功：番号を表示し、https://github.com/ の URL だけ「GitHub で見る」を出す", async () => {
   vi.spyOn(api, "sendFeedback").mockResolvedValue({ number: 123, url: "https://github.com/itiwoja/DC-Designer/issues/123" });
   const open = vi.fn();

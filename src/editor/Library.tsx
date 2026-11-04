@@ -96,9 +96,10 @@ export function Library() {
   const deckOfSlide = useMemo(() => deckBySlide(decks), [decks]);
   /** 画像の「使用中」などに出す名前。スライドなら「デッキ名 / スライド名」 */
   const titleOf = useMemo(() => new Map((posters ?? []).map((p) => {
-    const title = p.spec.meta.title || "無題のポスター";
     const d = deckOfSlide.get(p.id);
-    return [p.id, d ? `${d.name} / ${title}` : title];
+    // スライドには名前を付けず、デッキ内の番号で示す
+    if (d) return [p.id, `${d.name} / スライド ${d.slides.findIndex((s) => s.id === p.id) + 1}`];
+    return [p.id, p.spec.meta.title || "無題のポスター"];
   })), [posters, deckOfSlide]);
 
   const q = query.trim().toLowerCase();
@@ -341,7 +342,7 @@ export function Library() {
                                 {p && <PosterFrame poster={p} />}
                                 <span className="num">{i + 1}</span>
                               </button>
-                              <small title={s.title}>{s.title || "無題"}</small>
+                              <small>スライド {i + 1}</small>
                             </li>
                           );
                         })}

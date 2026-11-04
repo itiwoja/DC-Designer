@@ -125,6 +125,24 @@ export function imageSlot(layer: Layer | null): { rest: (string | number)[] } | 
   return null;
 }
 
+/** 画像ファイルで差し替えてよいレイヤーか。スライドのほぼ全面を覆う画像（全面の背景画像など）は差し替えず、新しい画像として置く */
+export function replaceableByImage(layer: Layer | null, width: number, height: number) {
+  return !!layer && !!imageSlot(layer) && !coversCanvas(layer, width, height);
+}
+
+/** 新しい画像の置き場所。元の縦横比のまま、box（あれば）の中、かつ画面の半分以内に収める。box が無ければ at（既定は中央）を中心に置く。i 番目は 20px ずつずらす */
+export function placeImage(
+  natural: { w: number; h: number }, W: number, H: number, i: number,
+  opts: { box?: { x: number; y: number; w: number; h: number; rotation?: number }; at?: { x: number; y: number } } = {},
+) {
+  const { box } = opts;
+  const k = Math.min(1, (box ? Math.min(W * 0.5, box.w) : W * 0.5) / natural.w, (box ? Math.min(H * 0.5, box.h) : H * 0.5) / natural.h);
+  const w = Math.max(1, Math.round(natural.w * k)), h = Math.max(1, Math.round(natural.h * k));
+  if (box) return { x: Math.round(box.x + (box.w - w) / 2) + i * 20, y: Math.round(box.y + (box.h - h) / 2) + i * 20, w, h, ...(box.rotation ? { rotation: box.rotation } : {}) };
+  const c = opts.at ?? { x: W / 2, y: H / 2 };
+  return { x: Math.round(c.x - w / 2) + i * 20, y: Math.round(c.y - h / 2) + i * 20, w, h };
+}
+
 /** パス ["layers", i, ...rest] をレイヤーID基準に変換（生成中にレイヤー順が変わっても追従できるように） */
 export function toLayerRef(spec: PosterSpec, path: (string | number)[]): LayerRef {
   return { layerId: spec.layers[path[1] as number].id, rest: path.slice(2) };

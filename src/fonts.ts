@@ -249,6 +249,43 @@ export function syntheticWeight(family: string, weight: number): { face: number;
   return { face, extra: Math.max(0, weight - face) };
 }
 
+/** そのフォントの持つ太さの範囲。カタログに無いフォントは null */
+export function weightRange(family: string): { min: number; max: number } | null {
+  const have = FONT_BY_FAMILY.get(family)?.weights;
+  return have?.length ? { min: Math.min(...have), max: Math.max(...have) } : null;
+}
+
+/** 太さの入力で選べる値: フォントの持つ太さ＋最大より上の 100 刻み（900 まで。太い側は線で足せる）。カタログに無いフォントは 100〜900 */
+export function weightChoicesFor(family: string): number[] {
+  const have = FONT_BY_FAMILY.get(family)?.weights;
+  if (!have?.length) return [100, 200, 300, 400, 500, 600, 700, 800, 900];
+  const max = Math.max(...have);
+  const above: number[] = [];
+  for (let w = Math.floor(max / 100) * 100 + 100; w <= 900; w += 100) above.push(w);
+  return [...new Set([...have, ...above])].sort((a, b) => a - b);
+}
+
+/** 太さをそのフォントの最小値以上にする（細い側は字形が無く効かない）。カタログに無いフォントはそのまま */
+export function clampWeightToFont(family: string, weight: number): number {
+  const r = weightRange(family);
+  return r ? Math.max(weight, r.min) : weight;
+}
+
+/**
+ * もっと細くするための代わりのフォント。今のフォントが 400 以上しか持たないとき、
+ * 300 以下の太さを持つ同じ系統・同じ収録文字のフォントを、最も細いものから最大 limit 個返す。それ以外は空
+ */
+export function lighterFontSuggestions(family: string, limit = 2): FontEntry[] {
+  const cur = FONT_BY_FAMILY.get(family);
+  if (!cur || Math.min(...cur.weights) <= 300) return [];
+  return FONT_CATALOG
+    .map((f, i) => ({ f, i, min: Math.min(...f.weights) }))
+    .filter(({ f, min }) => f.role === cur.role && f.script === cur.script && min <= 300)
+    .sort((a, b) => a.min - b.min || a.i - b.i)
+    .slice(0, limit)
+    .map(({ f }) => f);
+}
+
 /** syntheticWeight の extra を、文字サイズ size のときの線の全幅（px）にする */
 export function synthStrokeWidth(extra: number, size: number): number {
   return extra > 0 ? (extra / 100) * SYNTH_STROKE_PER_100 * size : 0;

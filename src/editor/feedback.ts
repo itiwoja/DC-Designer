@@ -3,7 +3,7 @@
 import type { FeedbackEnv, FeedbackKind } from "../../desktop/feedbackRelay";
 import { FEEDBACK_KIND_LABELS, FEEDBACK_MAX_BODY, FEEDBACK_MAX_TITLE } from "../../desktop/feedbackRelay";
 export type { FeedbackEnv, FeedbackKind, FeedbackRequest, FeedbackResponse } from "../../desktop/feedbackRelay";
-export { FEEDBACK_KIND_LABELS, FEEDBACK_MAX_BODY, FEEDBACK_MAX_ENV_FIELD, FEEDBACK_MAX_TITLE } from "../../desktop/feedbackRelay";
+export { FEEDBACK_KIND_LABELS, FEEDBACK_MAX_BODY, FEEDBACK_MAX_ENV_FIELD, FEEDBACK_MAX_TITLE, FEEDBACK_SELECTABLE_KINDS } from "../../desktop/feedbackRelay";
 
 /** 不具合のときにフォームへ最初から入れておく本文 */
 export const BUG_TEMPLATE = "## 起きたこと\n\n\n## 再現手順\n1. \n\n## 期待した動き\n";
