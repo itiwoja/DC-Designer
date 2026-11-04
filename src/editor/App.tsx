@@ -882,14 +882,36 @@ export function App() {
   // ドロップ先の外（インスペクタなど）にファイルを落としても、ブラウザがそのファイルを開いてしまわないようにする
   useEffect(blockPageFileDrop, []);
 
-  // クリップボードの画像を貼り付け（スクリーンショットなど）
+  /**
+   * レイヤーをコピーしたら、続いて起きる copy / cut イベントでシステムのクリップボードを目印の文字に置き換える
+   * （でないと、前に外でコピーした画像が残っていて次の Ctrl+V でその画像が貼られる）。copy イベントの clipboardData は権限なしで書ける
+   */
+  const markCopy = useRef(false);
+  const markLayerCopy = () => { markCopy.current = true; };
+  useEffect(() => {
+    const onCopy = (e: ClipboardEvent) => {
+      if (!markCopy.current) return;
+      markCopy.current = false;
+      if (isTextInput(e.target) || !e.clipboardData) return;
+      e.clipboardData.setData("text/plain", "DC-Designer layers");
+      e.preventDefault();
+    };
+    window.addEventListener("copy", onCopy);
+    window.addEventListener("cut", onCopy);
+    return () => { window.removeEventListener("copy", onCopy); window.removeEventListener("cut", onCopy); };
+  }, []);
+
+  // クリップボードの貼り付け: 外でコピーした画像（スクリーンショットなど）を優先し、無ければアプリ内でコピーしたレイヤー
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
-      if (isTextInput(e.target)) return;
-      const files = [...(e.clipboardData?.files ?? [])].filter((f) => IMAGE_FILE_TYPES.test(f.type));
-      if (!files.length) return;
-      e.preventDefault();
-      insertImageFiles(files);
+      if (isTextInput(e.target) || e.defaultPrevented) return;
+      const d = e.clipboardData;
+      // 外でコピーした画像（ファイル・スクリーンショット）。files に無くても items に入っていることがある
+      const files = [...(d?.files ?? []), ...[...(d?.items ?? [])].filter((it) => it.kind === "file").map((it) => it.getAsFile())]
+        .filter((f): f is File => !!f && IMAGE_FILE_TYPES.test(f.type));
+      if (files.length) { e.preventDefault(); insertImageFiles([...new Map(files.map((f) => [`${f.name}:${f.size}:${f.type}`, f])).values()]); return; }
+      // 画像が無ければ、アプリ内でコピーしたレイヤーを貼る
+      if (clipboard.current.length) { e.preventDefault(); insertCopies(clipboard.current, selLayers[selLayers.length - 1]?.id); }
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
@@ -1067,7 +1089,7 @@ export function App() {
       if (mod && key === "y") return shortcut(redo);
       // Ctrl+±/0 はアプリ全体の縮尺に使うので横取りしない（Issue #61）。スライドの拡大縮小は Ctrl+ホイールとズームバー
       if (mod && key === "1") return shortcut(() => setZoom(1));
-      if (mod && key === "v" && clipboard.current.length) return shortcut(() => insertCopies(clipboard.current, selLayers[selLayers.length - 1]?.id));
+      // Ctrl+V は preventDefault しない（貼り付けは paste イベントで、画像があれば画像、無ければコピーしたレイヤー）
       if (mod && key === "a") return shortcut(() => setSelectedIds(spec.layers.filter(selectable).map((l) => l.id)));
       if (cropping && (e.key === "Escape" || e.key === "Enter")) return shortcut(() => setCropping(null));
       if (e.key === "Escape") { setSelected(null); return; }
@@ -1078,8 +1100,8 @@ export function App() {
 
       // 選択中のレイヤー（1 件でも複数でも）
       const ids = selLayers.map((l) => l.id);
-      if (mod && key === "c") { copyLayers(selLayers); notify({ kind: "info", text: multi ? `${selLayers.length} 件コピーしました` : "コピーしました" }); return; }
-      if (mod && key === "x") { copyLayers(selLayers); removeLayers(ids); return; }
+      if (mod && key === "c") { copyLayers(selLayers); markLayerCopy(); notify({ kind: "info", text: multi ? `${selLayers.length} 件コピーしました` : "コピーしました" }); return; }
+      if (mod && key === "x") { copyLayers(selLayers); markLayerCopy(); removeLayers(ids); return; }
       if (mod && key === "d") return shortcut(() => duplicateLayers(selLayers));
       // Ctrl+B / Ctrl+U: 選んだテキストの太字・下線を切り替える（Ctrl+U でブラウザの「ソースを表示」を出さない）
       const style = textStyleKey(e);
