@@ -68,4 +68,16 @@ describe("デッキの検索（matchesDeck）", () => {
     expect(matchesDeck(d, byId, "2")).toBe(false);
     expect(matchesDeck(d, new Map([["s3", poster("s3", "まとめ", "第2回")]]), "2")).toBe(true);
   });
+
+  it("パーツの文字には当たり、パスの d やアニメーションの設定など画面に出ない値には当たらない", () => {
+    const s = PosterSpecSchema.parse({ meta: { title: "x", width: 1000, height: 1414 }, theme: "ocean", layers: [
+      { id: "p", type: "shape", shape: "path", d: "M 10 20 L 30 40", fill: "$primary", x: 0, y: 0, w: 100, h: 100 },
+      { id: "c", type: "component", component: "bubble", props: { text: "ここに吹き出し", shape: "cloud" }, x: 0, y: 0, w: 100, h: 100 },
+      { id: "l", type: "component", component: "checklist", props: { items: ["持ち物リスト"] }, x: 0, y: 0, w: 100, h: 100, animation: { effect: "fade", start: "click", duration: 500, delay: 0 } },
+    ] });
+    expect(matchesSpec(s, "吹き出し")).toBe(true);
+    expect(matchesSpec(s, "持ち物")).toBe(true);
+    for (const q of ["10", "m ", "cloud", "click", "bubble"]) expect(matchesSpec(s, q)).toBe(false);
+  });
 });
+

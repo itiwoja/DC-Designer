@@ -26,22 +26,23 @@ function editingSpec(): PosterSpec[] {
   } catch { return []; }
 }
 
-/** 本文として検索しないキー（画像のデータ・ID・色やフォントの指定など、画面に文字として出ないもの） */
-const NON_TEXT_KEYS = new Set(["id", "type", "src", "font", "fill", "color", "stroke", "effect", "direction", "align", "fit"]);
+/** パーツの props のうち、画面に文字として出るもの（catalog の props の text / label / caption / items） */
+const PART_TEXT_KEYS = ["text", "label", "caption", "items"] as const;
 
-/** レイヤーの中の文字列の値を集める（数値の既定値「size: 32」の「2」などに当たらないよう、数値は見ない） */
-function collectText(v: unknown, out: string[], key = ""): void {
-  if (NON_TEXT_KEYS.has(key)) return;
-  if (typeof v === "string") out.push(v);
-  else if (Array.isArray(v)) v.forEach((x) => collectText(x, out));
-  else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) collectText(x, out, k);
+/** レイヤーの、画面に文字として出る値（文字レイヤーの本文とパーツの文字）。パスの d・色・フォント・ID などの値には当てない */
+function layerTexts(l: PosterSpec["layers"][number]): string[] {
+  if (l.type === "text") return [l.text];
+  if (l.type !== "component") return [];
+  const props = (l.props ?? {}) as Record<string, unknown>;
+  return PART_TEXT_KEYS.flatMap((k) => {
+    const v = props[k];
+    return typeof v === "string" ? [v] : Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  });
 }
 
-/** 検索語 q（小文字にしたもの）が、スライドやポスターの本文（レイヤーの文字）に含まれるか */
+/** 検索語 q（小文字にしたもの）が、スライドやポスターの本文（画面に出ている文字）に含まれるか */
 export function matchesBody(spec: PosterSpec, q: string): boolean {
-  const texts: string[] = [];
-  collectText(spec.layers, texts);
-  return texts.some((t) => t.toLowerCase().includes(q));
+  return spec.layers.some((l) => layerTexts(l).some((t) => t.toLowerCase().includes(q)));
 }
 
 /** 単体のポスターの検索。一覧にタイトルが名前として出ているので、タイトルと本文を見る */
