@@ -232,13 +232,14 @@ export function App() {
   // ---------- Sign in with ChatGPT ----------
   const { welcome, closeWelcome, signOut } = useChatGPTAuth({ status, setStatus, refreshStatus, notify });
 
-  /** AI エラーの表示。ChatGPT の利用上限なら使用状況ページへの導線を付ける */
+  /** AI にサインインしていないときに、AI が要る依頼を送ろうとした理由（送信ボタンの説明と通知） */
   const AI_REQUIRED_NOTE = "この依頼は AI を使うため、先に AI にサインインしてください（画像を作るだけの依頼や、/notes 以外の / コマンドはサインインなしで送れます）";
   /** チャットの依頼の振り分け（送信ボタンの有効・無効と、実際の送信で同じものを使う） */
   const chatRouteOf = (text: string) => {
     const current = deck ? deck.slides.findIndex((s) => s.id === posterIdRef.current) + 1 : 0;
     return routeChatRequest(text, { deck: deck ? { current, total: deck.slides.length } : undefined, poster: mode === "poster" });
   };
+  /** AI エラーの表示。ChatGPT の利用上限なら使用状況ページへの導線を付ける */
   const notifyAIError = (e: any) => {
     if (e?.code === "subscription_sharing_usage_limit_exceeded" && status) {
       notify({ kind: "error", text: "ChatGPT の利用上限に達しました。プランまたはこのアプリの上限を ChatGPT の設定で確認してください", action: { label: "使用状況を管理", run: () => window.open(status.chatgpt.usageUrl, "_blank", "noopener") } });
