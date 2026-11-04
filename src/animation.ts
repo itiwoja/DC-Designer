@@ -26,6 +26,15 @@ export const isDiagonalOk = (e: AnimEffect) => !!ANIM_EFFECTS.find((x) => x.valu
 /** 画像にしか付けられない効果か */
 export const isImageOnly = (e: AnimEffect) => !!ANIM_EFFECTS.find((x) => x.value === e)?.imageOnly;
 
+/**
+ * 画像以外に付いたスクロールをフェードに直す（AI の結果などに混ざる。PPTX の書き出しでも流せないものはフェードにするのと同じ扱い）。
+ * 画像かどうかはレイヤーの種類で見る（画像の中身がまだ無くても画像として残す）
+ */
+export function fixScrollTargets(spec: PosterSpec): PosterSpec {
+  if (!spec.layers.some((l) => l.type !== "image" && l.animation?.effect === "scroll")) return spec;
+  return { ...spec, layers: spec.layers.map((l) => (l.type !== "image" && l.animation?.effect === "scroll" ? { ...l, animation: { ...l.animation, effect: "fade" as const, direction: undefined, scrollTo: undefined } } : l)) };
+}
+
 export const ANIM_DIRECTIONS: { value: CardinalDirection; label: string }[] = [
   { value: "bottom", label: "下から" }, { value: "left", label: "左から" }, { value: "right", label: "右から" }, { value: "top", label: "上から" },
 ];

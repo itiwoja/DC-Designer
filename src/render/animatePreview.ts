@@ -120,32 +120,87 @@ export function playAnimations(svg: SVGSVGElement, spec: PosterSpec, only?: stri
 
 // ---------- スライドショー ----------
 
+/** slideGroups が作ったまとまりと、その元のスライド（hideGroup が流し終えた位置を作るのに使う） */
+const groupSpec = new WeakMap<AnimGroup, PosterSpec>();
+
 /** スライドショーで 1 クリックずつ進めるまとまり（先頭が auto なら表示と同時に始まる） */
 export const slideGroups = (spec: PosterSpec): AnimGroup[] => {
   // スクロールの画像は、最初のクリックまでに読み込んでおく
   void loadScrollRatios(spec);
-  return animationGroups(animationSequence(spec));
+  const groups = animationGroups(animationSequence(spec));
+  groups.forEach((g) => groupSpec.set(g, spec));
+  return groups;
 };
+
+/** スクロールの画像ごとの「最後に整えた時の印」。読み込み待ちの間に状態が変わったら古い結果を捨てるのに使う */
+const scrollStamp = new WeakMap<Element, symbol>();
+
+/** スクロールを流し終えた位置にする（終わったまとまりの表示。元の動きは取り消した上で、最後の状態だけ残す） */
+function settleScroll(el: SVGElement, l: Layer, a: LayerAnimation, spec: PosterSpec) {
+  el.getAnimations?.().forEach((x) => x.cancel());
+  const stamp = Symbol();
+  scrollStamp.set(el, stamp);
+  const apply = () => {
+    const kf = scrollKeyframes(l, a);
+    if (!kf) return;
+    const x = el.animate([kf[kf.length - 1]], { duration: 1, fill: "forwards" });
+    x.finish();
+  };
+  if (scrollKeyframes(l, a) || l.type !== "image" || !l.src) return apply();
+  // 比率がまだ無いときは、読み込んでから。その間にスライドを移った・また隠した（印が変わった）なら何もしない
+  void loadImageRatio(l.src).then(() => { if (scrollStamp.get(el) === stamp && el.isConnected) apply(); });
+}
 
 /**
  * まだ出していないまとまりの要素を隠す（hidden = false で元に戻す）。
- * スクロールは入場の効果ではないので隠さない（PPTX・試し再生と同じく最初から見せる）。戻すときは流す前の位置に戻す
+ * スクロールは入場の効果ではないので隠さない（PPTX・試し再生と同じく最初から見せる）。
+ * 隠すとき（まだ流していない）は流す前の位置に戻し、出したとき（流し終えた）は流し終えた位置にする
  */
 export function hideGroup(svg: SVGSVGElement, g: AnimGroup, hidden: boolean) {
+  const spec = groupSpec.get(g);
   for (const st of g.steps) for (const it of st.items) {
     const el = layerEl(svg, it.id);
     if (!el) continue;
     if (it.anim.effect === "scroll") {
-      if (hidden) el.querySelector<SVGElement>("[data-scroll-image]")?.getAnimations?.().forEach((a) => a.cancel());
+      const img = el.querySelector<SVGElement>("[data-scroll-image]");
+      const l = spec?.layers.find((x) => x.id === it.id);
+      if (hidden) { img?.getAnimations?.().forEach((a) => a.cancel()); if (img) scrollStamp.delete(img); }
+      else if (img && l && spec) settleScroll(img, l, it.anim, spec);
       continue;
     }
     hidden ? el.style.setProperty("visibility", "hidden") : el.style.removeProperty("visibility");
   }
 }
 
-/** まとまりを 1 つ、今すぐ再生する（finish で最後の状態まで飛ばせる） */
+/** まとまりの中で、画像の比率がまだ分からず流せないスクロールのレイヤー id */
+export function pendingScrolls(spec: PosterSpec, g: AnimGroup): string[] {
+  const byId = new Map(spec.layers.map((l) => [l.id, l]));
+  return g.steps.flatMap((st) => st.items.flatMap((it) => {
+    const l = byId.get(it.id);
+    return l && it.anim.effect === "scroll" && l.type === "image" && l.src && !scrollKeyframes(l, it.anim) ? [l.id] : [];
+  }));
+}
+
+/** まとまりを 1 つ、今すぐ再生する（finish で最後の状態まで飛ばせる）。スクロールの画像の読み込み待ちがあれば、済んでから始める */
 export function playGroup(svg: SVGSVGElement, spec: PosterSpec, g: AnimGroup): Running {
-  const running: Playing = { anims: [], sounds: [] };
-  startGroup(svg, spec, g, 0, running, true);
-  return settle(running);
+  const begin = () => {
+    const running: Playing = { anims: [], sounds: [] };
+    startGroup(svg, spec, g, 0, running, true);
+    return settle(running);
+  };
+  const wait = pendingScrolls(spec, g);
+  if (!wait.length) return begin();
+  let inner: Running | null = null, cancelled = false, skip = false;
+  const done = loadScrollRatios(spec, wait).then(() => {
+    if (cancelled) return;
+    inner = begin();
+    if (skip) inner.finish();
+    return inner.done;
+  });
+  return {
+    done,
+    // 読み込み中に取り消された・最後まで飛ばされたときは、始まった時点でそうする
+    cancel: () => { cancelled = true; inner?.cancel(); },
+    finish: () => { skip = true; inner?.finish(); },
+  };
 }
