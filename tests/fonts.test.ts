@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installFonts, parseExpect, parseFaces } from "../server/fonts";
-import { FONT_BY_ID, FONT_CATALOG, fontCovers, scriptsFor } from "../src/fonts";
+import { FONT_BY_ID, FONT_CATALOG, clampWeightToFont, fontCovers, lighterFontSuggestions, scriptsFor, weightChoicesFor, weightRange } from "../src/fonts";
 
 const execFileMock = vi.hoisted(() => vi.fn((...args: unknown[]) => (args.at(-1) as (e: null, r: { stdout: string; stderr: string }) => void)(null, { stdout: "", stderr: "" })));
 vi.mock("node:child_process", () => ({ execFile: execFileMock }));
@@ -66,5 +66,38 @@ describe("フォントの route 入力と install の expect", () => {
 
   it("parseExpect は形式が不正なら 400", () => {
     expect(() => parseExpect([{ family: "Noto Sans JP", weight: 400, sha256: "zz" }])).toThrowError(expect.objectContaining({ status: 400 }));
+  });
+});
+
+describe("太さの選択肢", () => {
+  it("400 しか持たないフォントは 400 から、最大より上は 100 刻みで 900 まで", () => {
+    expect(weightRange("Sawarabi Gothic")).toEqual({ min: 400, max: 400 });
+    expect(weightChoicesFor("Sawarabi Gothic")).toEqual([400, 500, 600, 700, 800, 900]);
+    expect(weightChoicesFor("BIZ UDPGothic")).toEqual([400, 700, 800, 900]);
+  });
+  it("100〜900 を持つフォント・カタログに無いフォントは 100 から選べる", () => {
+    expect(weightChoicesFor("Noto Sans JP")).toEqual([100, 200, 300, 400, 500, 600, 700, 800, 900]);
+    expect(weightChoicesFor("Unknown Font")).toEqual([100, 200, 300, 400, 500, 600, 700, 800, 900]);
+    expect(weightRange("Unknown Font")).toBeNull();
+  });
+  it("下限より細い値は最小値にそろえる", () => {
+    expect(clampWeightToFont("Sawarabi Gothic", 100)).toBe(400);
+    expect(clampWeightToFont("Sawarabi Gothic", 700)).toBe(700);
+    expect(clampWeightToFont("Unknown Font", 100)).toBe(100);
+  });
+  it("400 以上しか持たないフォントには、同じ系統で 300 以下を持つフォントを最大 2 つ出す", () => {
+    const s = lighterFontSuggestions("Sawarabi Gothic");
+    expect(s.length).toBeGreaterThan(0);
+    expect(s.length).toBeLessThanOrEqual(2);
+    for (const f of s) {
+      expect(f.role).toBe("gothic");
+      expect(f.script).toBe("ja");
+      expect(Math.min(...f.weights)).toBeLessThanOrEqual(300);
+    }
+    expect(lighterFontSuggestions("Sawarabi Mincho").every((f) => f.role === "mincho")).toBe(true);
+  });
+  it("すでに 300 以下を持つフォント・カタログに無いフォントには出さない", () => {
+    expect(lighterFontSuggestions("Noto Sans JP")).toEqual([]);
+    expect(lighterFontSuggestions("Unknown Font")).toEqual([]);
   });
 });
