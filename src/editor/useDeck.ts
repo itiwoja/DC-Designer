@@ -57,7 +57,7 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
   notify: (n: Omit<Notice, "id">) => void;
   /** 書き出し完了の通知 */
   exported: (name: string) => void;
-  setBusyProgress: (done: number, total: number) => void;
+  setBusyProgress: (done: number, total: number, opts?: { percent?: boolean; label?: string }) => void;
   setSpec: (s: PosterSpec) => void;
   /** 開いている文書を差し替える（stacks を渡すとその文書の Undo/Redo の続きから） */
   resetSpec: (s: PosterSpec, stacks?: HistoryStacks<PosterSpec>) => void;
@@ -356,7 +356,7 @@ export function useDeck({ spec, theme, save, apiUp, busy, run, notify, exported,
   /** デッキの全スライドの spec（開いているスライドは編集中の内容） */
   const deckSpecs = (d: Deck) => d.slides.map((s) => specOf(s.id)!).filter(Boolean);
   const exportDeck = () => deckAction("PowerPoint を書き出し中", async (d) => {
-    const blob = await buildDeckPptx(deckSpecs(d), setBusyProgress);
+    const blob = await buildDeckPptx(deckSpecs(d), (done, total, phase) => setBusyProgress(done, total, { percent: true, ...(phase === "finish" ? { label: "PowerPoint を仕上げ中" } : {}) }));
     const name = `${safeFileName(d.name)}.pptx`;
     download(blob, name);
     exported(name);

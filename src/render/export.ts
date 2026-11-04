@@ -143,30 +143,83 @@ async function newPptx(spec: PosterSpec) {
  * 複数のポスター（PPTX エディターモードのスライド）を 1 つの PowerPoint にまとめる。
  * 各スライドは画面外に描画してから、1 枚の書き出しと同じ方法でオブジェクト化する
  */
-export async function buildDeckPptx(specs: PosterSpec[], onProgress?: (done: number, total: number) => void): Promise<Blob> {
+export async function buildDeckPptx(specs: PosterSpec[], onProgress?: DeckProgress): Promise<Blob> {
+  const concurrency = deckConcurrency();
+  const t0 = performance.now();
+  const mem = trackHeap();
   const pptx = await newPptx(specs[0]);
   const fonts: FontUsage = new Map();
   const cache = newExportCache(); // 同じロゴ・背景・フォントをスライドごとに取り直さない（この書き出しの間だけ）
   const prepared: (PreparedSlide | undefined)[] = new Array(specs.length);
   let next = 0, done = 0, failed = false;
-  onProgress?.(0, specs.length);
-  // 描画と画像化は同時に数枚ずつ進める。スライドへの配置は下で順番どおりに行う
-  const worker = async () => {
-    while (!failed && next < specs.length) {
-      const i = next++;
-      try {
-        prepared[i] = await withOffscreenPoster(specs[i], (svg) => prepareSlide(svg, specs[i], cache));
-      } catch (e) { failed = true; throw e; }
-      onProgress?.(++done, specs.length);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(DECK_CONCURRENCY, specs.length) }, worker));
-  const timings = specs.map((spec, i) => buildTransitionXml(spec.transition) + placePosterSlide(pptx, spec, prepared[i]!, fonts));
-  return finishPptx((await pptx.write({ outputType: "blob" })) as Blob, timings, fonts, specs);
+  onProgress?.(0, DECK_PROGRESS_TOTAL, "prepare");
+  try {
+    // 描画と画像化は同時に数枚ずつ進める。スライドへの配置は下で順番どおりに行う
+    const worker = async () => {
+      while (!failed && next < specs.length) {
+        const i = next++;
+        try {
+          prepared[i] = await withOffscreenPoster(specs[i], (svg) => prepareSlide(svg, specs[i], cache));
+        } catch (e) { failed = true; throw e; }
+        mem.sample();
+        onProgress?.(Math.round((++done / specs.length) * DECK_PREPARE_SHARE), DECK_PROGRESS_TOTAL, "prepare");
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, specs.length) }, worker));
+    const tPrepared = performance.now();
+    onProgress?.(DECK_PREPARE_SHARE, DECK_PROGRESS_TOTAL, "finish");
+    const timings = specs.map((spec, i) => buildTransitionXml(spec.transition) + placePosterSlide(pptx, spec, prepared[i]!, fonts));
+    const written = (await pptx.write({ outputType: "blob" })) as Blob;
+    const tWritten = performance.now();
+    mem.sample();
+    onProgress?.(DECK_WRITE_DONE, DECK_PROGRESS_TOTAL, "finish");
+    const blob = await finishPptx(written, timings, fonts, specs);
+    const tEnd = performance.now();
+    mem.sample();
+    console.info(formatDeckTiming({ slides: specs.length, total: tEnd - t0, prepare: tPrepared - t0, write: tWritten - tPrepared, finish: tEnd - tWritten, concurrency, heapBytes: mem.peak() }));
+    onProgress?.(DECK_PROGRESS_TOTAL, DECK_PROGRESS_TOTAL, "finish"); // 100% は最後の工程が終わってから
+    return blob;
+  } finally {
+    mem.stop();
+  }
 }
 
-/** デッキ書き出しで同時に描画・画像化するスライドの数 */
+/** 進み具合の目盛り（done / total）。スライドの準備を 0〜90、書き込みを 〜95、仕上げ（フォント埋め込みなど）を 〜100 に割り当てる */
+const DECK_PROGRESS_TOTAL = 100;
+const DECK_PREPARE_SHARE = 90;
+const DECK_WRITE_DONE = 95;
+
+/** 書き出しの進み具合。phase は、スライドの準備中（prepare）か、配置・書き込み・仕上げ中（finish） */
+export type DeckProgress = (done: number, total: number, phase?: "prepare" | "finish") => void;
+
+/** デッキ書き出しで同時に描画・画像化するスライドの数（既定） */
 const DECK_CONCURRENCY = 3;
+
+/**
+ * 同時に処理する枚数。計測用に、開発者ツールで localStorage.setItem("dc.pptxConcurrency", "5") と書けば変えられる（1〜6。読めなければ既定）
+ */
+export function deckConcurrency(): number {
+  try {
+    const n = Number(localStorage.getItem("dc.pptxConcurrency"));
+    return Number.isInteger(n) && n >= 1 && n <= 6 ? n : DECK_CONCURRENCY;
+  } catch { return DECK_CONCURRENCY; }
+}
+
+/** 書き出し中の JS ヒープ（usedJSHeapSize）の最大値を控える。performance.memory が無い環境（Chromium 以外）では何も控えない */
+function trackHeap() {
+  const read = () => (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize;
+  let max = read();
+  const sample = () => { const v = read(); if (v !== undefined && (max === undefined || v > max)) max = v; };
+  const timer = max === undefined ? undefined : setInterval(sample, 200);
+  return { sample, peak: () => max, stop: () => clearInterval(timer) };
+}
+
+/** 計測結果の 1 行（開発者ツールのコンソール用。ms は ミリ秒） */
+export function formatDeckTiming(t: { slides: number; total: number; prepare: number; write: number; finish: number; concurrency: number; heapBytes?: number }): string {
+  const sec = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
+  const heap = t.heapBytes === undefined ? "" : ` メモリ最大 ${Math.round(t.heapBytes / 1048576)}MB`;
+  return `[pptx] ${t.slides} 枚 ${sec(t.total)}（準備 ${sec(t.prepare)} / write ${sec(t.write)} / 仕上げ ${sec(t.finish)}）同時 ${t.concurrency}${heap}`;
+}
 
 /** 画面外の SVG から先に取り出しておくもの（配置は SVG が無くてもできる） */
 type PreparedSlide = {

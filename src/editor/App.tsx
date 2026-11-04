@@ -121,7 +121,7 @@ export function App() {
 
   // ---------- 状態表示 ----------
   const [busy, setBusy] = useState<Busy | null>(null);
-  const setBusyProgress = (done: number, total: number) => setBusy((b) => b && { ...b, progress: [done, total] });
+  const setBusyProgress = (done: number, total: number, opts?: { percent?: boolean; label?: string }) => setBusy((b) => b && { ...b, progress: [done, total], ...(opts?.percent ? { percent: true } : {}), ...(opts?.label ? { label: opts.label } : {}) });
   const { notices, notify, dismiss } = useNotices();
   useEffect(() => {
     try {
