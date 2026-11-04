@@ -33,6 +33,8 @@ export function SignInWaiting({ bridge }: { bridge: DesktopBridge }) {
 }
 
 const DESKTOP_IMAGE_LABELS: Record<string, string> = { gemini: "Gemini（API キー）", comfyui: "ComfyUI（この PC）", codex: "ChatGPT（Codex CLI）", placeholder: "仮の画像" };
+/** 製品版の選択欄に出すプロバイダの順。使えないものも出して、選ぶと準備の欄を出す */
+const DESKTOP_IMAGE_ORDER = ["gemini", "comfyui", "codex", "placeholder"];
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 const CODEX_SOURCE_LABELS: Record<string, string> = { app: "このアプリで入れた版", "codex-app": "Codex アプリの CLI", npm: "npm で入れた CLI", path: "PATH の CLI", configured: "指定した場所" };
@@ -137,40 +139,57 @@ export function DesktopImageSettings({ bridge, status, imageChoices, imageProvid
     setSaving(false);
   };
   const choices = imageChoices.length ? imageChoices : ["placeholder"];
+  // 選択欄には、まだ使えない（キー未設定・Codex 未導入）プロバイダも出す。選ぶとその準備の欄だけを出し、
+  // 使えるようになったら（キーを保存した・サインインした）そのプロバイダに切り替える
+  const [shown, setShown] = useState<string | null>(null);
+  const active = imageProvider ?? "placeholder";
+  const provider = shown ?? active;
+  useEffect(() => {
+    if (shown === null) return;
+    if (shown === active) setShown(null);
+    else if (choices.includes(shown)) onImageProvider(shown);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- onImageProvider は描画ごとに作り直されるので外す
+  }, [shown, active, choices.join(",")]);
+  const options = [...DESKTOP_IMAGE_ORDER.filter((p) => p !== "placeholder" || choices.includes(p)), ...choices.filter((p) => !DESKTOP_IMAGE_ORDER.includes(p))];
+  const pick = (p: string) => (choices.includes(p) ? (setShown(null), onImageProvider(p)) : setShown(p));
+  // 保存ボタンは URL・場所の入力が出ているとき（ComfyUI・Codex）だけ。Gemini のキーは別の保管庫に入れるので別のボタン
+  const hasSettingsForm = provider === "comfyui" || provider === "codex";
   return (
-    <>
-      <div className="status-row">
-        <span className="status-label">画像生成</span>
-        <span className="status-val">
-          <select aria-label="画像生成プロバイダ" value={imageProvider ?? "placeholder"} onChange={(e) => onImageProvider(e.target.value)}>
-            {choices.map((p) => <option key={p} value={p}>{DESKTOP_IMAGE_LABELS[p] ?? p}</option>)}
-          </select>
-        </span>
+    <div className="status-card image-settings" role="group" aria-labelledby="image-settings-title">
+      <strong id="image-settings-title" className="image-settings-title">画像生成</strong>
+      <div className="image-field">
+        <select aria-label="画像生成プロバイダ" value={provider} onChange={(e) => pick(e.target.value)}>
+          {options.map((p) => <option key={p} value={p}>{DESKTOP_IMAGE_LABELS[p] ?? p}{choices.includes(p) ? "" : "（未設定）"}</option>)}
+        </select>
       </div>
-      <p className="hint">Gemini・ComfyUI は透過非対応（白背景で生成）</p>
-      <div className="status-row">
-        <span className="status-label">Gemini</span>
-        <span className="status-val"><span className={"dot " + (hasKey ? "ok" : "warn")} aria-hidden />{hasKey ? "API キーを保存済み" : "API キー未設定"}</span>
-      </div>
-      <div className="row">
-        <input type="password" aria-label="Gemini の API キー" autoComplete="off" spellCheck={false} placeholder={hasKey ? "新しいキーで置き換える" : "API キーを貼り付け"} value={keyInput} onChange={(e) => setKeyInput(e.target.value)} />
-        <button className="small" disabled={!keyInput.trim()} onClick={saveKey}>キーを保存</button>
-        {hasKey && <button className="small" onClick={removeKey}>キーを消す</button>}
-      </div>
-      {keyError && <p className="hint" role="alert">{keyError}</p>}
-      <div className="status-row">
-        <span className="status-label">ComfyUI</span>
-        <span className="status-val"><input type="text" aria-label="ComfyUI の URL" spellCheck={false} placeholder="http://127.0.0.1:8188" value={comfy} onChange={(e) => setComfy(e.target.value)} /></span>
-      </div>
-      <p className="hint">この PC で動いている ComfyUI だけ使えます。空なら既定（http://127.0.0.1:8188）。</p>
-      <CodexSetupRows codex={status?.codex} onStatusChanged={onStatusChanged} />
-      <div className="status-row">
-        <span className="status-label">場所</span>
-        <span className="status-val"><input type="text" aria-label="codex.exe の場所" spellCheck={false} placeholder="空なら自動検出（codex.exe の絶対パス）" value={codexPath} onChange={(e) => setCodexPath(e.target.value)} /></span>
-      </div>
-      <div className="row end"><button className="small" disabled={saving} onClick={saveSettings}>ComfyUI・Codex の設定を保存</button></div>
-      {saveError && <p className="hint" role="alert">{saveError}</p>}
-    </>
+      {(provider === "gemini" || provider === "comfyui") && <p className="hint">{provider === "gemini" ? "Gemini" : "ComfyUI"} は透過非対応（白背景で生成）</p>}
+      {provider === "gemini" && <>
+        <div className="image-field">
+          <span className="image-field-label">API キー</span>
+          <span className="status-val"><span className={"dot " + (hasKey ? "ok" : "warn")} aria-hidden />{hasKey ? "API キーを保存済み" : "API キー未設定"}</span>
+          <input type="password" aria-label="Gemini の API キー" autoComplete="off" spellCheck={false} placeholder={hasKey ? "新しいキーで置き換える" : "API キーを貼り付け"} value={keyInput} onChange={(e) => setKeyInput(e.target.value)} />
+        </div>
+        <div className="row end">
+          {hasKey && <button className="small" onClick={removeKey}>キーを消す</button>}
+          <button className="small" disabled={!keyInput.trim()} onClick={saveKey}>キーを保存</button>
+        </div>
+        {keyError && <p className="hint" role="alert">{keyError}</p>}
+      </>}
+      {provider === "comfyui" && <div className="image-field">
+        <span className="image-field-label">URL</span>
+        <input type="text" aria-label="ComfyUI の URL" spellCheck={false} placeholder="http://127.0.0.1:8188" value={comfy} onChange={(e) => setComfy(e.target.value)} />
+        <p className="hint">この PC で動いている ComfyUI だけ使えます。空なら既定（http://127.0.0.1:8188）。</p>
+      </div>}
+      {provider === "codex" && <>
+        <CodexSetupRows codex={status?.codex} onStatusChanged={onStatusChanged} />
+        <div className="image-field">
+          <span className="image-field-label">場所</span>
+          <input type="text" aria-label="codex.exe の場所" spellCheck={false} placeholder="空なら自動検出（codex.exe の絶対パス）" value={codexPath} onChange={(e) => setCodexPath(e.target.value)} />
+        </div>
+      </>}
+      {hasSettingsForm && <div className="row end"><button className="small" disabled={saving} onClick={saveSettings}>設定を保存</button></div>}
+      {hasSettingsForm && saveError && <p className="hint" role="alert">{saveError}</p>}
+    </div>
   );
 }
 

@@ -47,15 +47,29 @@ it("選択肢を日本語の名前で出し、仮の画像だけのときは「�
   await mount(bridge, st(), { imageChoices: ["gemini", "comfyui", "codex"] });
   const opts = [...container.querySelectorAll("select option")].map((o) => o.textContent);
   expect(opts).toEqual(["Gemini（API キー）", "ComfyUI（この PC）", "ChatGPT（Codex CLI）"]);
-  expect(container.textContent).toContain("透過非対応（白背景で生成）");
   await mount(bridge, st(), { imageChoices: [], imageProvider: undefined });
-  expect(container.querySelector("select option")!.textContent).toBe("仮の画像");
+  expect(container.querySelector<HTMLSelectElement>("select")!.selectedOptions[0].textContent).toBe("仮の画像");
+});
+
+it("まだ使えないプロバイダも「（未設定）」付きで出し、選ぶと準備の欄だけを出す（切り替えはしない）", async () => {
+  const { bridge } = mkBridge(false);
+  const choose = vi.fn();
+  await mount(bridge, st(), { imageChoices: ["comfyui"], onImageProvider: choose });
+  const opts = [...container.querySelectorAll("select option")].map((o) => o.textContent);
+  expect(opts).toEqual(["Gemini（API キー）（未設定）", "ComfyUI（この PC）", "ChatGPT（Codex CLI）（未設定）"]);
+  const select = container.querySelector<HTMLSelectElement>("select")!;
+  await act(async () => { select.value = "gemini"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+  expect(container.querySelector('input[aria-label="Gemini の API キー"]')).not.toBeNull();
+  expect(choose).not.toHaveBeenCalled();
+  // キーを保存して使えるようになったら、そのプロバイダに切り替える
+  await mount(bridge, st(), { imageChoices: ["gemini", "comfyui"], onImageProvider: choose });
+  expect(choose).toHaveBeenCalledWith("gemini");
 });
 
 it("キー保存で secrets.set が呼ばれ、値は画面に出ない", async () => {
   const { bridge, secrets } = mkBridge(false);
   const changed = vi.fn();
-  await mount(bridge, st(), { onStatusChanged: changed });
+  await mount(bridge, st(), { onStatusChanged: changed, imageProvider: "gemini" });
   expect(container.textContent).toContain("API キー未設定");
   await setValue(container.querySelector<HTMLInputElement>('input[type="password"]')!, SECRET);
   secrets.status.mockResolvedValue({ ok: true, data: [{ secretRef: "gemini/apiKey", state: "configured" }] });
@@ -69,26 +83,81 @@ it("キー保存で secrets.set が呼ばれ、値は画面に出ない", async 
 
 it("保存済みなら「キーを消す」で remove が呼ばれる", async () => {
   const { bridge, secrets } = mkBridge(true);
-  await mount(bridge, st());
+  await mount(bridge, st(), { imageProvider: "gemini" });
   expect(container.textContent).toContain("API キーを保存済み");
   await act(async () => btn("キーを消す").click());
   expect(secrets.remove).toHaveBeenCalledWith("gemini/apiKey");
 });
 
-it("ComfyUI・Codex の設定を保存し、400 のエラー文はそのまま出す", async () => {
+it("設定を保存し、400 のエラー文はそのまま出す", async () => {
   const { bridge } = mkBridge(false);
   const spy = vi.spyOn(api, "setImageSettings").mockRejectedValueOnce(new Error("ComfyUI の URL は 127.0.0.1 / localhost だけ使えます")).mockResolvedValueOnce({ comfyuiUrl: "http://localhost:8188", codexPath: "" });
   const changed = vi.fn();
   await mount(bridge, st({ imageSettings: { comfyuiUrl: "", codexPath: "" } }), { onStatusChanged: changed });
   await setValue(container.querySelector<HTMLInputElement>('input[aria-label="ComfyUI の URL"]')!, "http://example.com");
-  await act(async () => btn("ComfyUI・Codex の設定を保存").click());
+  await act(async () => btn("設定を保存").click());
   expect(container.textContent).toContain("ComfyUI の URL は 127.0.0.1 / localhost だけ使えます");
   expect(changed).not.toHaveBeenCalled();
   await setValue(container.querySelector<HTMLInputElement>('input[aria-label="ComfyUI の URL"]')!, "http://localhost:8188");
-  await act(async () => btn("ComfyUI・Codex の設定を保存").click());
+  await act(async () => btn("設定を保存").click());
   expect(spy).toHaveBeenLastCalledWith({ comfyuiUrl: "http://localhost:8188", codexPath: "" });
   expect(changed).toHaveBeenCalled();
   expect(container.textContent).not.toContain("127.0.0.1 / localhost だけ");
+});
+
+describe("選んだプロバイダの項目だけを出す", () => {
+  const has = (label: string) => !!container.querySelector(`[aria-label="${label}"]`);
+  const setup = { imageSettings: { comfyuiUrl: "", codexPath: "" }, codex: { state: "signed_out", canInstall: true, installVersion: "0.166.0" } };
+
+  it("Gemini は API キーの行だけ。保存ボタンは「キーを保存」のみ", async () => {
+    const { bridge } = mkBridge(true);
+    await mount(bridge, st(setup), { imageChoices: ["gemini", "comfyui", "codex"], imageProvider: "gemini" });
+    expect(has("Gemini の API キー")).toBe(true);
+    expect(has("ComfyUI の URL") || has("codex.exe の場所")).toBe(false);
+    expect(container.textContent).not.toContain("サインイン");
+    expect(container.textContent).toContain("Gemini は透過非対応（白背景で生成）");
+    expect(btn("設定を保存")).toBeUndefined();
+    expect(btn("キーを保存")).toBeTruthy();
+  });
+
+  it("ComfyUI は URL だけ", async () => {
+    const { bridge } = mkBridge(false);
+    await mount(bridge, st(setup), { imageChoices: ["gemini", "comfyui", "codex"], imageProvider: "comfyui" });
+    expect(has("ComfyUI の URL")).toBe(true);
+    expect(has("Gemini の API キー") || has("codex.exe の場所")).toBe(false);
+    expect(container.textContent).toContain("ComfyUI は透過非対応（白背景で生成）");
+    expect(btn("設定を保存")).toBeTruthy();
+  });
+
+  it("Codex は状態と場所だけ。透過の注意は出さない", async () => {
+    const { bridge } = mkBridge(false);
+    await mount(bridge, st(setup), { imageChoices: ["gemini", "comfyui", "codex"], imageProvider: "codex" });
+    expect(has("codex.exe の場所")).toBe(true);
+    expect(has("Gemini の API キー") || has("ComfyUI の URL")).toBe(false);
+    expect(container.textContent).toContain("サインインしていません");
+    expect(container.textContent).not.toContain("透過非対応");
+    expect(btn("設定を保存")).toBeTruthy();
+  });
+
+  it("仮の画像は選択欄だけ", async () => {
+    const { bridge } = mkBridge(false);
+    await mount(bridge, st(setup), { imageChoices: ["placeholder"], imageProvider: "placeholder" });
+    expect(container.querySelectorAll("input").length).toBe(0);
+    expect(container.querySelectorAll("button").length).toBe(0);
+    expect(container.textContent).not.toContain("透過非対応");
+  });
+
+  it("切り替えても入力中の URL・場所は保たれ、まとめて保存される", async () => {
+    const { bridge } = mkBridge(false);
+    const spy = vi.spyOn(api, "setImageSettings").mockResolvedValue({ comfyuiUrl: "http://localhost:8188", codexPath: "C:\\codex.exe" });
+    const props = { imageChoices: ["comfyui", "codex"] };
+    await mount(bridge, st(setup), { ...props, imageProvider: "comfyui" });
+    await setValue(container.querySelector<HTMLInputElement>('input[aria-label="ComfyUI の URL"]')!, "http://localhost:8188");
+    await mount(bridge, st(setup), { ...props, imageProvider: "codex" });
+    await setValue(container.querySelector<HTMLInputElement>('input[aria-label="codex.exe の場所"]')!, "C:\\codex.exe");
+    await act(async () => btn("設定を保存").click());
+    expect(spy).toHaveBeenCalledWith({ comfyuiUrl: "http://localhost:8188", codexPath: "C:\\codex.exe" });
+  });
 });
 
 it("Codex の状態の文言", async () => {
@@ -111,7 +180,7 @@ describe("Codex CLI を入れる・サインイン", () => {
     const login = vi.spyOn(api, "loginCodex").mockImplementation((onProgress) => { progress = onProgress; return new Promise((r) => { finishLogin = r; }); });
     const onStatusChanged = vi.fn();
     const { bridge } = mkBridge(false);
-    await mount(bridge, st({ codex: { state: "not_found", canInstall: true, installVersion: "0.166.0" } }), { onStatusChanged });
+    await mount(bridge, st({ codex: { state: "not_found", canInstall: true, installVersion: "0.166.0" } }), { onStatusChanged, imageProvider: "codex" });
     expect(container.textContent).toContain("Codex CLI 0.166.0（約 120MB）");
     await act(async () => button("Codex CLI を入れる")!.click());
     expect(container.textContent).toContain("ダウンロードの準備をしています");
@@ -135,7 +204,7 @@ describe("Codex CLI を入れる・サインイン", () => {
   it("サインインしていなければ「Codex にサインイン」、失敗したらサーバーの文言を出す", async () => {
     vi.spyOn(api, "loginCodex").mockRejectedValue(new Error("Codex にサインインできませんでした。もう一度試してください"));
     const { bridge } = mkBridge(false);
-    await mount(bridge, st({ codex: { state: "signed_out", canInstall: true, installVersion: "0.166.0" } }));
+    await mount(bridge, st({ codex: { state: "signed_out", canInstall: true, installVersion: "0.166.0" } }), { imageProvider: "codex" });
     await act(async () => button("Codex にサインイン")!.click());
     expect(container.querySelector("[role=alert]")?.textContent).toBe("Codex にサインインできませんでした。もう一度試してください");
   });
@@ -144,7 +213,7 @@ describe("Codex CLI を入れる・サインイン", () => {
     let signal: AbortSignal | undefined;
     vi.spyOn(api, "installCodex").mockImplementation((_p, s) => { signal = s; return new Promise((_, rej) => s!.addEventListener("abort", () => rej(new DOMException("aborted", "AbortError")))); });
     const { bridge } = mkBridge(false);
-    await mount(bridge, st({ codex: { state: "not_found", canInstall: true, installVersion: "0.166.0" } }));
+    await mount(bridge, st({ codex: { state: "not_found", canInstall: true, installVersion: "0.166.0" } }), { imageProvider: "codex" });
     await act(async () => button("Codex CLI を入れる")!.click());
     await act(async () => button("中止")!.click());
     expect(signal?.aborted).toBe(true);
@@ -154,7 +223,7 @@ describe("Codex CLI を入れる・サインイン", () => {
 
   it("入れられない PC では場所の指定を案内する", async () => {
     const { bridge } = mkBridge(false);
-    await mount(bridge, st({ codex: { state: "not_found", canInstall: false, installVersion: "0.166.0" } }));
+    await mount(bridge, st({ codex: { state: "not_found", canInstall: false, installVersion: "0.166.0" } }), { imageProvider: "codex" });
     expect(button("Codex CLI を入れる")).toBeUndefined();
     expect(container.textContent).toContain("codex.exe を指定してください");
   });
