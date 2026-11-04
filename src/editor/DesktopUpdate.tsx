@@ -4,8 +4,6 @@ import { desktopBridge } from "./desktop";
 
 const RELEASES_URL = "https://github.com/itiwoja/DC-Designer/releases";
 
-const formatMB = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-
 /**
  * 製品版の更新案内（SCR-001〜003）。表示待ちの案内は main が持ち、ここは表示と操作だけ。
  * 作業を止めないよう画面右下のトーストで出し、フォーカスは奪わない。Esc（トースト内に焦点があるとき）は保留
@@ -71,7 +69,7 @@ export function DesktopUpdate() {
       title = "更新をダウンロードしています";
       body = <>
         <progress className="desktop-update-progress" max={100} value={p && p.total > 0 ? p.percent : undefined} />
-        <p className="desktop-update-hint">{p && p.total > 0 ? `${Math.floor(p.percent)}%（${formatMB(p.transferred)} / ${formatMB(p.total)}）` : "準備しています…"}</p>
+        <p className="desktop-update-hint">{p && p.total > 0 ? `${Math.floor(p.percent)}%` : "準備しています…"}</p>
       </>;
       actions = <button onClick={() => respond("background")}>バックグラウンドで続ける</button>;
       break;
