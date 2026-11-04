@@ -72,6 +72,24 @@ describe("画像ファイル", () => {
   });
 });
 
+describe("アニメーションの保存", () => {
+  const anim = { effect: "fly", direction: "left", start: "after", duration: 800, delay: 300, order: 2, sound: "pop" };
+  const animated = { ...sample, layers: [{ id: "t", type: "text", text: "a", animation: anim }] };
+
+  it("ポスターの保存→読み込みで animation が残る", () => {
+    const p = lib.createPoster(animated);
+    expect((lib.getPoster(p.id).spec.layers[0] as { animation?: unknown }).animation).toMatchObject(anim);
+    lib.updatePoster(p.id, animated);
+    expect((lib.getPoster(p.id).spec.layers[0] as { animation?: unknown }).animation).toMatchObject(anim);
+  });
+
+  it("デッキの各スライドでも animation が残る", () => {
+    const d = lib.createDeck("発表", [animated]);
+    const spec = lib.getPoster(d.slides[0].id).spec;
+    expect((spec.layers[0] as { animation?: unknown }).animation).toMatchObject(anim);
+  });
+});
+
 describe("デッキ", () => {
   it("作成するとスライドごとにポスターができる", () => {
     const d = lib.createDeck("発表", [sample, sample]);
