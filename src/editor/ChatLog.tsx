@@ -19,7 +19,14 @@ export type ChatMsg = {
   scope?: string;
   /** 変更内容の要約（「3 件変更・1 件追加」） */
   changes?: string;
+  /** 古いログの画像（1 枚）。表示は images と同じ */
   image?: string;
+  /** この返答で生成した画像（サムネイルで出す） */
+  images?: string[];
+  /** 自動生成がオフで、未生成のまま残った画像。posterIds はデッキで未生成を含むスライド */
+  pendingImages?: { count: number; posterIds: string[] };
+  /** 「画像を生成する」を押した */
+  imagesStarted?: boolean;
   /** 添付はタブ内だけ保持し、再送信でも同じ資料を使う。 */
   references?: RefImage[];
   hasReferences?: boolean;
@@ -63,6 +70,9 @@ const COMPACT_AT = 24;
 const KEEP_RECENT = 10;
 /** 直近の原文として渡す量の上限（文字数）。超えた分は古い方から落とす（要約待ちの間の保険） */
 const RECENT_BUDGET = 12000;
+
+/** 返答に出す画像（古いログの image も含む） */
+export const imagesOf = (m: Pick<ChatMsg, "image" | "images">): string[] => [...(m.images ?? []), ...(m.image ? [m.image] : [])];
 
 const toTurn = (m: ChatMsg): ChatTurn | null => {
   if (m.error) return null;
@@ -122,6 +132,7 @@ export function useChat({ ready, posterId, posterTitle }: { ready: boolean; post
     return i < 0 ? c : [...c.slice(0, i + 1), ...c.slice(i + 1).filter((x) => x.role !== "assistant")];
   });
   const markUndone = (id: string) => setMessages((c) => c.map((x) => (x.id === id ? { ...x, undone: true } : x)));
+  const markImagesStarted = (id: string) => setMessages((c) => c.map((x) => (x.id === id ? { ...x, imagesStarted: true } : x)));
   const clear = () => {
     epoch.current++;
     setMessages([]);
@@ -159,7 +170,7 @@ export function useChat({ ready, posterId, posterTitle }: { ready: boolean; post
     const i = before ? messages.findIndex((m) => m.id === before) : -1;
     return chatContext(i < 0 ? messages : messages.slice(0, i), memory);
   };
-  return { messages, memory, compacting, pending, setPending, push, dropRepliesAfter, markUndone, clear, context };
+  return { messages, memory, compacting, pending, setPending, push, dropRepliesAfter, markUndone, markImagesStarted, clear, context };
 }
 
 export function ChatLog(props: {
@@ -171,6 +182,10 @@ export function ChatLog(props: {
   /** 最後の自分の発言への返答を作り直す（対象は今の選択） */
   onResend: (m: ChatMsg) => void;
   canResend: (m: ChatMsg) => boolean;
+  /** 返答の「画像を生成する」 */
+  onGenerateImages: (m: ChatMsg) => void;
+  /** 画像の生成中（ボタンを押せなくする） */
+  busy: boolean;
 }) {
   const { messages, pending } = props;
   // 再送信の対象: 最後の自分の発言（区切りより前の発言は対象にしない）
@@ -195,8 +210,17 @@ export function ChatLog(props: {
             )}
             <div className="chat-bubble">
               {m.text}
-              {m.image && <img className="chat-image" src={m.image} alt="生成した画像" />}
+              {imagesOf(m).length > 0 && (
+                <div className="chat-images">
+                  {imagesOf(m).map((src, i) => <img key={i} className="chat-image" src={src} alt="生成した画像" />)}
+                </div>
+              )}
               {m.changes && <div className="chat-changes">{m.changes}</div>}
+              {m.pendingImages && (
+                <button className="small chat-gen" disabled={m.imagesStarted || props.busy} onClick={() => props.onGenerateImages(m)}>
+                  <Ico name="image" size={12} /> {m.imagesStarted ? "画像を生成しました" : `画像を生成する（${m.pendingImages.count} 点）`}
+                </button>
+              )}
               {m.before && (
                 <button className="small chat-undo" disabled={m.undone} onClick={() => props.onUndo(m)}>
                   {m.undone ? "元に戻しました" : "↶ 元に戻す"}

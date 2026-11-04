@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { routeChatRequest } from "../src/editor/chatRoute";
+import { imagePromptOf, isTransparentRequest, routeChatRequest } from "../src/editor/chatRoute";
 
 // スライド 5 を開いていて、全 19 枚
 const deck = { current: 5, total: 19 };
@@ -68,5 +68,47 @@ describe("routeChatRequest", () => {
     for (const t of ["ページ番号を振り直して", "台本が無いスライドの台本を作って", "このスライドの台本を書いて", "新しいスライドを作って", "全スライドの差し色を #F08C00 にして"]) {
       expect(poster(t)).toEqual({ kind: "edit" });
     }
+  });
+
+  it("画像を作る依頼は画像生成に回す", () => {
+    expect(slides("海の写真を作って")).toEqual({ kind: "image", prompt: "海の写真", transparent: false, redo: false });
+    expect(poster("夕焼けの海のイラストを描いて")).toMatchObject({ kind: "image", prompt: "夕焼けの海のイラスト" });
+    expect(poster("猫の写真を入れて")).toMatchObject({ kind: "image" });
+    expect(poster("桜の画像を生成してください")).toMatchObject({ kind: "image", prompt: "桜の画像" });
+    expect(poster("ロケットの画像を追加して")).toMatchObject({ kind: "image" });
+  });
+
+  it("透過の依頼は文から読み取る", () => {
+    expect(poster("猫のイラストを背景なしで作って")).toMatchObject({ kind: "image", transparent: true });
+    expect(poster("透過で星のイラストを作って")).toMatchObject({ kind: "image", transparent: true });
+    expect(isTransparentRequest("海の写真を作って")).toBe(false);
+  });
+
+  it("選択中の画像を作り直す依頼", () => {
+    expect(poster("この画像を水彩風に作り直して")).toMatchObject({ kind: "image", redo: true });
+    expect(poster("写真を再生成して")).toMatchObject({ kind: "image", redo: true });
+  });
+
+  it("既存の画像の編集・位置の指定・ほかの修正との同居は AI の修正に回す", () => {
+    for (const t of [
+      "画像を消して", "この画像を右に動かして", "写真を大きくして", "その写真を削除して", "画像はいらない",
+      "右下に海の写真を入れて", "背景に写真を入れて", "写真を入れて、タイトルを大きくして",
+      "画像入りのスライドを作って", "写真付きのポスターを作って", "この写真を使ってチラシを作って",
+    ]) {
+      expect(poster(t), t).toEqual({ kind: "edit" });
+    }
+    expect(slides("画像入りのスライドを作って").kind).toBe("add-slide");
+    expect(slides("全スライドに写真を入れて")).toEqual({ kind: "edit-across" });
+  });
+
+  it("画像の依頼でも / コマンドと台本が先", () => {
+    expect(poster("/image 海の写真を作って").kind).toBe("slash");
+    expect(slides("このスライドの台本を書いて").kind).toBe("write-notes");
+  });
+
+  it("依頼文から説明を取り出す", () => {
+    expect(imagePromptOf("海の写真を作って")).toBe("海の写真");
+    expect(imagePromptOf("写真を入れて")).toBe("写真");
+    expect(imagePromptOf("青い空を作ってください。")).toBe("青い空");
   });
 });
