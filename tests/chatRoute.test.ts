@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { imagePromptOf, isTransparentRequest, routeChatRequest } from "../src/editor/chatRoute";
+import { imagePromptOf, isOpaqueRequest, isTransparentRequest, redoTransparent, routeChatRequest, routeNeedsAI } from "../src/editor/chatRoute";
 
 // スライド 5 を開いていて、全 19 枚
 const deck = { current: 5, total: 19 };
@@ -117,5 +117,30 @@ describe("routeChatRequest", () => {
     expect(imagePromptOf("海の写真を作って")).toBe("海の写真");
     expect(imagePromptOf("写真を入れて")).toBe("写真");
     expect(imagePromptOf("青い空を作ってください。")).toBe("青い空");
+  });
+
+  it("透過を解く言い方を読み取る（作り直しで元の透過を外せる）", () => {
+    for (const t of ["この画像を背景ありで作り直して", "透過をやめて作り直して", "この画像を白背景で作り直して", "透過を解除して再生成して", "不透明にして作り直して"]) {
+      expect(isOpaqueRequest(t)).toBe(true);
+      expect(isTransparentRequest(t)).toBe(false);
+      expect(redoTransparent(t, true)).toBe(false);
+    }
+    // 何も言っていなければ元の設定を引き継ぐ。透過を頼めば透過にする
+    expect(redoTransparent("この画像を水彩風に作り直して", true)).toBe(true);
+    expect(redoTransparent("この画像を水彩風に作り直して", false)).toBe(false);
+    expect(redoTransparent("背景なしで作り直して", false)).toBe(true);
+    expect(isOpaqueRequest("背景なしで猫のイラストを作って")).toBe(false);
+    expect(poster("この画像を背景ありで作り直して")).toMatchObject({ kind: "image", redo: true, transparent: false });
+  });
+
+  it("AI が要る振り分けかを返す（画像生成だけなら AI 無しで送れる）", () => {
+    expect(routeNeedsAI(slides("全スライドに写真を入れて"), false)).toBe(true);
+    expect(slides("全スライドに写真を入れて").kind).toBe("edit-across");
+    expect(routeNeedsAI(slides("海の写真を作って"), false)).toBe(false);
+    expect(routeNeedsAI(slides("海の写真を作って"), true)).toBe(true);
+    expect(routeNeedsAI(poster("この画像を水彩風に作り直して"), false)).toBe(false);
+    expect(routeNeedsAI(slides("全スライドのページ番号を振り直して"), false)).toBe(false);
+    expect(routeNeedsAI(slides("/image 猫"), false)).toBe(false);
+    expect(routeNeedsAI(slides("タイトルを大きくして"), false)).toBe(true);
   });
 });
