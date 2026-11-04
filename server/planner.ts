@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PosterSpecSchema, type PosterSpec } from "../src/schema";
+import { fixScrollTargets } from "../src/animation";
 import { deckDesignPrompt, designNote, keepDeckDesign, type DeckDesign } from "../src/deckDesign";
 import { CATALOG, ICON_NAMES } from "../src/components/catalog";
 import { THEMES } from "../src/themes";
@@ -105,6 +106,9 @@ JSON のみを出力する。前置き・説明・コードフェンスは不要
 export type Progress = { phase: "thinking" | "writing"; attempt: number; chars?: number; items?: number };
 export type OnProgress = (p: Progress) => void;
 
+/** AI の返した JSON を spec にする（画像以外に付いたスクロールはフェードに直す） */
+const parsePlanned = (j: unknown): PosterSpec => fixScrollTargets(PosterSpecSchema.parse(j));
+
 /** JSON を生成 → 検証 → 失敗したらエラー内容を渡して 1 回だけ修正させる */
 async function generateJson<T>(first: Turn, parse: (json: unknown) => T, what = "PosterSpec の JSON 全体", onProgress?: OnProgress, signal?: AbortSignal): Promise<T> {
   const turns: Turn[] = [first];
@@ -134,7 +138,7 @@ export async function planPoster(opts: { brief: string; theme?: string; referenc
     "# ポスターの依頼内容",
     opts.brief,
   ].filter(Boolean).join("\n\n");
-  return generateJson({ role: "user", text, images: opts.references }, (j) => resolveReferenceSources(PosterSpecSchema.parse(j), opts.references), undefined, undefined, opts.signal);
+  return generateJson({ role: "user", text, images: opts.references }, (j) => resolveReferenceSources(parsePlanned(j), opts.references), undefined, undefined, opts.signal);
 }
 
 // ---------- 参考画像の再現（A4 モード） ----------
@@ -210,7 +214,7 @@ export async function reproducePoster(opts: { reference: ImageRef; width: number
       opts.brief?.trim() ? `# ユーザーからの補足（文言の差し替えなど。指示が無い部分は画像どおり）\n${opts.brief.trim()}` : "",
       "# 出力\nPosterSpec の JSON のみを出力してください（layers は今回の帯の要素だけ）。",
     ].filter(Boolean).join("\n\n");
-    return generateJson({ role: "user", text, images: [toHigh(opts.reference)] }, (j) => PosterSpecSchema.parse(j), undefined, report(band), opts.signal);
+    return generateJson({ role: "user", text, images: [toHigh(opts.reference)] }, (j) => parsePlanned(j), undefined, report(band), opts.signal);
   }));
   return fixSize({ ...bands[0], layers: mergeBandLayers(bands.map((b, i) => b.layers.filter((l) => i === 0 || l.type !== "background"))) }, w, h);
 }
@@ -271,7 +275,7 @@ export async function refineReproduction(opts: { reference: ImageRef; render: Im
       const reply = typeof o?.reply === "string" ? o.reply : "";
       if (o?.changes == null) return { reply };
       const patch = parsePatch(o.changes);
-      return isEmptyPatch(patch) ? { reply } : { reply, spec: applyLayerPatch(opts.spec, patch) };
+      return isEmptyPatch(patch) ? { reply } : { reply, spec: fixScrollTargets(applyLayerPatch(opts.spec, patch)) };
     },
     '{"reply", "changes"} の JSON ',
     opts.onProgress,
@@ -337,13 +341,13 @@ export async function summarizeChat(opts: { summary?: string; turns: ChatTurn[];
 /** {reply, spec} を検証する。spec が null なら変更なし（質問への回答など）。古い形式（PosterSpec だけ）も受け付ける */
 function parseEdit(j: unknown): { reply: string; spec?: PosterSpec } {
   const o = j as { reply?: unknown; spec?: unknown; layers?: unknown };
-  if (o && Array.isArray(o.layers)) return { reply: "", spec: PosterSpecSchema.parse(o) };
+  if (o && Array.isArray(o.layers)) return { reply: "", spec: parsePlanned(o) };
   const reply = typeof o?.reply === "string" ? o.reply : "";
   if (o?.spec == null) {
     if (!reply) throw new Error('"reply" と "spec" のどちらもありません');
     return { reply };
   }
-  return { reply, spec: PosterSpecSchema.parse(o.spec) };
+  return { reply, spec: parsePlanned(o.spec) };
 }
 
 const REPLY_RULE = '"reply" には、何をどう変えたか（または質問への答え）をユーザーに向けて日本語 1〜3 文で簡潔に書いてください。デザインの相談や質問だけで変更が不要なら "spec" は null にしてください。';
@@ -456,10 +460,10 @@ async function editDeckSlide(opts: EditOptions & { deck: DeckContext }): Promise
     for (const e of rawEdits) {
       const target = e?.target == null ? current : Number(e.target);
       if (!numbers.includes(target)) throw new Error(`target は ${numbers.join(" / ")} のいずれかにしてください（受け取った値: ${String(e?.target)}）`);
-      edits.set(target, resolveReferenceSources(PosterSpecSchema.parse(e.spec), opts.references, slides.find((s) => s.number === target)?.spec));
+      edits.set(target, resolveReferenceSources(parsePlanned(e.spec), opts.references, slides.find((s) => s.number === target)?.spec));
     }
     // 新規スライドの spec にも参照元の解決と検証をかける
-    const parseSpec = (raw: unknown) => resolveReferenceSources(PosterSpecSchema.parse(raw), opts.references, opts.spec);
+    const parseSpec = (raw: unknown) => resolveReferenceSources(parsePlanned(raw), opts.references, opts.spec);
     // 旧形式の remove（書き換えていない編集可能なスライドだけ）は sequence に直す
     const remove = [...new Set(Array.isArray(o?.remove) ? o.remove.map(Number) : [])].filter((n) => !edits.has(n) && numbers.includes(n));
     const sequence = normalizeSequence(o?.sequence ?? removeToSequence(remove, total), { total, editable: numbers, parseSpec });
