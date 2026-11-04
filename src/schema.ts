@@ -67,9 +67,14 @@ export type SoundRef = z.infer<typeof SoundRef>;
 
 /** PPTX の「開始」アニメーション（スライドで表示されるときの動き） */
 export const LayerAnimation = z.object({
-  effect: z.enum(["appear", "fade", "float", "fly", "wipe", "zoom"]),
-  /** fly / wipe の入ってくる向き */
-  direction: z.enum(["bottom", "top", "left", "right"]).optional(),
+  effect: z.enum(["appear", "fade", "float", "fly", "wipe", "zoom", "scroll"]),
+  /**
+   * fly / wipe の入ってくる向き（斜めは fly だけ）。
+   * scroll は画像を流す向き: bottom = 上端から下端へ（内容は上へ動く）、top = 下端から上端へ、right = 左端から右端へ、left = 右端から左端へ
+   */
+  direction: z.enum(["bottom", "top", "left", "right", "topleft", "topright", "bottomleft", "bottomright"]).optional(),
+  /** scroll で、画像の端から端までのうちどこまで流すか（0〜1。無ければ 1 = 最後まで） */
+  scrollTo: z.number().min(0).max(1).optional(),
   /** click: クリック時 / with: 直前と同時 / after: 直前の動作の後 */
   start: z.enum(["click", "with", "after"]).default("click"),
   duration: z.number().min(0).max(20000).default(500), // ms
