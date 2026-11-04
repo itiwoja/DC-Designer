@@ -41,7 +41,7 @@ import { slidePalette } from "./slidePalette";
 import { routeChatRequest } from "./chatRoute";
 import { slashSuggestions, SlashMenu, type SlashCommand } from "./slashCommands";
 import {
-  aspectOf, assetHolder, diffLayers, IMAGE_FILE_ACCEPT, IMAGE_FILE_TYPES, imageSlot, insertAfter,
+  aspectOf, assetHolder, diffLayers, IMAGE_FILE_ACCEPT, IMAGE_FILE_TYPES, imageSlot, insertAfter, placeImage, replaceableByImage,
   naturalSize, patchAsset, PPTX_ACCEPT, prepareAsset, toLayerRef, uid, type LayerRef,
 } from "./specOps";
 import { blobToRef, loadImage, overlayOf, REF_OVERLAY_ID, referenceSize, resolveRefCrops, scaledReference, withOverlay, withoutOverlay } from "./reproduce";
@@ -854,16 +854,7 @@ export function App() {
         const { src } = await api.upload(f);
         const name = f.name.replace(/\.[^.]+$/, "").slice(0, 20) || "画像";
         const b = opts.box;
-        let at: { x: number; y: number; w: number; h: number; rotation?: number };
-        if (b && b.type !== "background") at = { x: b.x + i * 20, y: b.y + i * 20, w: b.w, h: b.h, rotation: b.rotation };
-        else {
-          // 元の縦横比のまま、ポスターの半分に収まる大きさで置く
-          const n = await naturalSize(src);
-          const k = Math.min(1, (W * 0.5) / n.w, (H * 0.5) / n.h);
-          const w = Math.round(n.w * k), h = Math.round(n.h * k);
-          const c = opts.at ?? { x: W / 2, y: H / 2 };
-          at = { x: Math.round(c.x - w / 2) + i * 20, y: Math.round(c.y - h / 2) + i * 20, w, h };
-        }
+        const at = placeImage(await naturalSize(src), W, H, i, b && b.type !== "background" ? { box: b } : { at: opts.at });
         added.push({ id: uid("image"), name, type: "image", fit: "contain", src, ...at } as Layer);
       }
       setSpec((s) => ({ ...s, layers: insertAfter(s.layers, opts.box?.id, added) }));
@@ -873,7 +864,7 @@ export function App() {
   };
   /** チャットの 📎（画像ファイル）: 選択中の画像は差し替え、ほかの要素を選んでいればその位置に、未選択なら中央に置く */
   const insertImageFilesHere = (files: FileList | null) =>
-    selectedLayer && imageSlot(selectedLayer) ? insertImageFiles(files, { replaceId: selectedLayer.id })
+    selectedLayer && replaceableByImage(selectedLayer, W, H) ? insertImageFiles(files, { replaceId: selectedLayer.id })
       : insertImageFiles(files, { box: selectedLayer ?? undefined });
 
   /** キャンバスへのドロップ: PowerPoint なら（PPTX モードだけ）読み込み、画像の上なら差し替え、それ以外はドロップした位置に置く */
@@ -882,7 +873,7 @@ export function App() {
     if (pptx) { importPptxFile(pptx); return; }
     const id = topLayerAt(e.target, topIds);
     const l = id ? spec.layers.find((x) => x.id === id) ?? null : null;
-    if (l && imageSlot(l) && !l.locked) { setSelected(l.id); insertImageFiles(files, { replaceId: l.id }); return; }
+    if (l && replaceableByImage(l, W, H) && !l.locked) { setSelected(l.id); insertImageFiles(files, { replaceId: l.id }); return; }
     insertImageFiles(files, { at: svgRef.current ? toPoster(e) : undefined });
   };
   const stageDrop = useFileDrop(onStageDrop, { disabled: !!busy });
