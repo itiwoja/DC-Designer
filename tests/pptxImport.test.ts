@@ -91,6 +91,24 @@ describe("PPTX のアニメーション", () => {
     expect(byName.get("e")).toEqual({ effect: "float", start: "click", duration: 500, delay: 100, order: 6 });
   });
 
+  it("斜めのスライドインは斜めのまま、斜めを選べない効果は上下左右で戻る", async () => {
+    const spec = PosterSpecSchema.parse({
+      meta: {},
+      layers: [
+        { id: "a", type: "shape", shape: "rect", animation: a({ effect: "fly", direction: "topright" }) },
+        { id: "b", type: "shape", shape: "rect", animation: a({ effect: "fly", direction: "bottomleft" }) },
+        { id: "c", type: "shape", shape: "rect", animation: a({ effect: "wipe", direction: "left" }) },
+      ],
+    });
+    const spids = new Map(spec.layers.map((l, i) => [l.id, i + 2]));
+    const timing = buildTimingXml(animationGroups(animationSequence(spec)), spids);
+    const result = await pptxWith(spec.layers.map((l) => box(spids.get(l.id)!, l.id)).join(""), timing);
+    const byName = new Map(result.slides[0].layers.map((l) => [l.name, l.animation]));
+    expect(byName.get("a")).toMatchObject({ effect: "fly", direction: "topright" });
+    expect(byName.get("b")).toMatchObject({ effect: "fly", direction: "bottomleft" });
+    expect(byName.get("c")).toMatchObject({ effect: "wipe", direction: "left" });
+  });
+
   it("知らないプリセットはフェードに寄せ、退場効果と同じ図形の 2 つ目は読まない", async () => {
     const eff = (id: number, cls: string, preset: number, spid: number) =>
       `<p:par><p:cTn id="${id}" presetID="${preset}" presetClass="${cls}" presetSubtype="0" fill="hold" nodeType="clickEffect"><p:stCondLst><p:cond delay="0"/></p:stCondLst><p:childTnLst><p:set><p:cBhvr><p:cTn id="${id + 50}" dur="1" fill="hold"/><p:tgtEl><p:spTgt spid="${spid}"/></p:tgtEl></p:cBhvr></p:set></p:childTnLst></p:cTn></p:par>`;

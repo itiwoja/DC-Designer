@@ -352,7 +352,9 @@ export function readTiming(timing: Element | null | undefined): TimingEffect[] {
     const duration = Math.min(20000, durs.length ? Math.max(...durs) : 500);
     const cond = child(child(ctn, "stCondLst") ?? ctn, "cond");
     const delay = Math.min(60000, Math.max(0, Number(cond?.getAttribute("delay")) || 0));
-    const dir = SUBTYPE_TO_DIR.find(([bit]) => sub & bit)?.[1] ?? "bottom";
+    // 斜め（右上 3・右下 6・左下 12・左上 9）は、斜めを選べる効果（スライドイン）のときだけ斜めとして読む
+    const diagonal = ({ 3: "topright", 6: "bottomright", 12: "bottomleft", 9: "topleft" } as const)[sub as 3 | 6 | 12 | 9];
+    const dir = normalizeDirection(effect, diagonal ?? SUBTYPE_TO_DIR.find(([bit]) => sub & bit)?.[1] ?? "bottom");
     out.push({
       spid,
       anim: { effect, start, duration, delay, order: out.length + 1, ...(isDirectional(effect) ? { direction: dir } : {}) },
