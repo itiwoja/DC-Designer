@@ -423,7 +423,7 @@ export function Home({ mode }: { mode?: AppMode }) {
               {thumb(current.poster, <span className="badge">編集中</span>)}
               <span className="home-continue-body">
                 <strong>{current.deck ? current.deck.name : current.poster.spec.meta.title || "無題のポスター"}</strong>
-                {current.deck && <span>スライド「{current.poster.spec.meta.title || "無題"}」（{current.deck.slides.findIndex((s) => s.id === current.poster.id) + 1} / {current.deck.slides.length} 枚目）</span>}
+                {current.deck && <span>スライド {current.deck.slides.findIndex((s) => s.id === current.poster.id) + 1} / {current.deck.slides.length} 枚目</span>}
                 <small>更新 {fmtAgo(current.poster.updatedAt)}</small>
               </span>
             </button>

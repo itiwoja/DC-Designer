@@ -41,7 +41,7 @@ import { slidePalette } from "./slidePalette";
 import { imagePromptOf, isImageRedoRequest, isImageRequest, isTransparentRequest, routeChatRequest } from "./chatRoute";
 import { slashSuggestions, SlashMenu, type SlashCommand } from "./slashCommands";
 import {
-  aspectOf, assetHolder, diffLayers, IMAGE_FILE_ACCEPT, IMAGE_FILE_TYPES, imageSlot, insertAfter,
+  aspectOf, assetHolder, diffLayers, IMAGE_FILE_ACCEPT, IMAGE_FILE_TYPES, imageSlot, insertAfter, placeImage, replaceableByImage,
   naturalSize, patchAsset, PPTX_ACCEPT, prepareAsset, toLayerRef, uid, type LayerRef,
 } from "./specOps";
 import { blobToRef, loadImage, overlayOf, REF_OVERLAY_ID, referenceSize, resolveRefCrops, scaledReference, withOverlay, withoutOverlay } from "./reproduce";
@@ -139,6 +139,7 @@ export function App() {
   const {
     leftOpen, toggleLeft, rightOpen, toggleRight, leftW, setLeftW, rightW, setRightW, resizing, setResizing, leftRef, rightRef,
     deckH, setDeckH, deckHeight, deckMax, notesOpen, toggleNotes, notesH, setNotesH, notesHeight, notesMax,
+    layersOpen, toggleLayers,
   } = usePanelLayout();
 
   // ---------- 保存 ----------
@@ -189,7 +190,9 @@ export function App() {
   /** / コマンドの候補: 選択中の位置と、Esc で閉じたか（入力を変えると開き直す） */
   const [slashActive, setSlashActive] = useState(0);
   const [slashClosed, setSlashClosed] = useState(false);
-  const chat = useChat({ ready: !!aiProvider, posterId, posterTitle: spec.meta.title });
+  /** チャットの区切りに出す名前。デッキのスライドは名前ではなく番号（useDeck の後で差し替える） */
+  const chatTitle = useRef(() => spec.meta.title);
+  const chat = useChat({ ready: !!aiProvider, posterId, posterTitle: () => chatTitle.current() });
 
   // ---------- キャンバス ----------
   const svgRef = useRef<SVGSVGElement>(null);
@@ -463,10 +466,9 @@ export function App() {
     const reordered = plan.slots.some((s, i) => s.type !== "keep" || s.id !== oldIds[i]) || before !== after;
     if (!reordered && !plan.rewrites.length) return { text: res.reply || "変更はありませんでした" };
     if (removedNums.length) {
-      const titles = plan.removed.map((id) => `「${d.slides[oldIds.indexOf(id)].title}」`).join("");
       const ok = await ask({
         title: `スライドを ${before} 枚 → ${after} 枚に組み直しますか？`,
-        message: `デッキを ${before} 枚から ${after} 枚に組み直します。${added ? `${added} 枚を追加し、` : ""}スライド ${nums(removedNums)}（${titles}）を削除します。削除は取り消せません。`,
+        message: `デッキを ${before} 枚から ${after} 枚に組み直します。${added ? `${added} 枚を追加し、` : ""}スライド ${nums(removedNums)} を削除します。削除は取り消せません。`,
         ok: "組み直す", danger: true,
       });
       if (!ok) return { text: "変更は当てませんでした" };
@@ -883,16 +885,7 @@ export function App() {
         const { src } = await api.upload(f);
         const name = f.name.replace(/\.[^.]+$/, "").slice(0, 20) || "画像";
         const b = opts.box;
-        let at: { x: number; y: number; w: number; h: number; rotation?: number };
-        if (b && b.type !== "background") at = { x: b.x + i * 20, y: b.y + i * 20, w: b.w, h: b.h, rotation: b.rotation };
-        else {
-          // 元の縦横比のまま、ポスターの半分に収まる大きさで置く
-          const n = await naturalSize(src);
-          const k = Math.min(1, (W * 0.5) / n.w, (H * 0.5) / n.h);
-          const w = Math.round(n.w * k), h = Math.round(n.h * k);
-          const c = opts.at ?? { x: W / 2, y: H / 2 };
-          at = { x: Math.round(c.x - w / 2) + i * 20, y: Math.round(c.y - h / 2) + i * 20, w, h };
-        }
+        const at = placeImage(await naturalSize(src), W, H, i, b && b.type !== "background" ? { box: b } : { at: opts.at });
         added.push({ id: uid("image"), name, type: "image", fit: "contain", src, ...at } as Layer);
       }
       setSpec((s) => ({ ...s, layers: insertAfter(s.layers, opts.box?.id, added) }));
@@ -902,7 +895,7 @@ export function App() {
   };
   /** チャットの画像ファイルボタン: 選択中の画像は差し替え、ほかの要素を選んでいればその位置に、未選択なら中央に置く */
   const insertImageFilesHere = (files: FileList | null) =>
-    selectedLayer && imageSlot(selectedLayer) ? insertImageFiles(files, { replaceId: selectedLayer.id })
+    selectedLayer && replaceableByImage(selectedLayer, W, H) ? insertImageFiles(files, { replaceId: selectedLayer.id })
       : insertImageFiles(files, { box: selectedLayer ?? undefined });
   /** キャンバスへのドロップ: PowerPoint なら（PPTX モードだけ）読み込み、画像の上なら差し替え、それ以外はドロップした位置に置く */
   const onStageDrop = (files: File[], e: RDragEvent) => {
@@ -910,7 +903,7 @@ export function App() {
     if (pptx) { importPptxFile(pptx); return; }
     const id = topLayerAt(e.target, topIds);
     const l = id ? spec.layers.find((x) => x.id === id) ?? null : null;
-    if (l && imageSlot(l) && !l.locked) { setSelected(l.id); insertImageFiles(files, { replaceId: l.id }); return; }
+    if (l && replaceableByImage(l, W, H) && !l.locked) { setSelected(l.id); insertImageFiles(files, { replaceId: l.id }); return; }
     insertImageFiles(files, { at: svgRef.current ? toPoster(e) : undefined });
   };
   const stageDrop = useFileDrop(onStageDrop, { disabled: !!busy });
@@ -919,14 +912,39 @@ export function App() {
   // ドロップ先の外（インスペクタなど）にファイルを落としても、ブラウザがそのファイルを開いてしまわないようにする
   useEffect(blockPageFileDrop, []);
 
-  // クリップボードの画像を貼り付け（スクリーンショットなど）
+  /**
+   * レイヤーをコピーしたら、続いて起きる copy / cut イベントでシステムのクリップボードをアプリ専用の目印に置き換える
+   * （でないと、前に外でコピーした画像が残っていて次の Ctrl+V でその画像が貼られる）。copy イベントの clipboardData は権限なしで書ける
+   */
+  const markCopy = useRef(false);
+  const LAYER_CLIPBOARD_TYPE = "application/x-dc-designer-layers";
+  // copy / cut イベントが届かなかったとき（選択が無い cut など）に目印が残らないよう、このキー操作の後で外す
+  const markLayerCopy = () => { markCopy.current = true; setTimeout(() => { markCopy.current = false; }); };
+  useEffect(() => {
+    const onCopy = (e: ClipboardEvent) => {
+      if (!markCopy.current) return;
+      markCopy.current = false;
+      if (isTextInput(e.target) || !e.clipboardData) return;
+      // 入力欄に貼られる text/plain は入れない（入れるとチャット欄などで Ctrl+V したときにその文字が貼られる）
+      e.clipboardData.setData(LAYER_CLIPBOARD_TYPE, "1");
+      e.preventDefault();
+    };
+    window.addEventListener("copy", onCopy);
+    window.addEventListener("cut", onCopy);
+    return () => { window.removeEventListener("copy", onCopy); window.removeEventListener("cut", onCopy); };
+  }, []);
+
+  // クリップボードの貼り付け: 外でコピーした画像（スクリーンショットなど）を優先し、無ければアプリ内でコピーしたレイヤー
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
-      if (isTextInput(e.target)) return;
-      const files = [...(e.clipboardData?.files ?? [])].filter((f) => IMAGE_FILE_TYPES.test(f.type));
-      if (!files.length) return;
-      e.preventDefault();
-      insertImageFiles(files);
+      if (isTextInput(e.target) || e.defaultPrevented) return;
+      const d = e.clipboardData;
+      // 外でコピーした画像（ファイル・スクリーンショット）。files に無くても items に入っていることがある
+      const files = [...(d?.files ?? []), ...[...(d?.items ?? [])].filter((it) => it.kind === "file").map((it) => it.getAsFile())]
+        .filter((f): f is File => !!f && IMAGE_FILE_TYPES.test(f.type));
+      if (files.length) { e.preventDefault(); insertImageFiles([...new Map(files.map((f) => [`${f.name}:${f.size}:${f.type}`, f])).values()]); return; }
+      // 画像が無ければ、アプリ内でコピーしたレイヤーを貼る
+      if (clipboard.current.length) { e.preventDefault(); insertCopies(clipboard.current, selLayers[selLayers.length - 1]?.id); }
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
@@ -943,6 +961,10 @@ export function App() {
     fontDialog, setFontDialog, openFontDialog, applyDeckFonts, applyTransitionToAll, renumberDeckPages, writeNotes, addSlideByAI, editAcrossDeck, importPptxFile,
     deckReady, renameDeck,
   } = useDeck({ spec, theme, save, apiUp, busy, run, notify, exported, setBusyProgress, setSpec, resetSpec, stashHistory, setSelected, fitView });
+  chatTitle.current = () => {
+    const i = deck?.slides.findIndex((s) => s.id === posterId) ?? -1;
+    return i >= 0 ? `スライド ${i + 1}` : spec.meta.title;
+  };
   /** スライド一覧で複数選択中のスライド id（空 = 複数選択なし）。デッキが変わったら・スライドが消えたら外す */
   const [selectedSlideIds, setSelectedSlideIds] = useState<string[]>([]);
   useEffect(() => {
@@ -1103,7 +1125,7 @@ export function App() {
       if (mod && key === "y") return shortcut(redo);
       // Ctrl+±/0 はアプリ全体の縮尺に使うので横取りしない（Issue #61）。スライドの拡大縮小は Ctrl+ホイールとズームバー
       if (mod && key === "1") return shortcut(() => setZoom(1));
-      if (mod && key === "v" && clipboard.current.length) return shortcut(() => insertCopies(clipboard.current, selLayers[selLayers.length - 1]?.id));
+      // Ctrl+V は preventDefault しない（貼り付けは paste イベントで、画像があれば画像、無ければコピーしたレイヤー）
       if (mod && key === "a") return shortcut(() => setSelectedIds(spec.layers.filter(selectable).map((l) => l.id)));
       if (cropping && (e.key === "Escape" || e.key === "Enter")) return shortcut(() => setCropping(null));
       if (e.key === "Escape") { setSelected(null); return; }
@@ -1114,8 +1136,8 @@ export function App() {
 
       // 選択中のレイヤー（1 件でも複数でも）
       const ids = selLayers.map((l) => l.id);
-      if (mod && key === "c") { copyLayers(selLayers); notify({ kind: "info", text: multi ? `${selLayers.length} 件コピーしました` : "コピーしました" }); return; }
-      if (mod && key === "x") { copyLayers(selLayers); removeLayers(ids); return; }
+      if (mod && key === "c") { copyLayers(selLayers); markLayerCopy(); notify({ kind: "info", text: multi ? `${selLayers.length} 件コピーしました` : "コピーしました" }); return; }
+      if (mod && key === "x") { copyLayers(selLayers); markLayerCopy(); removeLayers(ids); return; }
       if (mod && key === "d") return shortcut(() => duplicateLayers(selLayers));
       // Ctrl+B / Ctrl+U: 選んだテキストの太字・下線を切り替える（Ctrl+U でブラウザの「ソースを表示」を出さない）
       const style = textStyleKey(e);
@@ -1377,14 +1399,14 @@ export function App() {
                 </label>
                 <label
                   className={"as-button small icon" + (busy ? " disabled" : "")}
-                  title={selectedLayer && imageSlot(selectedLayer) ? "画像ファイルで差し替え" : "画像ファイルから挿入（キャンバスへのドロップ・貼り付けでも可）"}
+                  title={selectedLayer && replaceableByImage(selectedLayer, W, H) ? "画像ファイルで差し替え" : "画像ファイルから挿入（キャンバスへのドロップ・貼り付けでも可）"}
                   aria-label="画像ファイルを置く"
                 >
                   <Ico name="image" />
                   <input
                     type="file"
                     accept={IMAGE_FILE_ACCEPT}
-                    multiple={!(selectedLayer && imageSlot(selectedLayer))}
+                    multiple={!(selectedLayer && replaceableByImage(selectedLayer, W, H))}
                     hidden
                     disabled={!!busy}
                     onChange={(e) => { insertImageFilesHere(e.target.files); e.target.value = ""; }}
@@ -1611,7 +1633,7 @@ export function App() {
         </div>}
         </div>
 
-        <div className="right-card right-layers">
+        <div className={"right-card right-layers" + (layersOpen ? "" : " collapsed")}>
         <LayersPanel
           spec={spec}
           selectedIds={selectedIds}
@@ -1625,6 +1647,8 @@ export function App() {
           onAddImage={addImage}
           onAddComponent={addComponent}
           animOrder={isSlides ? animOrder : undefined}
+          open={layersOpen}
+          onToggle={toggleLayers}
         />
         </div>
         </div>

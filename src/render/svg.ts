@@ -8,8 +8,20 @@ const FONT_WEIGHTS: Record<string, number[]> = Object.fromEntries(FONT_CATALOG.m
 
 const snap = (family: string, w: number) => matchWeight(FONT_WEIGHTS[family] ?? [400], w);
 
-export async function toDataUrl(src: string | Blob): Promise<string> {
+/**
+ * 1 回の書き出しの間だけ使う取得結果の入れ物。書き出しごとに作って捨てる（古い画像やフォントを次の書き出しに持ち越さない）。
+ * images は画像 URL → data URL、fonts は "family|weight" → @font-face の CSS（失敗は空文字）
+ */
+export type ExportCache = { images: Map<string, Promise<string>>; fonts: Map<string, Promise<string>> };
+export const newExportCache = (): ExportCache => ({ images: new Map(), fonts: new Map() });
+
+export async function toDataUrl(src: string | Blob, cache?: ExportCache): Promise<string> {
   if (typeof src === "string" && src.startsWith("data:")) return src;
+  if (cache && typeof src === "string") {
+    let hit = cache.images.get(src);
+    if (!hit) cache.images.set(src, hit = toDataUrl(src));
+    return hit;
+  }
   let blob: Blob;
   if (typeof src === "string") {
     const response = await fetch(src);
@@ -28,8 +40,8 @@ export async function toDataUrl(src: string | Blob): Promise<string> {
 /** /api/fonts/files に一度に頼める face の数 */
 const FONT_FILES_CHUNK = 16;
 
-/** 使っている family×weight の TTF を API のフォントキャッシュから取る（作品の文字は送らない） */
-export async function buildFontCss(root: Element): Promise<string> {
+/** 使っている family×weight の TTF を API のフォントキャッシュから取る（作品の文字は送らない）。cache があれば取得済みの face は取り直さない */
+export async function buildFontCss(root: Element, cache?: ExportCache): Promise<string> {
   const usage = new Map<string, Set<number>>();
   const add = (fam: string, w: number) => usage.set(fam, (usage.get(fam) ?? new Set()).add(snap(fam, w)));
   root.querySelectorAll("text").forEach((t) => {
@@ -41,24 +53,33 @@ export async function buildFontCss(root: Element): Promise<string> {
     if (FONT_BY_FAMILY.get(fam)?.script !== "ja") add(FALLBACK_FONT, w);
   });
   const faces = [...usage].flatMap(([family, ws]) => [...ws].sort((a, b) => a - b).map((weight) => ({ family, weight })));
-  const css: string[] = [];
-  for (let i = 0; i < faces.length; i += FONT_FILES_CHUNK) {
-    const chunk = faces.slice(i, i + FONT_FILES_CHUNK);
-    try {
-      const res = await api.fontFiles(chunk);
-      for (const f of res.files) {
-        css.push(`@font-face { font-family: '${f.family}'; font-weight: ${f.weight}; src: url(data:font/ttf;base64,${f.data}) format('truetype'); }`);
+  const fonts = cache?.fonts ?? new Map<string, Promise<string>>();
+  const key = (f: { family: string; weight: number }) => `${f.family}|${f.weight}`;
+  const todo = faces.filter((f) => !fonts.has(key(f)));
+  for (let i = 0; i < todo.length; i += FONT_FILES_CHUNK) {
+    const chunk = todo.slice(i, i + FONT_FILES_CHUNK);
+    const fetched = (async () => {
+      const css = new Map<string, string>();
+      try {
+        const res = await api.fontFiles(chunk);
+        for (const f of res.files) {
+          css.set(key(f), `@font-face { font-family: '${f.family}'; font-weight: ${f.weight}; src: url(data:font/ttf;base64,${f.data}) format('truetype'); }`);
+        }
+        for (const f of res.failed) console.warn("フォント埋め込みに失敗:", f.family, f.weight, f.code);
+      } catch (e) {
+        console.warn("フォント埋め込みに失敗:", chunk.map((f) => f.family).join(", "), e);
+        // 通信の失敗は覚えておかず、次のスライドで取り直す（一瞬切れただけでデッキ全体が代わりのフォントにならないように）
+        for (const f of chunk) fonts.delete(key(f));
       }
-      for (const f of res.failed) console.warn("フォント埋め込みに失敗:", f.family, f.weight, f.code);
-    } catch (e) {
-      console.warn("フォント埋め込みに失敗:", chunk.map((f) => f.family).join(", "), e);
-    }
+      return css;
+    })();
+    for (const f of chunk) fonts.set(key(f), fetched.then((m) => m.get(key(f)) ?? ""));
   }
-  return css.join("\n");
+  return (await Promise.all(faces.map((f) => fonts.get(key(f))!))).filter(Boolean).join("\n");
 }
 
 /** 画像・フォントを埋め込み、トップレベルに Inkscape/Affinity のレイヤー属性を付けた SVG を作る。 */
-export async function buildExportSvg(svg: SVGSVGElement, spec: PosterSpec, opts: { embedFonts?: boolean } = {}): Promise<string> {
+export async function buildExportSvg(svg: SVGSVGElement, spec: PosterSpec, opts: { embedFonts?: boolean; cache?: ExportCache } = {}): Promise<string> {
   const clone = svg.cloneNode(true) as SVGSVGElement;
   // SVG の名前空間は XMLSerializer が付ける。React が通常属性として置いた xmlns との二重出力を避ける。
   clone.removeAttribute("xmlns");
@@ -78,13 +99,13 @@ export async function buildExportSvg(svg: SVGSVGElement, spec: PosterSpec, opts:
     g.setAttribute("id", name.replace(/\s+/g, "_"));
   });
 
-  for (const img of clone.querySelectorAll("image")) {
+  await Promise.all([...clone.querySelectorAll("image")].map(async (img) => {
     const href = img.getAttribute("href") ?? img.getAttribute("xlink:href");
-    if (href) img.setAttribute("href", await toDataUrl(href));
-  }
+    if (href) img.setAttribute("href", await toDataUrl(href, opts.cache));
+  }));
 
   if (opts.embedFonts !== false) {
-    const css = await buildFontCss(clone);
+    const css = await buildFontCss(clone, opts.cache);
     if (css) {
       const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
       style.textContent = css;

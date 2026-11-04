@@ -1,6 +1,6 @@
 import type PptxGenJS from "pptxgenjs";
 import { withOffscreenPoster } from "./offscreen";
-import { buildExportSvg, svgToPngBlob, toDataUrl } from "./svg";
+import { buildExportSvg, newExportCache, svgToPngBlob, toDataUrl, type ExportCache } from "./svg";
 import type { Layer, PosterSpec, TextLayerT } from "../schema";
 import { resolveColor, resolvePaint, resolveTheme } from "../themes";
 import { lineSegments } from "../textRuns";
@@ -8,7 +8,8 @@ import { aabb } from "../editor/canvas";
 import { cropTarget } from "./ImageBox";
 import { FALLBACK_FONT, FONT_BY_FAMILY, FONT_CATALOG } from "../fonts";
 import JSZip from "jszip";
-import { animationGroups, animationSequence, buildTimingXml, insertTiming, SOUND_REL_RE, soundKey } from "../animation";
+import { animationGroups, animationSequence, buildTimingXml, insertTiming, planScroll, SOUND_REL_RE, soundKey, type ScrollMove } from "../animation";
+import { loadImageRatio } from "./imageRatio";
 import { addSlideSounds, specSounds } from "../sounds";
 import { buildTransitionXml } from "../transition";
 import { api } from "../editor/api";
@@ -61,7 +62,7 @@ export function textTransparency(opacity: number | undefined): number {
 export async function buildPptx(svg: SVGSVGElement, spec: PosterSpec): Promise<Blob> {
   const pptx = await newPptx(spec);
   const fonts: FontUsage = new Map();
-  const timing = buildTransitionXml(spec.transition) + await addPosterSlide(pptx, svg, spec, fonts);
+  const timing = buildTransitionXml(spec.transition) + placePosterSlide(pptx, spec, await prepareSlide(svg, spec, newExportCache()), fonts);
   return finishPptx((await pptx.write({ outputType: "blob" })) as Blob, [timing], fonts, [spec]);
 }
 
@@ -144,48 +145,122 @@ async function newPptx(spec: PosterSpec) {
  */
 export async function buildDeckPptx(specs: PosterSpec[], onProgress?: (done: number, total: number) => void): Promise<Blob> {
   const pptx = await newPptx(specs[0]);
-  const timings: string[] = [];
   const fonts: FontUsage = new Map();
-  for (const [i, spec] of specs.entries()) {
-    onProgress?.(i, specs.length);
-    timings.push(buildTransitionXml(spec.transition) + await withOffscreenPoster(spec, (svg) => addPosterSlide(pptx, svg, spec, fonts)));
-  }
-  onProgress?.(specs.length, specs.length);
+  const cache = newExportCache(); // 同じロゴ・背景・フォントをスライドごとに取り直さない（この書き出しの間だけ）
+  const prepared: (PreparedSlide | undefined)[] = new Array(specs.length);
+  let next = 0, done = 0, failed = false;
+  onProgress?.(0, specs.length);
+  // 描画と画像化は同時に数枚ずつ進める。スライドへの配置は下で順番どおりに行う
+  const worker = async () => {
+    while (!failed && next < specs.length) {
+      const i = next++;
+      try {
+        prepared[i] = await withOffscreenPoster(specs[i], (svg) => prepareSlide(svg, specs[i], cache));
+      } catch (e) { failed = true; throw e; }
+      onProgress?.(++done, specs.length);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(DECK_CONCURRENCY, specs.length) }, worker));
+  const timings = specs.map((spec, i) => buildTransitionXml(spec.transition) + placePosterSlide(pptx, spec, prepared[i]!, fonts));
   return finishPptx((await pptx.write({ outputType: "blob" })) as Blob, timings, fonts, specs);
 }
 
-/** スライドを 1 枚足し、そのスライドのアニメーション（<p:timing>。無ければ空文字）を返す。使ったフォントは fonts に足す */
-async function addPosterSlide(pptx: PptxGenJS, svg: SVGSVGElement, spec: PosterSpec, fonts: FontUsage): Promise<string> {
+/** デッキ書き出しで同時に描画・画像化するスライドの数 */
+const DECK_CONCURRENCY = 3;
+
+/** 画面外の SVG から先に取り出しておくもの（配置は SVG が無くてもできる） */
+type PreparedSlide = {
+  rasters: ({ box: { x: number; y: number; w: number; h: number }; data: string } | null)[];
+  /** text レイヤー id → 縮小倍率（fit: "shrink"） */
+  fitScales: Map<string, number>;
+  /** スクロール（流せるもの）のレイヤー id → 置き方と、画像全体・帯の画像 */
+  scrollPlans: Map<string, NonNullable<ReturnType<typeof planScroll>>>;
+  scrollRasters: Map<string, { picture: Raster; bands: Raster[] }>;
+};
+type Raster = { box: { x: number; y: number; w: number; h: number }; data: string };
+
+/** visible（表示するレイヤー）の画像化と、文字の縮小倍率の読み取り。ここまでは SVG が要るので並列にできる */
+async function prepareSlide(svg: SVGSVGElement, spec: PosterSpec, cache: ExportCache): Promise<PreparedSlide> {
   const theme = resolveTheme(spec.theme, spec.themeOverride);
   const { width, height } = spec.meta;
-  const slide = pptx.addSlide();
-  // 台本は PowerPoint のノートにする（発表者ツールで見られる）
-  if (spec.notes?.trim()) slide.addNotes(spec.notes);
-  const full = await buildExportSvg(svg, spec);
-  const doc = new DOMParser().parseFromString(full, "image/svg+xml");
-  const inch = (v: number) => v / PX_PER_IN;
   const visible = spec.layers.filter((l) => l.visible !== false && (!l.themes || l.themes.includes(spec.theme)));
+  const fitScales = new Map<string, number>();
+  for (const l of visible) {
+    if (isPlainText(l, theme)) fitScales.set(l.id, Number(svg.querySelector(`[data-layer-id="${CSS.escape(l.id)}"] [data-text-block]`)?.getAttribute("data-fit-scale")) || 1);
+  }
+  // 全レイヤーがテキストボックスになるスライドは、画像化に使う SVG（画像・フォントの埋め込み）を作らない
+  if (visible.every((l) => isPlainText(l, theme))) return { rasters: visible.map(() => null), fitScales, scrollPlans: new Map(), scrollRasters: new Map() };
+  const full = await buildExportSvg(svg, spec, { cache });
+  const doc = new DOMParser().parseFromString(full, "image/svg+xml");
 
-  // 画像化が必要なレイヤーは並列でラスタライズしておく
-  const rasters = await Promise.all(visible.map(async (l) => {
-    if (isPlainText(l, theme)) return null;
-    const box = l.type === "background" ? { x: 0, y: 0, w: width, h: height } : layerBox(svg, spec, l.id);
-    if (!box) return null;
-    // 対象レイヤー以外を消した SVG を作り、viewBox で box だけを描画する
+  /** doc から keep に当てはまるトップレベルのレイヤーだけ残し、viewBox の範囲を画像にする */
+  const rasterize = async (box: { x: number; y: number; w: number; h: number }, keep: (id: string) => boolean, edit?: (d: Document) => void, scale = 2) => {
     const d = doc.cloneNode(true) as Document;
     d.querySelectorAll("[data-layer-id]").forEach((g) => {
       if (g.parentElement?.closest("[data-layer-id]")) return; // ネストは親に従う
-      if (g.getAttribute("data-layer-id") !== l.id) g.remove();
+      if (!keep(g.getAttribute("data-layer-id") ?? "")) g.remove();
     });
+    edit?.(d);
     const root = d.documentElement;
     root.setAttribute("viewBox", `${box.x} ${box.y} ${box.w} ${box.h}`);
     root.setAttribute("width", String(box.w));
     root.setAttribute("height", String(box.h));
     // 文字を含まないレイヤーはフォント埋め込みを外して軽くする
     if (!root.querySelector("text")) root.querySelectorAll(":scope > style").forEach((st) => st.remove());
-    const png = await svgToPngBlob(new XMLSerializer().serializeToString(d), box.w, box.h, 2);
+    const png = await svgToPngBlob(new XMLSerializer().serializeToString(d), box.w, box.h, scale);
     return { box, data: await toDataUrl(png) };
+  };
+
+  // スクロール: 画像全体を 1 枚で置き、はみ出す部分は「このレイヤーより下のもの」の帯で隠す
+  const scrollPlans = new Map<string, NonNullable<ReturnType<typeof planScroll>>>();
+  await Promise.all(visible.map(async (l) => {
+    if (l.type !== "image" || !l.src || l.animation?.effect !== "scroll") return;
+    const ratio = (await loadImageRatio(l.src)) ?? l.crop?.ratio;
+    const plan = ratio ? planScroll(l, ratio, l.animation, spec.meta) : null;
+    if (plan) scrollPlans.set(l.id, plan);
   }));
+  const scrollRasters: PreparedSlide["scrollRasters"] = new Map();
+  await Promise.all([...scrollPlans].map(async ([id, plan]) => {
+    const under = new Set(spec.layers.slice(0, spec.layers.findIndex((x) => x.id === id)).map((x) => x.id));
+    const { picture } = plan;
+    const picture1 = await rasterize(picture, (lid) => lid === id, (d) => {
+      const img = d.querySelector(`[data-layer-id="${CSS.escape(id)}"] [data-scroll-image]`);
+      if (!img) return;
+      // 枠の clip と影を外し、画像全体の大きさで描く
+      // 位置はレイヤーの枠からの相対（流し始めの端に置く）
+      const l = spec.layers.find((x) => x.id === id)!;
+      img.setAttribute("x", String(picture.x - l.x));
+      img.setAttribute("y", String(picture.y - l.y));
+      img.setAttribute("width", String(picture.w));
+      img.setAttribute("height", String(picture.h));
+      img.setAttribute("preserveAspectRatio", "none");
+      img.parentElement?.removeAttribute("clip-path");
+      img.closest("[data-layer-id]")?.removeAttribute("filter");
+    }, Math.min(2, 8192 / Math.max(picture.w, picture.h)));
+    const bands = await Promise.all(plan.bands.map((b) => rasterize(b, (lid) => under.has(lid))));
+    scrollRasters.set(id, { picture: picture1, bands });
+  }));
+
+  // 画像化が必要なレイヤーは並列でラスタライズしておく
+  const rasters = await Promise.all(visible.map(async (l) => {
+    if (isPlainText(l, theme) || scrollPlans.has(l.id)) return null;
+    const box = l.type === "background" ? { x: 0, y: 0, w: width, h: height } : layerBox(svg, spec, l.id);
+    if (!box) return null;
+    // 対象レイヤー以外を消した SVG を作り、viewBox で box だけを描画する
+    return rasterize(box, (id) => id === l.id);
+  }));
+
+  return { rasters, fitScales, scrollPlans, scrollRasters };
+}
+
+/** スライドを 1 枚足し、そのスライドのアニメーション（<p:timing>。無ければ空文字）を返す。使ったフォントは fonts に足す。呼んだ順がスライドの順 */
+function placePosterSlide(pptx: PptxGenJS, spec: PosterSpec, { rasters, fitScales, scrollPlans, scrollRasters }: PreparedSlide, fonts: FontUsage): string {
+  const theme = resolveTheme(spec.theme, spec.themeOverride);
+  const slide = pptx.addSlide();
+  // 台本は PowerPoint のノートにする（発表者ツールで見られる）
+  if (spec.notes?.trim()) slide.addNotes(spec.notes);
+  const inch = (v: number) => v / PX_PER_IN;
+  const visible = spec.layers.filter((l) => l.visible !== false && (!l.themes || l.themes.includes(spec.theme)));
 
   // pptxgenjs は図形に「追加した順番 + 2」の id を振る。アニメーションの対象指定に使う
   const spids = new Map<string, number>();
@@ -209,7 +284,7 @@ async function addPosterSlide(pptx: PptxGenJS, svg: SVGSVGElement, spec: PosterS
       // 英数字だけのフォントは、日本語の文字（東アジアのフォント）を Noto Sans JP にする（finishPptx で差し替える）
       if (FONT_BY_FAMILY.get(face)?.script === "latin") addUsage(FALLBACK_FONT);
       // 枠に収めるため縮小した文字（fit: "shrink"）は、縮小後の大きさで書く
-      const scale = Number(svg.querySelector(`[data-layer-id="${CSS.escape(l.id)}"] [data-text-block]`)?.getAttribute("data-fit-scale")) || 1;
+      const scale = fitScales.get(l.id) ?? 1;
       const pt = l.size * 0.72 * scale;
       // 部分色は行ごと・色の切れ目ごとの断片にして渡す
       const transparency = textTransparency(l.opacity);
@@ -240,10 +315,26 @@ async function addPosterSlide(pptx: PptxGenJS, svg: SVGSVGElement, spec: PosterS
       textIds.add(l.id);
       return;
     }
+    const sc = scrollRasters.get(l.id);
+    if (sc) {
+      // 画像全体 → すぐ上に帯（帯は動かさない）の順に置く
+      for (const [k, r] of [sc.picture, ...sc.bands].entries()) {
+        slide.addImage({ data: r.data, x: inch(r.box.x), y: inch(r.box.y), w: inch(r.box.w), h: inch(r.box.h), altText: k ? `${l.name ?? l.id}（スクロールの帯）` : l.name ?? l.id });
+        if (!k) spids.set(l.id, added + 2);
+        added++;
+      }
+      return;
+    }
     const r = rasters[i];
     if (!r) return;
     slide.addImage({ data: r.data, x: inch(r.box.x), y: inch(r.box.y), w: inch(r.box.w), h: inch(r.box.h), altText: l.name ?? l.id });
     spids.set(l.id, added++ + 2);
   });
-  return buildTimingXml(animationGroups(animationSequence(spec)), spids, textIds);
+  // 流せなかったスクロール（回転・はみ出しなし・画像が読めない）は、フェードで代わりにする
+  const timed: PosterSpec = {
+    ...spec,
+    layers: spec.layers.map((l) => (l.animation?.effect === "scroll" && !scrollPlans.has(l.id) ? { ...l, animation: { ...l.animation, effect: "fade" as const, direction: undefined, scrollTo: undefined } } : l)),
+  };
+  const moves = new Map<string, ScrollMove>([...scrollPlans].map(([id, p]) => [id, p.move]));
+  return buildTimingXml(animationGroups(animationSequence(timed)), spids, textIds, moves);
 }

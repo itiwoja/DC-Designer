@@ -5,12 +5,12 @@ import { BGM_FILE_MAX_BYTES, createBgmPlayer } from "../bgm";
 import { LayerSchema } from "../schema";
 import { CATALOG_BY_NAME } from "../components/catalog";
 import { THEMES, resolveTheme } from "../themes";
-import { FONT_BY_FAMILY, FONT_CATALOG, FONT_ROLE_LABELS, FONT_SCRIPT_LABELS, syntheticWeight, type FontScript } from "../fonts";
+import { FONT_BY_FAMILY, FONT_CATALOG, FONT_ROLE_LABELS, FONT_SCRIPT_LABELS, clampWeightToFont, lighterFontSuggestions, syntheticWeight, weightChoicesFor, weightRange, type FontScript } from "../fonts";
 import { TYPE_LABEL } from "./LayersPanel";
 import { CROP_MAX_SCALE, clampCrop, cropLimits, cropTarget, roundPhotoRadius, withCrop } from "../render/ImageBox";
 import { Ico } from "./uiIcons";
 import { withText } from "../textRuns";
-import { ANIM_DIRECTIONS, ANIM_EFFECTS, ANIM_STARTS, defaultAnimation, isDirectional, soundKey } from "../animation";
+import { ANIM_DIAGONALS, ANIM_DIRECTIONS, ANIM_EFFECTS, ANIM_STARTS, SCROLL_DIRECTIONS, defaultAnimation, isDiagonalOk, isDirectional, normalizeDirection, soundKey } from "../animation";
 import { decodeSound, playSound, SOUND_FILE_MAX_BYTES, SOUND_FILE_MAX_SEC, SOUND_FILE_TYPES, SOUNDS, type SoundId } from "../sounds";
 import { api } from "./api";
 import { useFileDrop } from "./useFileDrop";
@@ -68,41 +68,39 @@ function familyOf(spec: PosterSpec, font: string): string {
   return resolveTheme(spec.theme, spec.themeOverride).fonts[font] ?? font;
 }
 
-/** 選べる太さ: 100〜900 の 100 刻みに、フォントが持つ太さ（250 など半端な値も含む）を足したもの。足りない太さは描画側で線を足す */
-function weightChoices(spec: PosterSpec, font: string): number[] {
-  const have = FONT_BY_FAMILY.get(familyOf(spec, font))?.weights ?? [];
-  return [...new Set([100, 200, 300, 400, 500, 600, 700, 800, 900, ...have])].sort((a, b) => a - b);
-}
-
 /**
  * 太さの数値入力。打った値は Enter かフォーカスを外したときに確定する（打ちかけの「7」「70」を反映しない）。
  * ▲▼・矢印キーは 100 刻み（フォントが持つ太さを含む）の次の値へ進む
  */
 function WeightInput({ spec, layer, onChange }: { spec: PosterSpec; layer: Extract<Layer, { type: "text" }>; onChange: (v: number) => void }) {
-  const options = weightChoices(spec, layer.font);
-  const [text, setText] = useState(String(layer.weight));
-  useEffect(() => setText(String(layer.weight)), [layer.weight]);
+  const family = familyOf(spec, layer.font);
+  const options = weightChoicesFor(family);
+  const min = weightRange(family)?.min ?? 1;
+  // フォントが持つ最小より細い値が入っていても、見せるのは最小値（データは触ったときに有効な値で保存）
+  const shown = clampWeightToFont(family, layer.weight);
+  const [text, setText] = useState(String(shown));
+  useEffect(() => setText(String(shown)), [shown]);
   const commit = () => {
     const v = Number(text);
-    if (text.trim() === "" || !Number.isFinite(v)) return setText(String(layer.weight));
-    const w = Math.round(Math.min(1000, Math.max(1, v)));
+    if (text.trim() === "" || !Number.isFinite(v)) return setText(String(shown));
+    const w = Math.round(Math.min(1000, Math.max(min, v)));
     setText(String(w));
     if (w !== layer.weight) onChange(w);
   };
   const stepTo = (dir: 1 | -1) => {
-    const next = dir > 0 ? options.find((w) => w > layer.weight) : [...options].reverse().find((w) => w < layer.weight);
+    const next = dir > 0 ? options.find((w) => w > shown) : [...options].reverse().find((w) => w < shown);
     if (next !== undefined) onChange(next);
   };
   return (
     <label className="num">
       <span>太さ</span>
       <input
-        type="number" min={1} max={1000} step={100} value={text}
+        type="number" min={min} max={1000} step={100} value={text}
         onChange={(e) => {
           const v = Number(e.target.value);
           // ▲▼のクリックは inputType が空で届く。打鍵・貼り付けは打っている途中とみなす
           const typed = !!(e.nativeEvent as InputEvent).inputType;
-          if (!typed && e.target.value !== "" && v !== layer.weight) stepTo(v > layer.weight ? 1 : -1);
+          if (!typed && e.target.value !== "" && v !== shown) stepTo(v > shown ? 1 : -1);
           else setText(e.target.value);
         }}
         onKeyDown={(e) => {
@@ -163,6 +161,11 @@ function AnimationBox({ layers, order, total, onSet, onMove, onPreview }: Animat
   const start = common(anims.map((a) => a.start));
   const dirAnims = anims.filter((a) => isDirectional(a.effect));
   const direction = common(dirAnims.map((a) => a.direction ?? "bottom"));
+  // 向きの選択肢は効果で変わる（スライドインは斜めも、スクロールは流す向き）
+  const dirButtons = dirAnims.every((a) => a.effect === "scroll") ? SCROLL_DIRECTIONS
+    : dirAnims.every((a) => isDiagonalOk(a.effect)) ? [...ANIM_DIRECTIONS, ...ANIM_DIAGONALS] : ANIM_DIRECTIONS;
+  // スクロールは画像にしか付けられない
+  const effects = ANIM_EFFECTS.filter((e) => !e.imageOnly || layers.every((l) => l.type === "image"));
   // 同じ音かはファイルなら保存先で比べる
   const soundKeys = common(anims.map((a) => (a.sound ? soundKey(a.sound) : "")));
   const sound = soundKeys === undefined ? undefined : anims[0]?.sound ?? "";
@@ -188,14 +191,14 @@ function AnimationBox({ layers, order, total, onSet, onMove, onPreview }: Animat
             const fresh = layers.filter((l) => !l.animation).map((l) => l.id);
             onSet((a, i) => {
               const next = a ? { ...a, effect: v } : { ...defaultAnimation(v), start: fresh.indexOf(layers[i].id) > 0 ? "with" as const : "click" as const };
-              // 向きのある効果に変えたら向きを補い、無い効果では外す
-              return isDirectional(v) ? { ...next, direction: next.direction ?? "bottom" } : { ...next, direction: undefined };
+              // 向きのある効果に変えたら向きを補い（斜めを選べない効果では上下左右にし）、無い効果では外す
+              return { ...next, direction: normalizeDirection(v, next.direction), scrollTo: v === "scroll" ? next.scrollTo : undefined };
             });
           }}
         >
           {effect === undefined && <option value="mixed" disabled>{anims.length < layers.length ? "一部だけ付いている" : "混在"}</option>}
           <option value="">なし</option>
-          {ANIM_EFFECTS.map((e) => <option key={e.value} value={e.value}>{e.label}</option>)}
+          {effects.map((e) => <option key={e.value} value={e.value}>{e.label}</option>)}
         </select>
         {anims.length > 0 && (
           <select value={start ?? "mixed"} aria-label="開始" title="いつ動き始めるか" onChange={(e) => e.target.value !== "mixed" && patch({ start: e.target.value as LayerAnimation["start"] })}>
@@ -204,16 +207,16 @@ function AnimationBox({ layers, order, total, onSet, onMove, onPreview }: Animat
           </select>
         )}
       </div>
-      {dirAnims.length > 0 && (
-        <div className="seg">
-          {ANIM_DIRECTIONS.map((d) => (
+      {dirAnims.length > 0 && [dirButtons.slice(0, 4), dirButtons.slice(4)].filter((row) => row.length).map((row, ri) => (
+        <div className="seg" key={ri}>
+          {row.map((d) => (
             <button
               key={d.value} className={direction === d.value ? "on" : ""} aria-pressed={direction === d.value}
-              onClick={() => onSet((a) => a && (isDirectional(a.effect) ? { ...a, direction: d.value } : a))}
+              onClick={() => onSet((a) => a && (isDirectional(a.effect) ? { ...a, direction: normalizeDirection(a.effect, d.value) } : a))}
             >{d.label}</button>
           ))}
         </div>
-      )}
+      ))}
       {anims.length > 0 && (
         <>
           <div className="grid4">
@@ -551,12 +554,29 @@ export function Inspector({ layer, multiCount, spec, onChange, onReplace, onRege
           </div>
           {(() => {
             const family = familyOf(spec, layer.font);
-            const have = FONT_BY_FAMILY.get(family)?.weights;
-            if (!have) return null;
+            const range = weightRange(family);
+            if (!range) return null;
             const { face, extra } = syntheticWeight(family, layer.weight);
-            if (extra > 0) return <p className="hint small">このフォントの太さは {have.join(" / ")} です。{face} より太いぶんは文字に線を足して太くしています</p>;
-            if (face !== layer.weight) return <p className="hint small">このフォントは {face} より細くできないため {face} で表示されます</p>;
-            return null;
+            const lighter = lighterFontSuggestions(family);
+            return (
+              <>
+                <p className="hint small">
+                  このフォントの太さ: {range.min === range.max ? range.min : `${range.min}〜${range.max}`}
+                  {extra > 0 && (face === range.max
+                    ? `（${range.max} より太いぶんは文字に線を足しています）`
+                    : `（${face} の文字に線を足して ${layer.weight} にしています）`)}
+                </p>
+                {lighter.length > 0 && (
+                  <div className="row">
+                    <span className="hint small">もっと細くするには</span>
+                    {lighter.map((f) => (
+                      <button key={f.id} className="small" title={`${f.family} に変える（太さ ${f.weights.join(" / ")}）`}
+                        onClick={() => onChange({ font: f.family } as any)}>{f.family}</button>
+                    ))}
+                  </div>
+                )}
+              </>
+            );
           })()}
           <div className="seg">
             <button className={isBold(layer) ? "on" : ""} aria-pressed={isBold(layer)} title={`太字（${mod}+B）`} style={{ fontWeight: 800 }}

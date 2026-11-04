@@ -1,4 +1,7 @@
+import { useEffect, useState } from "react";
 import type { AssetRequest, ImageCrop, Layer } from "../schema";
+import { scrollLayout } from "../animation";
+import { cachedImageRatio, loadImageRatio } from "./imageRatio";
 
 export const CROP_MAX_SCALE = 5;
 
@@ -75,9 +78,11 @@ export function cropRect(w: number, h: number, crop?: ImageCrop, fit: "cover" | 
 
 /** 画像（src が無ければ「生成待ち」プレースホルダー）を (0,0,w,h) に描画。ellipse なら丸く切り抜く */
 export function ImageBox({
-  id, src, asset, w, h, fit = "cover", crop, radius = 0, blur, ellipse,
+  id, src, asset, w, h, fit = "cover", crop, radius = 0, blur, ellipse, scroll,
 }: {
   id: string; src?: string; asset?: AssetRequest; w: number; h: number; fit?: "cover" | "contain"; crop?: ImageCrop; radius?: number; blur?: number; ellipse?: boolean;
+  /** スクロールの効果の向き。あれば枠いっぱいに敷いて、流し始めの端を見せる（fit・crop は使わない） */
+  scroll?: "bottom" | "top" | "left" | "right";
 }) {
   const clipId = `${id}-clip`;
   const blurId = `${id}-blur`;
@@ -112,6 +117,21 @@ export function ImageBox({
       </g>
     );
   }
+  if (scroll) {
+    // 枠をはみ出す分は clip の中で隠れる。流す向きの始めの端に揃える（効果で image を translate する）
+    const align = { bottom: "xMidYMin", top: "xMidYMax", right: "xMinYMid", left: "xMaxYMid" }[scroll];
+    return (
+      <g>
+        <defs>
+          <clipPath id={clipId}>{frame()}</clipPath>
+          {blur ? <filter id={blurId} x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation={blur} /></filter> : null}
+        </defs>
+        <g clipPath={`url(#${clipId})`}>
+          <ScrollImage key={src} src={src} w={w} h={h} dir={scroll} align={align} ratio={crop?.ratio} filter={blur ? `url(#${blurId})` : undefined} />
+        </g>
+      </g>
+    );
+  }
   const r = cropRect(w, h, crop, fit);
   return (
     <g>
@@ -132,4 +152,25 @@ export function ImageBox({
       />
     </g>
   );
+}
+
+/**
+ * スクロールの画像。流す向きの長さを画像本来の比率で描き（枠からはみ出す分は外側の clip で隠れる）、流し始めの端に置く。
+ * image 要素を枠と同じ大きさにすると、要素自身の枠で画像が切れて、translate しても続きが出てこないため。
+ * 比率が分かるまでは枠いっぱいに敷いて流し始めの端を見せる
+ */
+function ScrollImage({ src, w, h, dir, align, ratio: fallback, filter }: {
+  src: string; w: number; h: number; dir: "bottom" | "top" | "left" | "right"; align: string; ratio?: number; filter?: string;
+}) {
+  const [ratio, setRatio] = useState(() => cachedImageRatio(src) ?? fallback);
+  useEffect(() => {
+    let alive = true;
+    void loadImageRatio(src).then((r) => { if (alive && r) setRatio(r); });
+    return () => { alive = false; };
+  }, [src]);
+  const lay = ratio ? scrollLayout({ w, h }, ratio, dir) : null;
+  // 比率が分からない・流す向きにはみ出さない（流せない）ときは、枠いっぱいに敷く
+  if (!lay || lay.travel < 1) return <image data-scroll-image="true" href={src} x={0} y={0} width={w} height={h} preserveAspectRatio={`${align} slice`} filter={filter} />;
+  const { img } = lay;
+  return <image data-scroll-image="true" href={src} x={img.x} y={img.y} width={img.w} height={img.h} preserveAspectRatio="none" filter={filter} />;
 }

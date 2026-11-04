@@ -1,4 +1,5 @@
 import JSZip from "jszip";
+import { readTiming } from "../animation";
 import { readTransition } from "../transition";
 import type { ImageCrop, Layer, Paint, PosterSpec } from "../schema";
 import { clampCrop } from "../render/ImageBox";
@@ -83,6 +84,8 @@ type Ctx = {
   images: Map<string, Promise<string | null>>;
   warn: (msg: string) => void;
   seq: number;
+  /** スライドの図形 id（cNvPr id）→ その図形から作ったレイヤー（アニメーションの対象を引くため。スライドごとに作り直す） */
+  bySpid: Map<number, Layer[]>;
 };
 
 /** a:srgbClr / a:schemeClr などの色要素を CSS カラーへ。phClr は shape style の色で置き換える */
@@ -553,8 +556,15 @@ async function walkTree(tree: El, part: Part, chain: Chain, ctx: Ctx, xf: Xf, ou
 }
 
 async function walkNode(el: El, part: Part, chain: Chain, ctx: Ctx, xf: Xf, out: Layer[], fromMaster: boolean) {
-  if (el.localName === "grpSp") return walkTree(el, part, chain, ctx, groupXf(el, xf), out, fromMaster);
   const cNvPr = kid(kids(el).find((c) => c.localName.startsWith("nv")), "cNvPr");
+  const spid = attr(cNvPr, "id") ? Number(attr(cNvPr, "id")) : NaN;
+  if (el.localName === "grpSp") {
+    // グループ自体を対象にしたアニメーションは、中のレイヤーすべてに付ける
+    const from = out.length;
+    await walkTree(el, part, chain, ctx, groupXf(el, xf), out, fromMaster);
+    if (!fromMaster && Number.isFinite(spid) && out.length > from) ctx.bySpid.set(spid, out.slice(from));
+    return;
+  }
   const name = attr(cNvPr, "name") || el.localName;
   let layers: Layer[];
   switch (el.localName) {
@@ -569,6 +579,21 @@ async function walkNode(el: El, part: Part, chain: Chain, ctx: Ctx, xf: Xf, out:
     if (hidden) l.visible = false;
     if (fromMaster) l.locked = true; // マスター・レイアウトの飾りは動かないように
     out.push(l);
+  }
+  if (!fromMaster && Number.isFinite(spid) && layers.length) ctx.bySpid.set(spid, layers);
+}
+
+/**
+ * <p:timing> の効果を、対応するレイヤーの animation に付ける。
+ * 1 つの図形が複数のレイヤーになったとき（図形＋文字、段落ごとの文字、グループ）は、先頭に効果をそのまま付け、
+ * 残りは「直前と同時」で同じ長さ・遅延にして、まとめて動いているように見せる
+ */
+function applyTiming(timing: El | null, ctx: Ctx) {
+  let order = 0;
+  for (const { spid, anim } of readTiming(timing)) {
+    const targets = ctx.bySpid.get(spid)?.filter((l) => l.type !== "background");
+    if (!targets?.length) continue;
+    targets.forEach((l, i) => { l.animation = { ...anim, ...(i ? { start: "with" as const } : {}), order: ++order }; });
   }
 }
 
@@ -745,7 +770,7 @@ export async function importPptx(file: Blob, fileName: string, opts: PptxImportO
   const warnings = new Map<string, number>();
   const ctx: Ctx = {
     zip, theme: { colors: {}, major: {}, minor: {} }, clrMap: {}, defaultTextStyle: kid(root, "defaultTextStyle"), opts,
-    images: new Map(), warn: (m) => warnings.set(m, (warnings.get(m) ?? 0) + 1), seq: 0,
+    images: new Map(), bySpid: new Map(), warn: (m) => warnings.set(m, (warnings.get(m) ?? 0) + 1), seq: 0,
   };
   const slidePaths = kids(kid(root, "sldIdLst"), "sldId").map((s) => pres.rels.get(rattr(s, "id") ?? "")?.target).filter(Boolean) as string[];
   const name = fileName.replace(/\.pptx$/i, "");
@@ -767,14 +792,18 @@ export async function importPptx(file: Blob, fileName: string, opts: PptxImportO
     const master = await load(relTarget(layout, "slideMaster"));
     applySlideTheme(ctx, await load(relTarget(master, "theme")), layout, master);
     ctx.seq = 0;
+    ctx.bySpid = new Map();
     const notes = await notesOf(zip, slide);
     // 画面切り替え（新しい PowerPoint は mc:AlternateContent に包んで書くので、子孫から最初のものを読む）
     const transition = readTransition(slide.doc.getElementsByTagNameNS("*", "transition")[0]);
+    const layers = await slideLayers(slide, layout, master, ctx, width, height);
+    // 新しい PowerPoint は mc:AlternateContent に包むことがあるので、画面切り替えと同じく子孫から探す
+    applyTiming(slide.doc.getElementsByTagNameNS("*", "timing")[0] ?? null, ctx);
     slides.push({
       version: 1,
       meta: { title: `${name} ${i + 1}`, width, height },
       theme: "ocean",
-      layers: await slideLayers(slide, layout, master, ctx, width, height),
+      layers,
       ...(notes ? { notes } : {}),
       ...(transition ? { transition } : {}),
     });

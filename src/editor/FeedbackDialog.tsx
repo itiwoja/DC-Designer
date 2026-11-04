@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { version as devVersion } from "../../package.json";
 import { desktopBridge, useDesktopVersion } from "./desktop";
 import { api } from "./api";
-import { BUG_TEMPLATE, buildFeedbackUrl, detectOs, feedbackErrorView, FEEDBACK_KIND_LABELS, FEEDBACK_MAX_BODY, isGithubUrl, remainingLabel, type FeedbackKind } from "./feedback";
+import { BUG_TEMPLATE, buildFeedbackUrl, detectOs, feedbackErrorView, FEEDBACK_KIND_LABELS, FEEDBACK_MAX_BODY, FEEDBACK_SELECTABLE_KINDS, isGithubUrl, remainingLabel, type FeedbackKind } from "./feedback";
 import { Ico } from "./uiIcons";
 
 type Phase = { kind: "edit" } | { kind: "sending" } | { kind: "done"; number: number; url: string } | { kind: "error"; message: string; canFallback: boolean };
@@ -81,7 +81,7 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
         ) : (
           <>
             <div className="feedback-kinds" role="radiogroup" aria-label="種類">
-              {(Object.keys(FEEDBACK_KIND_LABELS) as FeedbackKind[]).map((k, i) => (
+              {FEEDBACK_SELECTABLE_KINDS.map((k, i) => (
                 <label key={k}><input type="radio" name="feedback-kind" checked={kind === k} autoFocus={i === 0} disabled={sending} onChange={() => pickKind(k)} /> {FEEDBACK_KIND_LABELS[k]}</label>
               ))}
             </div>
