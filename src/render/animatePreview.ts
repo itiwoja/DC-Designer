@@ -127,11 +127,19 @@ export const slideGroups = (spec: PosterSpec): AnimGroup[] => {
   return animationGroups(animationSequence(spec));
 };
 
-/** まだ出していないまとまりの要素を隠す（hidden = false で元に戻す） */
+/**
+ * まだ出していないまとまりの要素を隠す（hidden = false で元に戻す）。
+ * スクロールは入場の効果ではないので隠さない（PPTX・試し再生と同じく最初から見せる）。戻すときは流す前の位置に戻す
+ */
 export function hideGroup(svg: SVGSVGElement, g: AnimGroup, hidden: boolean) {
   for (const st of g.steps) for (const it of st.items) {
     const el = layerEl(svg, it.id);
-    if (el) hidden ? el.style.setProperty("visibility", "hidden") : el.style.removeProperty("visibility");
+    if (!el) continue;
+    if (it.anim.effect === "scroll") {
+      if (hidden) el.querySelector<SVGElement>("[data-scroll-image]")?.getAnimations?.().forEach((a) => a.cancel());
+      continue;
+    }
+    hidden ? el.style.setProperty("visibility", "hidden") : el.style.removeProperty("visibility");
   }
 }
 
