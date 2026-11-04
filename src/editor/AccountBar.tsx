@@ -152,13 +152,12 @@ export function AccountBar({ status, imageChoices, imageProvider, onImageProvide
                     </span>
                   </div>
                 )}
-                <div className="status-row">
-                  <span className="status-label">画像生成</span>
-                  <span className="status-val">
-                    <select aria-label="画像生成プロバイダ" value={imageProvider} onChange={(e) => onImageProvider(e.target.value)}>
-                      {imageChoices.map((p) => <option key={p} value={p}>{IMAGE_PROVIDER_LABELS[p] ?? p}</option>)}
-                    </select>
-                  </span>
+                <div className="divider" />
+                <div className="image-field">
+                  <strong className="image-settings-title">画像生成</strong>
+                  <select aria-label="画像生成プロバイダ" value={imageProvider} onChange={(e) => onImageProvider(e.target.value)}>
+                    {imageChoices.map((p) => <option key={p} value={p}>{IMAGE_PROVIDER_LABELS[p] ?? p}</option>)}
+                  </select>
                 </div>
                 {(imageProvider === "gemini" || imageProvider === "comfyui") && <p className="hint">※ {IMAGE_PROVIDER_LABELS[imageProvider]} は透過非対応。透過画像は OpenAI キーがあれば OpenAI で生成</p>}
                 <div className="divider" />

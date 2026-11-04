@@ -480,6 +480,11 @@ button.primary.danger, button.primary.danger:hover:not(:disabled) { background: 
 .codex-setup > .spinner { align-self: flex-start; }
 .codex-setup-progress { width: 100%; height: 8px; accent-color: var(--accent, currentColor); }
 .status-card .divider { margin: 2px 0; }
+/* 製品版・Web 版：画像生成のまとまり（ラベルを上、入力を下に並べる） */
+.image-settings-title { font-size: 12px; color: var(--muted); }
+.image-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.image-field-label { font-size: 12px; font-weight: 700; color: var(--muted); }
+.image-field select, .image-field input { width: 100%; box-sizing: border-box; min-width: 0; }
 .hint button.link { display: inline; font-size: inherit; }
 
 /* 画像のトリミング（枠内での拡大・位置調整） */
