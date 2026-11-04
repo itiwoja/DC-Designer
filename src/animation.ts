@@ -205,3 +205,56 @@ export function insertTiming(slideXml: string, timing: string): string {
   const at = ext > cSldEnd && cSldEnd >= 0 ? ext : cleaned.lastIndexOf("</p:sld>");
   return cleaned.slice(0, at) + timing + cleaned.slice(at);
 }
+
+// ---------- 取り込み（buildTimingXml の逆） ----------
+
+/** 取り込んだ 1 つの効果。spid は図形の id（cNvPr id）。order は再生順（1 から） */
+export type TimingEffect = { spid: number; anim: LayerAnimation };
+
+/** PowerPoint の入場効果（presetClass="entr"）→ このアプリの効果。書き出しの PRESET の逆に、よくある効果を近いものへ寄せる */
+const PRESET_TO_EFFECT: Record<number, AnimEffect> = {
+  1: "appear", 2: "fly", 7: "fly", 10: "fade", 12: "wipe", 22: "wipe", 42: "float", 53: "zoom",
+  // ズーム系（ベーシックズーム・拡大して回転）
+  23: "zoom", 31: "zoom",
+};
+const SUBTYPE_TO_DIR: [number, AnimDirection][] = [[4, "bottom"], [1, "top"], [8, "left"], [2, "right"]];
+const START_OF: Record<string, LayerAnimation["start"]> = { clickEffect: "click", withEffect: "with", afterEffect: "after" };
+
+const els = (el: Element): Element[] => Array.from(el.getElementsByTagNameNS("*", "*"));
+const child = (el: Element, name: string) => Array.from(el.childNodes as unknown as Element[]).find((c) => c.nodeType === 1 && c.localName === name) ?? null;
+
+/**
+ * slide.xml の <p:timing> から、メインシーケンスの入場効果を再生順に読む。
+ * - 退場・強調・軌跡と、クリックで始まる別系統（interactiveSeq）は読まない
+ * - 知らないプリセットは appear 以外ならフェードに寄せる。同じ図形に複数あれば最初の 1 つだけ
+ * - 効果音は読まない（スライドの .rels の WAV を取り込む仕組みが無いため）
+ */
+export function readTiming(timing: Element | null | undefined): TimingEffect[] {
+  if (!timing) return [];
+  const main = els(timing).find((e) => e.localName === "cTn" && e.getAttribute("nodeType") === "mainSeq");
+  if (!main) return [];
+  const out: TimingEffect[] = [];
+  const seen = new Set<number>();
+  for (const ctn of els(main)) {
+    if (ctn.localName !== "cTn" || ctn.getAttribute("presetClass") !== "entr") continue;
+    const start = START_OF[ctn.getAttribute("nodeType") ?? ""];
+    const target = els(ctn).find((e) => e.localName === "spTgt");
+    const spid = Number(target?.getAttribute("spid"));
+    if (!start || !Number.isFinite(spid) || seen.has(spid)) continue;
+    seen.add(spid);
+    const preset = Number(ctn.getAttribute("presetID"));
+    const effect = PRESET_TO_EFFECT[preset] ?? "fade";
+    const sub = Number(ctn.getAttribute("presetSubtype")) || 0;
+    // 効果の長さ = 中の動き（表示に切り替える set の 1ms は除く）のうち最も長いもの
+    const durs = els(ctn).filter((e) => e.localName === "cTn" && e !== ctn).map((e) => Number(e.getAttribute("dur"))).filter((d) => d > 1 && Number.isFinite(d));
+    const duration = Math.min(20000, durs.length ? Math.max(...durs) : 500);
+    const cond = child(child(ctn, "stCondLst") ?? ctn, "cond");
+    const delay = Math.min(60000, Math.max(0, Number(cond?.getAttribute("delay")) || 0));
+    const dir = SUBTYPE_TO_DIR.find(([bit]) => sub & bit)?.[1] ?? "bottom";
+    out.push({
+      spid,
+      anim: { effect, start, duration, delay, order: out.length + 1, ...(isDirectional(effect) ? { direction: dir } : {}) },
+    });
+  }
+  return out;
+}
