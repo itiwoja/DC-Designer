@@ -7,7 +7,7 @@ export type Notice = { id: number; kind: "info" | "success" | "error"; text: str
  * 何段階かある処理では step（何段階目か）・stepStartedAt（その段階の開始時刻）・detail（その段階の中の様子）も出す
  */
 export type Busy = {
-  label: string; startedAt: number; abort?: AbortController; progress?: [number, number];
+  label: string; startedAt: number; abort?: AbortController; progress?: [number, number]; percent?: boolean;
   step?: [number, number]; stepStartedAt?: number; detail?: string;
 };
 
@@ -41,7 +41,7 @@ export function Toasts({ busy, notices, onDismiss }: { busy: Busy | null; notice
         <div className="toast">
           <span className="spinner" />
           <span className="busy-text">
-            <span>{busy.step && `${busy.step[0]}/${busy.step[1]} `}{busy.label}{busy.progress ? `（${busy.progress[0]} / ${busy.progress[1]}）` : "…"}</span>
+            <span>{busy.step && `${busy.step[0]}/${busy.step[1]} `}{busy.label}{busy.progress ? (busy.percent ? `（${Math.round((busy.progress[0] / busy.progress[1]) * 100)}%）` : `（${busy.progress[0]} / ${busy.progress[1]}）`) : "…"}</span>
             {busy.detail && <span className="busy-detail">{busy.detail}</span>}
           </span>
           {elapsed >= 2 && (
