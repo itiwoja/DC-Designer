@@ -190,17 +190,22 @@ export function playGroup(svg: SVGSVGElement, spec: PosterSpec, g: AnimGroup): R
   };
   const wait = pendingScrolls(spec, g);
   if (!wait.length) return begin();
-  let inner: Running | null = null, cancelled = false, skip = false;
+  let inner: Running | null = null, cancelled = false;
   const done = loadScrollRatios(spec, wait).then(() => {
     if (cancelled) return;
     inner = begin();
-    if (skip) inner.finish();
     return inner.done;
   });
   return {
     done,
-    // 読み込み中に取り消された・最後まで飛ばされたときは、始まった時点でそうする
     cancel: () => { cancelled = true; inner?.cancel(); },
-    finish: () => { skip = true; inner?.finish(); },
+    // 読み込み中に最後まで飛ばされたら、遅れて流さずに今すぐ出し終えた状態にする
+    // （呼び出し側はこの後この Running を手放すので、後から始めるとスライドを移った後に動いてしまう。
+    // スクロールの位置は hideGroup が読み込みを待って整え、その間に隠されたら捨てる）
+    finish: () => {
+      if (inner) return inner.finish();
+      cancelled = true;
+      hideGroup(svg, g, false);
+    },
   };
 }

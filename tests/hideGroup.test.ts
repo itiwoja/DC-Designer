@@ -85,4 +85,26 @@ describe("スクロールの位置と読み込み", () => {
     await run.done;
     expect(calls).toHaveLength(0);
   });
+
+  it("読み込み待ちの間に最後まで飛ばしたら、遅れて流さずに出し終えた状態にする", async () => {
+    const spec = PosterSpecSchema.parse({ meta: {}, layers: [
+      { id: "img", type: "image", src: "/shot.png", ...frame, animation: { effect: "scroll", direction: "bottom", start: "click", duration: 500, delay: 0 } },
+      { id: "t", type: "text", text: "見出し", ...frame, animation: { effect: "fade", start: "with", duration: 500, delay: 0 } },
+    ] });
+    const { svg, calls, groups } = build(spec);
+    const t = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    t.setAttribute("data-layer-id", "t");
+    const tAnims: unknown[] = [];
+    (t as unknown as { animate: unknown }).animate = (...a: unknown[]) => { tAnims.push(a); return { cancel() {}, finish() {}, finished: Promise.resolve() }; };
+    svg.appendChild(t);
+    hideGroup(svg, groups[0], true);
+    expect(t.style.visibility).toBe("hidden");
+    const run = playGroup(svg, spec, groups[0]);
+    run.finish();
+    expect(t.style.visibility).toBe("");
+    await run.done;
+    await new Promise((r) => setTimeout(r, 0));
+    expect(tAnims).toHaveLength(0);
+    expect(calls).toHaveLength(0);
+  });
 });
