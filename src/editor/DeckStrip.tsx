@@ -175,7 +175,7 @@ export function DeckStrip({
               aria-current={s.id === currentId}
               disabled={disabled && s.id !== currentId}
               onClick={(e) => clickSlide(s.id, e)}
-              title={sp?.meta.title ?? s.title}
+              title={`スライド ${i + 1}`}
               style={{ width: thumbW, height: thumbH }}
             >
               {sp && <SpecFrame spec={sp} style={{ width, height, transform: `scale(${thumbH / height})` }} />}

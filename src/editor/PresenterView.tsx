@@ -177,7 +177,7 @@ export function PresenterView({
         <button onClick={onPrev} disabled={index === 0 && built === 0} title="前へ（←）"><Ico name="chevronLeft" /> 前へ</button>
         <button className="pview-primary" onClick={onNext} title="次へ（クリック・→・Space）">次へ <Ico name="chevronRight" /></button>
         <select value={Math.min(index, slides.length - 1)} onChange={(e) => onGo(Number(e.target.value))} aria-label="スライドへ移動" title="スライドへ移動">
-          {slides.map((s, i) => <option key={i} value={i}>{i + 1}. {s.meta.title}</option>)}
+          {slides.map((s, i) => <option key={i} value={i}>スライド {i + 1}</option>)}
         </select>
         {displays && displays.length >= 2 && (
           <select value={slideDisplayId ?? ""} onChange={(e) => onMoveDisplay?.(Number(e.target.value))} aria-label="スライドを映す画面" title="スライドを映す画面">

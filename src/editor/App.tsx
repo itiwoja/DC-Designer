@@ -472,10 +472,9 @@ export function App() {
     const reordered = plan.slots.some((s, i) => s.type !== "keep" || s.id !== oldIds[i]) || before !== after;
     if (!reordered && !plan.rewrites.length) return { text: res.reply || "変更はありませんでした" };
     if (removedNums.length) {
-      const titles = plan.removed.map((id) => `「${d.slides[oldIds.indexOf(id)].title}」`).join("");
       const ok = await ask({
         title: `スライドを ${before} 枚 → ${after} 枚に組み直しますか？`,
-        message: `デッキを ${before} 枚から ${after} 枚に組み直します。${added ? `${added} 枚を追加し、` : ""}スライド ${nums(removedNums)}（${titles}）を削除します。削除は取り消せません。`,
+        message: `デッキを ${before} 枚から ${after} 枚に組み直します。${added ? `${added} 枚を追加し、` : ""}スライド ${nums(removedNums)} を削除します。削除は取り消せません。`,
         ok: "組み直す", danger: true,
       });
       if (!ok) return { text: "変更は当てませんでした" };
