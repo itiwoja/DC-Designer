@@ -48,7 +48,22 @@ it("選択肢を日本語の名前で出し、仮の画像だけのときは「�
   const opts = [...container.querySelectorAll("select option")].map((o) => o.textContent);
   expect(opts).toEqual(["Gemini（API キー）", "ComfyUI（この PC）", "ChatGPT（Codex CLI）"]);
   await mount(bridge, st(), { imageChoices: [], imageProvider: undefined });
-  expect(container.querySelector("select option")!.textContent).toBe("仮の画像");
+  expect(container.querySelector<HTMLSelectElement>("select")!.selectedOptions[0].textContent).toBe("仮の画像");
+});
+
+it("まだ使えないプロバイダも「（未設定）」付きで出し、選ぶと準備の欄だけを出す（切り替えはしない）", async () => {
+  const { bridge } = mkBridge(false);
+  const choose = vi.fn();
+  await mount(bridge, st(), { imageChoices: ["comfyui"], onImageProvider: choose });
+  const opts = [...container.querySelectorAll("select option")].map((o) => o.textContent);
+  expect(opts).toEqual(["Gemini（API キー）（未設定）", "ComfyUI（この PC）", "ChatGPT（Codex CLI）（未設定）"]);
+  const select = container.querySelector<HTMLSelectElement>("select")!;
+  await act(async () => { select.value = "gemini"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+  expect(container.querySelector('input[aria-label="Gemini の API キー"]')).not.toBeNull();
+  expect(choose).not.toHaveBeenCalled();
+  // キーを保存して使えるようになったら、そのプロバイダに切り替える
+  await mount(bridge, st(), { imageChoices: ["gemini", "comfyui"], onImageProvider: choose });
+  expect(choose).toHaveBeenCalledWith("gemini");
 });
 
 it("キー保存で secrets.set が呼ばれ、値は画面に出ない", async () => {

@@ -33,6 +33,8 @@ export function SignInWaiting({ bridge }: { bridge: DesktopBridge }) {
 }
 
 const DESKTOP_IMAGE_LABELS: Record<string, string> = { gemini: "Gemini（API キー）", comfyui: "ComfyUI（この PC）", codex: "ChatGPT（Codex CLI）", placeholder: "仮の画像" };
+/** 製品版の選択欄に出すプロバイダの順。使えないものも出して、選ぶと準備の欄を出す */
+const DESKTOP_IMAGE_ORDER = ["gemini", "comfyui", "codex", "placeholder"];
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 const CODEX_SOURCE_LABELS: Record<string, string> = { app: "このアプリで入れた版", "codex-app": "Codex アプリの CLI", npm: "npm で入れた CLI", path: "PATH の CLI", configured: "指定した場所" };
@@ -137,15 +139,27 @@ export function DesktopImageSettings({ bridge, status, imageChoices, imageProvid
     setSaving(false);
   };
   const choices = imageChoices.length ? imageChoices : ["placeholder"];
-  const provider = imageProvider ?? "placeholder";
+  // 選択欄には、まだ使えない（キー未設定・Codex 未導入）プロバイダも出す。選ぶとその準備の欄だけを出し、
+  // 使えるようになったら（キーを保存した・サインインした）そのプロバイダに切り替える
+  const [shown, setShown] = useState<string | null>(null);
+  const active = imageProvider ?? "placeholder";
+  const provider = shown ?? active;
+  useEffect(() => {
+    if (shown === null) return;
+    if (shown === active) setShown(null);
+    else if (choices.includes(shown)) onImageProvider(shown);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- onImageProvider は描画ごとに作り直されるので外す
+  }, [shown, active, choices.join(",")]);
+  const options = [...DESKTOP_IMAGE_ORDER.filter((p) => p !== "placeholder" || choices.includes(p)), ...choices.filter((p) => !DESKTOP_IMAGE_ORDER.includes(p))];
+  const pick = (p: string) => (choices.includes(p) ? (setShown(null), onImageProvider(p)) : setShown(p));
   // 保存ボタンは URL・場所の入力が出ているとき（ComfyUI・Codex）だけ。Gemini のキーは別の保管庫に入れるので別のボタン
   const hasSettingsForm = provider === "comfyui" || provider === "codex";
   return (
     <div className="status-card image-settings" role="group" aria-labelledby="image-settings-title">
       <strong id="image-settings-title" className="image-settings-title">画像生成</strong>
       <div className="image-field">
-        <select aria-label="画像生成プロバイダ" value={provider} onChange={(e) => onImageProvider(e.target.value)}>
-          {choices.map((p) => <option key={p} value={p}>{DESKTOP_IMAGE_LABELS[p] ?? p}</option>)}
+        <select aria-label="画像生成プロバイダ" value={provider} onChange={(e) => pick(e.target.value)}>
+          {options.map((p) => <option key={p} value={p}>{DESKTOP_IMAGE_LABELS[p] ?? p}{choices.includes(p) ? "" : "（未設定）"}</option>)}
         </select>
       </div>
       {(provider === "gemini" || provider === "comfyui") && <p className="hint">{provider === "gemini" ? "Gemini" : "ComfyUI"} は透過非対応（白背景で生成）</p>}
