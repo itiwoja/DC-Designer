@@ -883,17 +883,20 @@ export function App() {
   useEffect(blockPageFileDrop, []);
 
   /**
-   * レイヤーをコピーしたら、続いて起きる copy / cut イベントでシステムのクリップボードを目印の文字に置き換える
+   * レイヤーをコピーしたら、続いて起きる copy / cut イベントでシステムのクリップボードをアプリ専用の目印に置き換える
    * （でないと、前に外でコピーした画像が残っていて次の Ctrl+V でその画像が貼られる）。copy イベントの clipboardData は権限なしで書ける
    */
   const markCopy = useRef(false);
-  const markLayerCopy = () => { markCopy.current = true; };
+  const LAYER_CLIPBOARD_TYPE = "application/x-dc-designer-layers";
+  // copy / cut イベントが届かなかったとき（選択が無い cut など）に目印が残らないよう、このキー操作の後で外す
+  const markLayerCopy = () => { markCopy.current = true; setTimeout(() => { markCopy.current = false; }); };
   useEffect(() => {
     const onCopy = (e: ClipboardEvent) => {
       if (!markCopy.current) return;
       markCopy.current = false;
       if (isTextInput(e.target) || !e.clipboardData) return;
-      e.clipboardData.setData("text/plain", "DC-Designer layers");
+      // 入力欄に貼られる text/plain は入れない（入れるとチャット欄などで Ctrl+V したときにその文字が貼られる）
+      e.clipboardData.setData(LAYER_CLIPBOARD_TYPE, "1");
       e.preventDefault();
     };
     window.addEventListener("copy", onCopy);
