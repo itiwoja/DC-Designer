@@ -134,6 +134,9 @@ export const api = {
   /** 再現の仕上げ: 参考画像と今の描画結果を見比べて直した spec（直すところが無ければ spec なし） */
   refineReproduction: (reference: RefImage, render: RefImage, spec: PosterSpec, onProgress?: (p: AIProgress) => void, signal?: AbortSignal, subject?: AiSubject) =>
     postWithProgress<{ reply: string; spec?: PosterSpec }>("/api/reproduce/refine", withSubject({ reference, render, spec }, subject), onProgress, signal),
+  /** ポン出しの自己添削: 描画したポスターを AI に見せて直した spec（直すところが無ければ spec なし） */
+  refinePlan: (render: RefImage, spec: PosterSpec, brief: string | undefined, onProgress?: (p: AIProgress) => void, signal?: AbortSignal, subject?: AiSubject) =>
+    postWithProgress<{ reply: string; spec?: PosterSpec }>("/api/plan/refine", withSubject({ render, spec, brief }, subject), onProgress, signal),
   /** チャットでの修正。spec が無ければ変更なし（質問への回答など） */
   /** across はデッキの全スライドへの指示を 1 枚ずつ当てるときの、そのスライドの位置と先に直したスライドの方針 */
   edit: (spec: PosterSpec, instruction: string, selectedIds: string[] | undefined, signal?: AbortSignal, deck?: DeckEditContext, chat?: ChatContext, across?: { number: number; total: number; guide?: string }, references?: RefImage[], subject?: AiSubject, /** デッキのデザインの要約（デッキの編集のときだけ。deck の中には入れない） */ design?: DeckDesign) =>

@@ -3,6 +3,7 @@ import { PosterSpecSchema } from "../../src/schema";
 import { runWithAiSubject } from "../ai-consent";
 import { httpError } from "../http-error";
 import { editPoster, planPoster, planSlide, refineReproduction, reproducePoster, summarizeChat, writeNotes } from "../planner";
+import { critiquePoster } from "../poster-critique";
 import { storeReferences } from "../references";
 import { optString, parseAcross, parseDeckContext, parseDeckDesign, parseImage, parseSubject, parseTurns, strings } from "../request-parsers";
 import type { RouteHandlers } from "../route-handlers";
@@ -30,6 +31,13 @@ export function registerAiRoutes(app: Router, { route, progressRoute }: RouteHan
     const subject = parseSubject(req.body?.subject);
     const spec = PosterSpecSchema.parse(req.body?.spec);
     return runWithAiSubject(subject, () => refineReproduction({ reference: parseImage(req.body?.reference, "reference"), render: parseImage(req.body?.render, "render"), spec, onProgress, signal }));
+  }));
+
+  /** ポン出しの自己添削: 描画したポスターの画像を見て、デザインの欠点を直した spec を返す（spec が無ければ直すところなし） */
+  app.post("/api/plan/refine", progressRoute(async (req, onProgress, signal) => {
+    const subject = parseSubject(req.body?.subject);
+    const spec = PosterSpecSchema.parse(req.body?.spec);
+    return runWithAiSubject(subject, () => critiquePoster({ render: parseImage(req.body?.render, "render"), spec, brief: optString(req.body?.brief, 4000), onProgress, signal }));
   }));
 
   /** チャットの古いやりとりを既存の要約に畳み込む（ローリング要約） */
