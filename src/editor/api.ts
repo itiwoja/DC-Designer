@@ -149,11 +149,12 @@ export const api = {
     post<{ notes: { number: number; notes: string }[] }>("/api/notes", body, signal),
   /** 古いやりとりを既存の要約に畳み込む（ローリング要約） */
   summarizeChat: (summary: string | undefined, turns: ChatTurn[]) => post<{ summary: string }>("/api/chat/summarize", { summary, turns }),
-  asset: async (asset: AssetRequest, context: AssetContext, provider?: string, signal?: AbortSignal) => {
+  /** guide は先に描いた配置の下書き（文字の載る場所を避けた構図にさせる。対応する画像生成だけが使う） */
+  asset: async (asset: AssetRequest, context: AssetContext, provider?: string, signal?: AbortSignal, guide?: { mediaType: string; data: string }) => {
     // サーバーの CODEX_DEADLINE_MS 既定 15 分より少し長くして、待ちきれないときは打ち切る
     const timeout = AbortSignal.timeout(ASSET_TIMEOUT_MS);
     try {
-      return await post<{ src: string; provider: string; cached: boolean }>("/api/asset", { asset, context, provider }, signal ? AbortSignal.any([signal, timeout]) : timeout);
+      return await post<{ src: string; provider: string; cached: boolean }>("/api/asset", { asset, context, provider, guide }, signal ? AbortSignal.any([signal, timeout]) : timeout);
     } catch (e) {
       // 打ち切りが時間切れによるもので、呼び出し元のキャンセルではないときは分かる文言にする
       if (timeout.aborted && !signal?.aborted) throw new Error("画像生成が 16 分たっても終わらなかったため打ち切りました。もう一度試すか、AI の設定で別の画像生成を選んでください");

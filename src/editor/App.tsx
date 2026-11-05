@@ -7,6 +7,7 @@ import { a4Fit, a4Instruction, a4Issues, fitToA4, SAFE_MARGIN_MM } from "./a4";
 import { cropTarget } from "../render/ImageBox";
 import { useRenderReady } from "../render/useRenderReady";
 import { refinePlannedPoster } from "./planRefine";
+import { buildLayoutGuide } from "./layoutGuide";
 import { findPendingAssets, type AssetRequest, type Layer, type PosterSpec, type TextLayerT } from "../schema";
 import { textStyleKey, toggleTextStyle } from "./textStyle";
 import { summarizeDeckDesign, type DeckDesign } from "../deckDesign";
@@ -721,7 +722,9 @@ export function App() {
     setGenerating((g) => new Set(g).add(key));
     try {
       const { asset, context } = prepareAsset(target, ref, rawAsset);
-      const { src } = await api.asset(asset, context, activeImageProvider, signal);
+      // 先に決めたレイアウトの下書き（文字の載る場所）を渡し、構図の合う画像を作らせる。要らない・作れないときは無し
+      const guide = await buildLayoutGuide(target, ref.layerId);
+      const { src } = await api.asset(asset, context, activeImageProvider, signal, guide);
       setSpec((s) => patchAsset(s, ref, src));
       return src;
     } finally {
