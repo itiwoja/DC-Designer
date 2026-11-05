@@ -18,6 +18,18 @@ mkdirSync(GENERATED_DIR, { recursive: true });
 
 type GenerateResult = { src: string; provider: string; cached: boolean };
 
+/** 下書き画像（先に描いたレイアウト。文字や図形を灰色のブロックにしたもの）。base64 の PNG / JPEG */
+export type GuideImage = { mediaType: string; data: string };
+
+/** 下書きの読み方を画像生成モデルへ伝える前置き。下書きをそのまま写さず、空いた場所に主題を置かせる */
+const GUIDE_INSTRUCTION =
+  "The attached image is only a layout sketch of the poster area: gray blocks mark where text and graphics will be placed on top. " +
+  "Create a brand-new image (do not copy the sketch, do not draw gray blocks, boxes or text) whose main subject sits in the open white area, " +
+  "and keep the gray-block areas calm, low-detail and low-contrast so overlaid text stays readable.";
+
+/** 下書きを受け取れるプロバイダ。それ以外は下書きを使わない（キャッシュのキーにも入れない） */
+const GUIDE_PROVIDERS: ImageProvider[] = ["openai", "gemini"];
+
 const ROLE_HINT = {
   hero: "Main visual of the poster: strong focal point, rich detail, clear silhouette.",
   supporting: "Supporting visual: clear subject, moderate detail.",
@@ -81,10 +93,10 @@ function provider(requested?: string): ImageProvider {
 }
 
 // openai SDK は読み込みに時間がかかる（/mnt/c 上だと 10 秒以上）ので、起動を遅くしないよう使うときに読み込む
-async function generateOpenAI(prompt: string, asset: AssetRequest, signal?: AbortSignal): Promise<Buffer> {
-  const { default: OpenAI } = await import("openai");
+async function generateOpenAI(prompt: string, asset: AssetRequest, signal?: AbortSignal, guide?: GuideImage): Promise<Buffer> {
+  const { default: OpenAI, toFile } = await import("openai");
   const openai = new OpenAI({ apiKey: await getSecret("openai", "apiKey") });
-  const res = await openai.images.generate({
+  const params = {
     model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-2.5-flare",
     prompt,
     size: SIZES[asset.aspect ?? "square"],
@@ -92,7 +104,15 @@ async function generateOpenAI(prompt: string, asset: AssetRequest, signal?: Abor
     output_format: "png",
     quality: (process.env.OPENAI_IMAGE_QUALITY as any) || "medium",
     n: 1,
-  }, { signal });
+  } as const;
+  // 下書きがあるときは image 入力を受ける edits で生成する（下書きは構図の参考で、そのまま写させない）
+  const res = guide
+    ? await openai.images.edit({
+        ...params,
+        prompt: `${GUIDE_INSTRUCTION} ${prompt}`,
+        image: await toFile(Buffer.from(guide.data, "base64"), guide.mediaType === "image/jpeg" ? "layout.jpg" : "layout.png", { type: guide.mediaType }),
+      }, { signal })
+    : await openai.images.generate(params, { signal });
   const b64 = res.data?.[0]?.b64_json;
   if (!b64) throw new Error("画像生成APIが画像を返しませんでした");
   return Buffer.from(b64, "base64");
@@ -129,15 +149,20 @@ export function geminiHttpError(status: number, err: { message?: string; status?
   return new ImageGenError("gemini_rejected", `Gemini が依頼を受け付けませんでした（HTTP ${status}）。内容を変えてやり直してください`, detail);
 }
 
-async function generateGemini(prompt: string, asset: AssetRequest, signal?: AbortSignal): Promise<Buffer> {
+async function generateGemini(prompt: string, asset: AssetRequest, signal?: AbortSignal, guide?: GuideImage): Promise<Buffer> {
   const key = await getSecret("gemini", "apiKey");
   if (!key) throw new ImageGenError("gemini_no_key", "Gemini の API キーが設定されていません。設定画面でキーを保存してください", undefined, 400);
   let res: Response;
   try {
-    res = await geminiFetch(key, prompt, asset, signal);
+    res = await geminiFetch(key, prompt, asset, signal, guide);
   } catch (e: any) {
     if (signal?.aborted) throw e;
     throw new ImageGenError("gemini_network", "Gemini に接続できませんでした。インターネットに接続できているか確かめてください", e?.cause?.message ?? e?.message);
+  }
+  // 下書きの画像入力の形は実 API で未確認なので、下書き付きで 400 を返されたら下書き無しで 1 回だけ作り直す（生成そのものは止めない）
+  if (guide && res.status === 400) {
+    console.warn("[gemini] 下書き付きの依頼を受け付けなかったので、下書き無しで生成し直します");
+    return generateGemini(prompt, asset, signal);
   }
   const json: any = await res.json().catch(() => ({}));
   if (!res.ok) throw geminiHttpError(res.status, (Array.isArray(json) ? json[0] : json)?.error);
@@ -146,13 +171,16 @@ async function generateGemini(prompt: string, asset: AssetRequest, signal?: Abor
   return Buffer.from(b64, "base64");
 }
 
-function geminiFetch(key: string, prompt: string, asset: AssetRequest, signal?: AbortSignal): Promise<Response> {
+function geminiFetch(key: string, prompt: string, asset: AssetRequest, signal?: AbortSignal, guide?: GuideImage): Promise<Response> {
   return fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
     method: "POST",
     headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image",
-      input: [{ type: "text", text: prompt }],
+      // 下書きは画像入力として足す。形は出力（type: "image" / data / mime_type）に合わせたもので、実 API では未確認
+      input: guide
+        ? [{ type: "text", text: `${GUIDE_INSTRUCTION} ${prompt}` }, { type: "image", data: guide.data, mime_type: guide.mediaType }]
+        : [{ type: "text", text: prompt }],
       response_format: {
         type: "image",
         // Interactions API の画像出力は現状 JPEG のみ対応（image/png は 400 になる）
@@ -752,7 +780,7 @@ ${lines.slice(0, 8).map((l, i) => `<tspan x="${w / 2}" dy="${i === 0 ? 0 : 44}">
 </text></svg>`;
 }
 
-const GENERATORS: Record<ImageProvider, (prompt: string, asset: AssetRequest, signal?: AbortSignal) => Promise<Buffer | string>> = {
+const GENERATORS: Record<ImageProvider, (prompt: string, asset: AssetRequest, signal?: AbortSignal, guide?: GuideImage) => Promise<Buffer | string>> = {
   openai: generateOpenAI,
   gemini: generateGemini,
   comfyui: generateComfyUI,
@@ -761,20 +789,23 @@ const GENERATORS: Record<ImageProvider, (prompt: string, asset: AssetRequest, si
 };
 const EXT: Record<ImageProvider, string> = { openai: "png", gemini: "jpg", comfyui: "png", codex: "png", placeholder: "svg" };
 
-/** アセット 1 点を生成して public/generated に保存する。同じ条件で生成済みならそれを返す */
-export async function generateAsset(asset: AssetRequest, ctx: AssetContext = {}, requested?: string, signal?: AbortSignal): Promise<GenerateResult> {
+/** アセット 1 点を生成して public/generated に保存する。同じ条件で生成済みならそれを返す。guide は先に描いた配置の下書き（任意） */
+export async function generateAsset(asset: AssetRequest, ctx: AssetContext = {}, requested?: string, signal?: AbortSignal, guide?: GuideImage): Promise<GenerateResult> {
   let prov = provider(requested);
   // Gemini / ComfyUI は透過非対応。透過が要るアセットは OpenAI が使えればそちらで生成し、無ければ白背景にする
   if (NO_TRANSPARENCY.includes(prov) && asset.transparent && availableProviders().includes("openai")) prov = "openai";
   const prompt = NO_TRANSPARENCY.includes(prov) && asset.transparent
     ? buildPrompt(asset, ctx).replace("fully transparent background", "plain solid pure white background")
     : buildPrompt(asset, ctx);
-  const key = createHash("sha1").update(JSON.stringify({ prompt, aspect: asset.aspect, t: asset.transparent, prov })).digest("hex").slice(0, 16);
+  // 下書きは使えるプロバイダ・透過でない画像だけに渡す。同じプロンプトでも下書きが違えば別の画像になるのでキーに入れる
+  const usedGuide = guide && GUIDE_PROVIDERS.includes(prov) && !asset.transparent ? guide : undefined;
+  const g = usedGuide ? createHash("sha1").update(usedGuide.mediaType).update(usedGuide.data).digest("hex").slice(0, 16) : undefined;
+  const key = createHash("sha1").update(JSON.stringify({ prompt, aspect: asset.aspect, t: asset.transparent, prov, g })).digest("hex").slice(0, 16);
   const file = `${key}.${EXT[prov]}`;
   const path = join(GENERATED_DIR, file);
   if (existsSync(path)) return { src: `/generated/${file}`, provider: prov, cached: true };
 
-  writeFileSync(path, await GENERATORS[prov](prompt, asset, signal));
+  writeFileSync(path, await GENERATORS[prov](prompt, asset, signal, usedGuide));
   return { src: `/generated/${file}`, provider: prov, cached: false };
 }
 

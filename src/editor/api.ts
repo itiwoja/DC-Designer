@@ -134,6 +134,9 @@ export const api = {
   /** 再現の仕上げ: 参考画像と今の描画結果を見比べて直した spec（直すところが無ければ spec なし） */
   refineReproduction: (reference: RefImage, render: RefImage, spec: PosterSpec, onProgress?: (p: AIProgress) => void, signal?: AbortSignal, subject?: AiSubject) =>
     postWithProgress<{ reply: string; spec?: PosterSpec }>("/api/reproduce/refine", withSubject({ reference, render, spec }, subject), onProgress, signal),
+  /** ポン出しの自己添削: 描画したポスターを AI に見せて直した spec（直すところが無ければ spec なし） */
+  refinePlan: (render: RefImage, spec: PosterSpec, brief: string | undefined, onProgress?: (p: AIProgress) => void, signal?: AbortSignal, subject?: AiSubject) =>
+    postWithProgress<{ reply: string; spec?: PosterSpec }>("/api/plan/refine", withSubject({ render, spec, brief }, subject), onProgress, signal),
   /** チャットでの修正。spec が無ければ変更なし（質問への回答など） */
   /** across はデッキの全スライドへの指示を 1 枚ずつ当てるときの、そのスライドの位置と先に直したスライドの方針 */
   edit: (spec: PosterSpec, instruction: string, selectedIds: string[] | undefined, signal?: AbortSignal, deck?: DeckEditContext, chat?: ChatContext, across?: { number: number; total: number; guide?: string }, references?: RefImage[], subject?: AiSubject, /** デッキのデザインの要約（デッキの編集のときだけ。deck の中には入れない） */ design?: DeckDesign) =>
@@ -146,11 +149,12 @@ export const api = {
     post<{ notes: { number: number; notes: string }[] }>("/api/notes", body, signal),
   /** 古いやりとりを既存の要約に畳み込む（ローリング要約） */
   summarizeChat: (summary: string | undefined, turns: ChatTurn[]) => post<{ summary: string }>("/api/chat/summarize", { summary, turns }),
-  asset: async (asset: AssetRequest, context: AssetContext, provider?: string, signal?: AbortSignal) => {
+  /** guide は先に描いた配置の下書き（文字の載る場所を避けた構図にさせる。対応する画像生成だけが使う） */
+  asset: async (asset: AssetRequest, context: AssetContext, provider?: string, signal?: AbortSignal, guide?: { mediaType: string; data: string }) => {
     // サーバーの CODEX_DEADLINE_MS 既定 15 分より少し長くして、待ちきれないときは打ち切る
     const timeout = AbortSignal.timeout(ASSET_TIMEOUT_MS);
     try {
-      return await post<{ src: string; provider: string; cached: boolean }>("/api/asset", { asset, context, provider }, signal ? AbortSignal.any([signal, timeout]) : timeout);
+      return await post<{ src: string; provider: string; cached: boolean }>("/api/asset", { asset, context, provider, guide }, signal ? AbortSignal.any([signal, timeout]) : timeout);
     } catch (e) {
       // 打ち切りが時間切れによるもので、呼び出し元のキャンセルではないときは分かる文言にする
       if (timeout.aborted && !signal?.aborted) throw new Error("画像生成が 16 分たっても終わらなかったため打ち切りました。もう一度試すか、AI の設定で別の画像生成を選んでください");

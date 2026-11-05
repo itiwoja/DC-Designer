@@ -1,4 +1,5 @@
 import type { Router } from "express";
+import { z } from "zod";
 import { AssetContext, AssetRequest } from "../../src/schema";
 import { httpError } from "../http-error";
 import { generateAsset, saveUpload } from "../imagegen";
@@ -6,10 +7,23 @@ import { updateImageSettings } from "../image-settings";
 import { installCodex, loginCodex } from "../codex-setup";
 import type { RouteHandlers } from "../route-handlers";
 
+/** 配置の下書き画像（base64 の PNG / JPEG）。デコード後 4MB まで */
+const GUIDE_MAX_BYTES = 4 * 1024 * 1024;
+const GuideImage = z.object({
+  mediaType: z.enum(["image/png", "image/jpeg"]),
+  data: z.string().min(1).max(Math.ceil((GUIDE_MAX_BYTES * 4) / 3) + 4).regex(/^[A-Za-z0-9+/]+={0,2}$/),
+});
+
 /** 画像アセットの生成と取り込み */
 export function registerImageRoutes(app: Router, { route, progressRoute }: RouteHandlers) {
   /** 画像アセット 1 点を生成 */
-  app.post("/api/asset", route((req, signal) => generateAsset(AssetRequest.parse(req.body?.asset), AssetContext.parse(req.body?.context ?? {}), req.body?.provider, signal)));
+  app.post("/api/asset", route((req, signal) => generateAsset(
+    AssetRequest.parse(req.body?.asset),
+    AssetContext.parse(req.body?.context ?? {}),
+    req.body?.provider,
+    signal,
+    req.body?.guide == null ? undefined : GuideImage.parse(req.body.guide),
+  )));
 
   /** 画像生成の設定（{ comfyuiUrl?, codexPath? }。空文字で既定に戻す）。保存後の設定を返す */
   app.put("/api/image/settings", route((req) => updateImageSettings(req.body)));

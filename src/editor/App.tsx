@@ -6,6 +6,8 @@ import { A4Check } from "./A4Check";
 import { a4Fit, a4Instruction, a4Issues, fitToA4, SAFE_MARGIN_MM } from "./a4";
 import { cropTarget } from "../render/ImageBox";
 import { useRenderReady } from "../render/useRenderReady";
+import { refinePlannedPoster } from "./planRefine";
+import { buildLayoutGuide } from "./layoutGuide";
 import { findPendingAssets, type AssetRequest, type Layer, type PosterSpec, type TextLayerT } from "../schema";
 import { textStyleKey, toggleTextStyle } from "./textStyle";
 import { summarizeDeckDesign, type DeckDesign } from "../deckDesign";
@@ -290,7 +292,11 @@ export function App() {
 
   // ---------- AI: 新規作成 ----------
   const planWithAI = () => mode === "slides" ? undefined : reproduceOn ? reproduceWithAI() : run(`${aiName} がレイアウトを設計中`, async (signal) => {
-    const { spec: next } = await api.plan(brief + referenceCaption, undefined, toReferenceImages(refs), signal);
+    const { spec: planned } = await api.plan(brief + referenceCaption, undefined, toReferenceImages(refs), signal);
+    // 一度描画して AI に見せ、デザインの欠点を直させる（画像の生成前に。失敗しても最初の案で続ける）
+    setBusyLabel(`${aiName} が描画を見て仕上げ中`);
+    const next = await refinePlannedPoster(planned, (render, s) => api.refinePlan(render, s, brief, showAIProgress("件目の修正"), signal), { signal })
+      .catch((e) => { if (signal.aborted) throw e; console.warn("[plan] 仕上げに失敗したので最初の案を使います", e); return planned; });
     const n = findPendingAssets(next).length;
     const images = n ? autoImages ? `・画像 ${n} 点を生成します` : `・画像 ${n} 点が未生成` : "";
     await openAsNewPoster(next, `新しいポスターを作成しました（${next.layers.length} レイヤー${images}）。前のポスターは成果物に保存されています`);
@@ -716,7 +722,9 @@ export function App() {
     setGenerating((g) => new Set(g).add(key));
     try {
       const { asset, context } = prepareAsset(target, ref, rawAsset);
-      const { src } = await api.asset(asset, context, activeImageProvider, signal);
+      // 先に決めたレイアウトの下書き（文字の載る場所）を渡し、構図の合う画像を作らせる。要らない・作れないときは無し
+      const guide = await buildLayoutGuide(target, ref.layerId);
+      const { src } = await api.asset(asset, context, activeImageProvider, signal, guide);
       setSpec((s) => patchAsset(s, ref, src));
       return src;
     } finally {
