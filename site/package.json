@@ -16,7 +16,7 @@
     "node": ">=24"
   },
   "dependencies": {
-    "astro": "7.3.8",
+    "astro": "7.4.7",
     "rehype-sanitize": "6.0.0",
     "rehype-stringify": "10.0.1",
     "remark-gfm": "4.0.1",
